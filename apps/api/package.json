@@ -1,0 +1,14 @@
+{
+  "name": "@ideaven/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ideaven API service (Go). Phase 1: health endpoint and architecture foundation.",
+  "scripts": {
+    "dev": "go run ./cmd/api",
+    "build": "go build -o bin/api ./cmd/api",
+    "start": "go run ./cmd/api",
+    "check": "go vet ./...",
+    "test": "go test ./...",
+    "clean": "rm -rf bin"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "ideaven",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ideaven — every idea deserves a way to exist. Phase 1: landing page and platform foundation.",
+  "scripts": {
+    "dev": "pnpm --filter @ideaven/web dev",
+    "dev:api": "pnpm --filter @ideaven/api dev",
+    "dev:all": "bash scripts/dev.sh",
+    "build": "pnpm --filter @ideaven/web build",
+    "build:api": "pnpm --filter @ideaven/api build",
+    "check": "pnpm -r --if-present check",
+    "clean": "pnpm -r --if-present clean"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@11.22.0"
+}

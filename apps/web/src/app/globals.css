@@ -1,0 +1,211 @@
+@import "tailwindcss";
+@source "../../../packages/ui/src";
+
+/*
+ * Ideaven design tokens.
+ * Dark navy canvas, warm-white ink, electric violet primary accent,
+ * soft mint secondary accent. Accents are used sparingly on purpose.
+ */
+@theme {
+  --color-canvas: #0a0c12;
+  --color-panel: #0e1119;
+  --color-card: #12151f;
+  --color-line: rgb(231 234 246 / 0.08);
+  --color-ink: #f2f1ea;
+  --color-fog: #a9b0c2;
+  --color-mist: #6f7789;
+  --color-violet: #8f7bff;
+  --color-violet-deep: #6c58f5;
+  --color-violet-strong: #5743d9;
+  --color-mint: #46e3b4;
+  --color-amber: #ffb454;
+  --color-rose: #ff7d9c;
+  --color-sky: #58c7f0;
+
+  --font-sans: var(--font-sora), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "SF Mono",
+    Menlo, Consolas, monospace;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    overflow-x: clip;
+  }
+
+  ::selection {
+    background: rgb(108 88 245 / 0.45);
+    color: #fff;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/*
+ * Entrance reveals. Content renders visible by default (no-JS safe);
+ * it is only pre-hidden once JS flags the document with the `js` class.
+ */
+.js [data-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+[data-reveal] {
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-reveal].is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Keyboard skip link */
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 100;
+  transform: translateY(-300%);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--color-violet-deep);
+  color: #fff;
+  font-size: 0.875rem;
+  transition: transform 0.2s;
+}
+
+.skip-link:focus-visible {
+  transform: none;
+}
+
+/* Faint dotted grid used behind the hero and philosophy sections */
+.bg-dots {
+  background-image: radial-gradient(
+    rgb(231 234 246 / 0.055) 1px,
+    transparent 1.5px
+  );
+  background-size: 22px 22px;
+}
+
+@keyframes blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes draw-line {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes progress-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.anim-caret {
+  animation: blink 1s steps(1) infinite;
+}
+
+.anim-bob {
+  animation: bob 1.15s ease-in-out infinite;
+}
+
+.anim-pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+.anim-pop-in {
+  animation: pop-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-progress-x {
+  transform-origin: left;
+  animation: progress-x 2.6s linear both;
+}
+
+.anim-rise-in {
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
