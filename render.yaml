@@ -1,0 +1,24 @@
+# Render blueprint for the Ideaven API.
+# Create the service via "New +" > "Blueprint" and Render fills this in.
+# DATABASE_URL / API_ALLOWED_ORIGINS / APP_URL are set manually in the
+# dashboard: they depend on the Neon database and the Vercel frontend URL.
+services:
+  - type: web
+    name: ideaven-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    plan: free
+    envVars:
+      - key: API_ENV
+        value: production
+      - key: API_ADDR
+        value: :10000
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: API_ALLOWED_ORIGINS
+        sync: false
+      - key: APP_URL
+        sync: false
