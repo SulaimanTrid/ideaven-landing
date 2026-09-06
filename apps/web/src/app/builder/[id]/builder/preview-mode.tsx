@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { imageUrl } from "@/lib/api";
 import { createRuntime, screenOf, type ScreenRuntime } from "@/lib/project-model/runtime";
 import { RuntimeNode } from "@/components/runtime/runtime-node";
+import { DeviceFrame } from "@/components/builder/device-frame";
 import { useBuilder } from "./builder-context";
 import type { PropsMap } from "@/types/project";
 
@@ -129,9 +130,10 @@ export function PreviewMode() {
 
       {/* Surface */}
       <div className="relative min-h-0 flex-1 overflow-auto p-8">
-        <div className="mx-auto" style={{ width: frame.width }}>
+        <div className="mx-auto w-fit">
+          <DeviceFrame kind={device}>
           <div
-            className="relative overflow-hidden rounded-[24px] border border-line bg-white text-[#0b0e16] shadow-[0_24px_80px_-24px_rgb(0_0_0/0.8)]"
+            className="relative overflow-hidden rounded-[24px] bg-white text-[#0b0e16]"
             style={{ width: frame.width, height: frame.height }}
           >
             <div
@@ -160,6 +162,7 @@ export function PreviewMode() {
               </div>
             ) : null}
           </div>
+          </DeviceFrame>
         </div>
       </div>
     </div>

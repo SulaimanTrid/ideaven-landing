@@ -152,6 +152,8 @@ function emitExpression(
       return `api.join(${emitExpression(push, model, block.slots?.a)}, ${emitExpression(push, model, block.slots?.b)})`;
     case "equals":
       return `api.equals(${emitExpression(push, model, block.slots?.a)}, ${emitExpression(push, model, block.slots?.b)})`;
+    case "add":
+      return `(Number(${emitExpression(push, model, block.slots?.a)}) + Number(${emitExpression(push, model, block.slots?.b)}))`;
     default:
       return `null /* unsupported expression "${block.type}" */`;
   }

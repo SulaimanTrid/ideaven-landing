@@ -165,6 +165,11 @@ export function createRuntime(
         const b = evalExpression(block.slots?.b);
         return format(a) === format(b);
       }
+      case "add": {
+        const a = Number(evalExpression(block.slots?.a)) || 0;
+        const b = Number(evalExpression(block.slots?.b)) || 0;
+        return a + b;
+      }
       default:
         return "";
     }

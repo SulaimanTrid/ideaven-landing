@@ -9,6 +9,7 @@ import { useProjects } from "@/lib/use-projects";
 import { ProjectCard } from "@/components/dashboard/project-card";
 import { Block, BlockInput } from "@/components/visuals/block";
 import { IconPlus, IconRun } from "@/components/visuals/icons";
+import { useExtensionsSummary } from "@/lib/use-extensions-summary";
 
 /**
  * The workspace home: a welcome hero with the create-project action and the
@@ -20,6 +21,7 @@ export function DashboardContent() {
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
 
   const recent = useProjects({ q: "", status: "all", sort: "opened", limit: 6 });
+  const extensions = useExtensionsSummary();
 
   if (!user) return null;
 
@@ -162,6 +164,39 @@ export function DashboardContent() {
               </Link>
             </p>
           ) : null}
+        </section>
+
+        <section aria-labelledby="extensions-heading" className="mt-12">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="extensions-heading" className="text-[19px] font-semibold tracking-tight text-ink">
+              Extensions
+            </h2>
+            <Link href="/dashboard/extensions" className="text-[13px] text-violet hover:underline">
+              Open extensions →
+            </Link>
+          </div>
+          <p className="mt-1 text-[13px] text-fog">
+            Author your own blocks, or install other creators&apos; published
+            extensions — installed blocks appear in every project&apos;s
+            Blocks palette (the ⬡ section).
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-line bg-card p-4">
+              <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">Yours</p>
+              <p className="mt-1 text-[22px] font-semibold text-ink">{extensions.yours === null ? "…" : extensions.yours}</p>
+              <p className="text-[12px] text-mist">authored extensions</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-card p-4">
+              <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">Installed</p>
+              <p className="mt-1 text-[22px] font-semibold text-ink">{extensions.installed === null ? "…" : extensions.installed}</p>
+              <p className="text-[12px] text-mist">in your builder palette</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-card p-4">
+              <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">Published for everyone</p>
+              <p className="mt-1 text-[22px] font-semibold text-ink">{extensions.published === null ? "…" : extensions.published}</p>
+              <p className="text-[12px] text-mist">on the public shelf</p>
+            </div>
+          </div>
         </section>
       </div>
     </div>

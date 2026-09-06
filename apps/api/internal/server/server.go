@@ -114,6 +114,8 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	// immutable versions, owner-scoped like projects.
 	extensionService := extension.NewService(db, "") // built AIX packages live under .data/extensions
 	extensionHandler := extension.NewHandler(extensionService, authService.Authenticate, config.CookieConfig{Name: cfg.Cookie.Name})
+	// Launch feedback: everyone can browse published extensions.
+	route(mux, http.MethodGet, "/api/public/extensions", http.HandlerFunc(extensionHandler.PublicList))
 	routeMethods(mux, "/api/extensions", map[string]http.Handler{
 		http.MethodGet:  http.HandlerFunc(extensionHandler.List),
 		http.MethodPost: http.HandlerFunc(extensionHandler.Create),
@@ -142,6 +144,7 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	// project archive, both owner-only downloads.
 	route(mux, http.MethodGet, "/api/projects/{id}/export/html", http.HandlerFunc(projectHandler.ExportHTML))
 	route(mux, http.MethodGet, "/api/projects/{id}/export/android", http.HandlerFunc(projectHandler.ExportAndroid))
+	route(mux, http.MethodGet, "/api/projects/{id}/export/windows", http.HandlerFunc(projectHandler.ExportWindows))
 
 	// Phase 3: Ask AI. Provider comes from AI_* env vars; without them the
 	// endpoint reports AI_NOT_CONFIGURED honestly. Keys never leave the server.

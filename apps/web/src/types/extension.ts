@@ -71,6 +71,8 @@ export interface Extension {
   status: ExtensionStatus;
   manifest: ExtensionManifest;
   docs: string;
+  /** Authored source (e.g. Java) edited in the Studio's Source tab. */
+  source: string;
   currentVersion: string;
   createdAt: string;
   updatedAt: string;
@@ -89,6 +91,7 @@ export interface UpdateExtensionRequest {
   summary?: string;
   manifest?: ExtensionManifest;
   docs?: string;
+  source?: string;
 }
 
 export interface ExtensionVersion {
@@ -100,3 +103,16 @@ export interface ExtensionVersion {
 }
 
 export type { ThemePreference };
+
+/** A published extension as shown in the public explore list. */
+export interface PublicExtension {
+  id: string;
+  slug: string;
+  name: string;
+  summary: string;
+  kind: ExtensionKind;
+  version: string;
+  creator: string;
+  installs: number;
+  updatedAt: string;
+}

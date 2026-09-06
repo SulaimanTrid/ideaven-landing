@@ -54,6 +54,7 @@ type ExtensionWire struct {
 	Status         string          `json:"status"`
 	Manifest       json.RawMessage `json:"manifest"`
 	Docs           string          `json:"docs"`
+	Source         string          `json:"source"`
 	CurrentVersion string          `json:"currentVersion"`
 	CreatedAt      string          `json:"createdAt"`
 	UpdatedAt      string          `json:"updatedAt"`
@@ -63,9 +64,41 @@ func wire(e *Extension) ExtensionWire {
 	return ExtensionWire{
 		ID: e.ID, Slug: e.Slug, Name: e.Name, Summary: e.Summary,
 		Kind: e.Kind, Status: e.Status, Manifest: json.RawMessage(e.Manifest),
-		Docs: e.Docs, CurrentVersion: e.CurrentVersion,
+		Docs: e.Docs, Source: e.Source, CurrentVersion: e.CurrentVersion,
 		CreatedAt: e.CreatedAt.Format(http.TimeFormat), UpdatedAt: e.UpdatedAt.Format(http.TimeFormat),
 	}
+}
+
+// PublicList handles GET /api/public/extensions — every published
+// extension, for the everyone-can-use registry. No auth: published means
+// public. Creator names and install counts make it feel like a real
+// marketplace shelf without exposing private data.
+func (h *Handler) PublicList(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.service.PublicExtensions(r.Context())
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	type publicExt struct {
+		ID        string `json:"id"`
+		Slug      string `json:"slug"`
+		Name      string `json:"name"`
+		Summary   string `json:"summary"`
+		Kind      string `json:"kind"`
+		Version   string `json:"version"`
+		Creator   string `json:"creator"`
+		Installs  int    `json:"installs"`
+		UpdatedAt string `json:"updatedAt"`
+	}
+	out := make([]publicExt, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, publicExt{
+			ID: row.ID, Slug: row.Slug, Name: row.Name, Summary: row.Summary,
+			Kind: row.Kind, Version: row.CurrentVersion, Creator: row.Creator,
+			Installs: row.Installs, UpdatedAt: row.UpdatedAt.Format(http.TimeFormat),
+		})
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"extensions": out, "total": len(out)})
 }
 
 // Create handles POST /api/extensions.
@@ -81,6 +114,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Kind     string          `json:"kind"`
 		Manifest json.RawMessage `json:"manifest"`
 		Docs     string          `json:"docs"`
+		Source   string          `json:"source"`
 	}
 	if err := decode(w, r, &body); err != nil {
 		httpx.WriteError(w, err)
@@ -88,7 +122,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := h.service.Create(r.Context(), current.ID, CreateInput{
 		Name: body.Name, Summary: body.Summary, Kind: body.Kind,
-		Manifest: body.Manifest, Docs: body.Docs,
+		Manifest: body.Manifest, Docs: body.Docs, Source: body.Source,
 	})
 	if err != nil {
 		httpx.WriteError(w, err)
@@ -149,6 +183,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		Summary  *string          `json:"summary"`
 		Manifest *json.RawMessage `json:"manifest"`
 		Docs     *string          `json:"docs"`
+		Source   *string          `json:"source"`
 	}
 	if err := decode(w, r, &body); err != nil {
 		httpx.WriteError(w, err)
@@ -159,7 +194,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		manifest = *body.Manifest
 	}
 	updated, err := h.service.Update(r.Context(), current.ID, r.PathValue("id"),
-		body.Name, body.Summary, manifest, body.Docs)
+		body.Name, body.Summary, manifest, body.Docs, body.Source)
 	if err != nil {
 		httpx.WriteError(w, err)
 		return

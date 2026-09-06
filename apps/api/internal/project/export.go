@@ -64,7 +64,8 @@ func (h *Handler) ExportHTML(w http.ResponseWriter, r *http.Request) {
 
 // ExportAndroid writes a ready-to-build Android WebView project (zip):
 // open it in Android Studio or let the included GitHub Actions workflow
-// build the APK — no local SDK required for that path.
+// build an APK (assembleDebug) or an AAB (bundleDebug) — no local SDK
+// required for the workflow path. ?format=aab switches the configured task.
 func (h *Handler) ExportAndroid(w http.ResponseWriter, r *http.Request) {
 	current, err := h.currentUser(r)
 	if err != nil {
@@ -76,6 +77,10 @@ func (h *Handler) ExportAndroid(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, err)
 		return
 	}
+	format := r.URL.Query().Get("format")
+	if format != "apk" && format != "aab" {
+		format = "apk"
+	}
 
 	// No asset base for the WebView build: a phone cannot reach this server's
 	// local API, so stored images render as the honest placeholder.
@@ -86,8 +91,8 @@ func (h *Handler) ExportAndroid(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var buf bytes.Buffer
-	zipName := exportFilename(project.Slug, "-android.zip")
-	if err := writeAndroidProject(&buf, project.Name, project.Slug, html); err != nil {
+	zipName := exportFilename(project.Slug, "-android-"+format+".zip")
+	if err := writeAndroidProject(&buf, project.Name, project.Slug, html, format); err != nil {
 		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal, "Could not build the Android project. Try again shortly."))
 		return
 	}
@@ -205,6 +210,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       }
       case "join": return String(evalBlock(b.slots.a)) + String(evalBlock(b.slots.b));
       case "equals": return evalBlock(b.slots.a) === evalBlock(b.slots.b);
+      case "add": return Number(evalBlock(b.slots.a)) + Number(evalBlock(b.slots.b));
       default: return undefined;
     }
   }
@@ -449,7 +455,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
 // writeAndroidProject assembles the zip: Gradle Kotlin WebView shell whose
 // asset/index.html is the standalone export. The included GitHub Actions
 // workflow builds a debug APK without any local Android SDK.
-func writeAndroidProject(buf *bytes.Buffer, name, slug string, html []byte) error {
+func writeAndroidProject(buf *bytes.Buffer, name, slug string, html []byte, format string) error {
 	pkg := androidPackage(slug)
 	projPath := "app/src/main"
 	files := map[string][]byte{
@@ -514,23 +520,161 @@ class MainActivity : AppCompatActivity() {
 		"app/src/main/res/values/styles.xml": []byte(`<?xml version="1.0" encoding="utf-8"?>
 <resources></resources>
 `),
-		"README.md": []byte(fmt.Sprintf("# %s — Ideaven Android export\n\nThe app runs from `app/src/main/assets/index.html` (the same standalone file as the web export) inside a WebView.\n\n## Build the APK\n\n**Without a local SDK:** push this folder to a GitHub repository — the included workflow (`.github/workflows/build-apk.yml`) builds `app-debug.apk` on every push and uploads it as an artifact.\n\n**With Android Studio:** open this folder and Run.\n\n**Command line (SDK installed):** `gradle assembleDebug` — output at `app/build/outputs/apk/debug/`.\n", name)),
-		".github/workflows/build-apk.yml": []byte(`name: build-apk
+		"README.md":                           []byte(androidReadme(name, format)),
+		".github/workflows/build-android.yml": []byte(androidWorkflow(format)),
+	}
+
+	zw := zip.NewWriter(buf)
+	names := []string{}
+	for fileName := range files {
+		names = append(names, fileName)
+	}
+	sortStrings(names)
+	for _, fileName := range names {
+		w, err := zw.Create(fileName)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(files[fileName]); err != nil {
+			return err
+		}
+	}
+	return zw.Close()
+}
+
+// androidReadme documents the chosen target honestly: the zip is a
+// ready-to-build project; the actual APK/AAB compilation happens in Android
+// Studio, on the command line with an SDK, or in the included CI workflow.
+func androidReadme(name, format string) string {
+	bt := "`" // markdown code tick
+	if format == "aab" {
+		return fmt.Sprintf("# %s \u2014 Ideaven Android export (AAB)\n\n"+
+			"The app runs from %sapp/src/main/assets/index.html%s inside a WebView.\n\n"+
+			"## Build the AAB (Play Store bundle)\n\n"+
+			"This project is preconfigured for %sbundleDebug%s.\n\n"+
+			"- **CI (no local SDK):** push to GitHub \u2014 %s.github/workflows/build-android.yml%s uploads the bundle artifact on every push.\n"+
+			"- **Android Studio:** open this folder, then Build \u2192 Generate Signed Bundle.\n"+
+			"- **Command line (SDK installed):** %sgradle bundleDebug%s \u2014 output at %sapp/build/outputs/bundle/debug/%s.\n",
+			name, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt)
+	}
+	return fmt.Sprintf("# %s \u2014 Ideaven Android export (APK)\n\n"+
+		"The app runs from %sapp/src/main/assets/index.html%s inside a WebView.\n\n"+
+		"## Build the APK\n\n"+
+		"This project is preconfigured for %sassembleDebug%s.\n\n"+
+		"- **CI (no local SDK):** push to GitHub \u2014 %s.github/workflows/build-android.yml%s builds %sapp-debug.apk%s on every push and uploads it as an artifact.\n"+
+		"- **Android Studio:** open this folder and Run.\n"+
+		"- **Command line (SDK installed):** %sgradle assembleDebug%s \u2014 output at %sapp/build/outputs/apk/debug/%s.\n\n"+
+		"Prefer a Play Store bundle? Re-export with the AAB option (or run %sgradle bundleDebug%s).\n",
+		name, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt)
+}
+
+func androidWorkflow(format string) string {
+	task, artifactPath, artifactName := "assembleDebug", "app/build/outputs/apk/debug/app-debug.apk", "app-debug"
+	if format == "aab" {
+		task, artifactPath, artifactName = "bundleDebug", "app/build/outputs/bundle/debug/app-debug.aab", "app-bundle"
+	}
+	return fmt.Sprintf(`name: build-android
 on: [push]
 jobs:
-  apk:
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
       - uses: gradle/actions/setup-gradle@v3
-      - run: gradle assembleDebug
+      - run: gradle %[1]s
       - uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: %[3]s
+          path: %[2]s
+`, task, artifactPath, artifactName)
+}
+
+// ExportWindows writes an Electron wrapper project (zip) around the same
+// standalone runtime. Compilation to a signed .exe needs a desktop OS with
+// Node — the project is ready for `npm install && npm run dist` there; this
+// server does not pretend to emit Windows binaries.
+func (h *Handler) ExportWindows(w http.ResponseWriter, r *http.Request) {
+	current, err := h.currentUser(r)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	project, err := h.service.Get(r.Context(), current.ID, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	html, err := StandaloneHTML(project.Name, project.Model, "")
+	if err != nil {
+		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal, "Could not build the export. Try again shortly."))
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := writeWindowsProject(&buf, project.Name, html); err != nil {
+		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal, "Could not build the Windows project. Try again shortly."))
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", exportFilename(project.Slug, "-windows.zip")))
+	_, _ = w.Write(buf.Bytes())
+}
+
+func writeWindowsProject(buf *bytes.Buffer, name string, html []byte) error {
+	files := map[string][]byte{
+		"package.json": []byte(fmt.Sprintf(`{
+  "name": "ideaven-export",
+  "productName": %[1]q,
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "dev.ideaven.export",
+    "files": ["main.js", "app/**"],
+    "win": { "target": ["portable"] }
+  }
+}
+`, name)),
+		"main.js": []byte(`const { app, BrowserWindow } = require("electron");
+const path = require("path");
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 420,
+    height: 900,
+    autoHideMenuBar: true,
+    backgroundColor: "#0a0c12",
+  });
+  win.removeMenu();
+  win.loadFile(path.join(__dirname, "app", "index.html"));
+}
+
+app.whenReady().then(createWindow);
+app.on("window-all-closed", () => app.quit());
 `),
+		"app/index.html": html,
+		"README.md": []byte(fmt.Sprintf(`# %[1]s — Ideaven Windows export
+
+A ready-to-build Electron project wrapping the standalone runtime.
+
+## Build the .exe (needs a desktop OS with Node.js installed)
+
+1. Install Node.js 18+ (on Windows or macOS/Linux).
+2. In this folder: `+"`npm install`"+`
+3. `+"`npm run dist`"+` — electron-builder produces a portable .exe under `+"`dist/`"+`.
+
+Ideaven does not compile Windows binaries on its server — this project is
+the honest, buildable path to one.
+`, name)),
 	}
 
 	zw := zip.NewWriter(buf)

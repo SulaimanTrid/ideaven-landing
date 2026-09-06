@@ -310,10 +310,10 @@ export function BlockPalette() {
                 onDragStart={(event) =>
                   startDrag(event, { kind: "reporter-new", blockType: def.type }, "x-ideaven-reporter")
                 }
-                className="cursor-grab rounded-full px-2.5 py-1 text-[11.5px] text-fog active:cursor-grabbing"
+                className="cursor-grab rounded-[8px] px-2.5 py-1 text-[11.5px] font-medium text-[#0b0e16] active:cursor-grabbing"
                 style={{
-                  background: `color-mix(in srgb, ${color} 14%, #12151f)`,
-                  border: `1px solid color-mix(in srgb, ${color} 40%, transparent)`,
+                  background: color,
+                  border: "1px solid rgb(10 12 18 / 0.3)",
                 }}
               >
                 {def.label.replace(/\{(\w+)\}/g, "＿")}
@@ -354,11 +354,11 @@ function PaletteStatement({
       onDragStart={onDragStart}
       onClick={onAdd}
       title="Click to append · drag to place"
-      className="cursor-grab rounded-lg px-2.5 py-2 text-left text-[12px] text-ink transition-transform hover:translate-x-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint active:cursor-grabbing"
+      className="cursor-grab rounded-[9px] px-2.5 py-2 text-left text-[12px] font-medium text-[#0b0e16] transition-transform hover:translate-x-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 active:cursor-grabbing"
       style={{
-        background: `color-mix(in srgb, ${color} 12%, #12151f)`,
-        border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`,
-        borderLeft: `4px solid ${color}`,
+        background: color,
+        border: "1px solid rgb(10 12 18 / 0.3)",
+        boxShadow: "0 2px 6px -2px rgb(0 0 0 / 0.5)",
       }}
     >
       {def.label.replace(/\{(\w+)\}/g, "＿")}

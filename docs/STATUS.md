@@ -1261,3 +1261,135 @@ Continued the stacked backlog in dependency order: two verified slices.
 
 **Next (dependency order)**: knowledge-base starter + DNA identity fields
 (7A remainder), then 5B context engine, then 6A remainder (avatars, sync).
+
+## 27. Work in session 22 (LAUNCH HARDENING — audit + P1 batch)
+
+Directive: harden for launch, fix P0→P1→P2→P3 with per-issue process. The
+referenced `LAUNCH_AUDIT.md` did not exist, so it was created from a real
+sweep first (23-page browser sweep incl. console/pageerror/HTTP≥400,
+adversarial API probes, mobile-viewport overflow checks, XSS render check,
+404 flows), then the current priority batch was executed.
+
+### Audit results (recorded in LAUNCH_AUDIT.md)
+
+- **P0: none found.** No crashes, data-loss paths, executable injection
+  (stored `<script>` name renders inert via React escaping — fixture
+  deleted after verification), auth bypasses, or broken 404/error flows.
+  API probes all correct: 404 envelope, 400 malformed JSON / wrong
+  content-type / weak password, 413 oversize, login 429 after 8 fails,
+  private-asset + unpublished-public 404s, missing-project builder message.
+- **P1-1 (fixed): `/explore` horizontal overflow 449px on 390px viewports**
+  — session-21 regression: the universal 10-type filter strip did not
+  wrap. Smallest fix: `flex-wrap` on the filter container.
+- P2/P3 recorded, not started (in-memory rate limiters, markup-like names
+  accepted, stale `e2e-projects.ps1`, operational prerequisites).
+
+### Regression harness (new, committed)
+
+`scripts/e2e-launch-audit.mjs` — repeatable launch gate: sweeps 17 pages
+for console/page errors and failed requests, asserts zero horizontal
+overflow at 390px for `/`, `/dashboard`, `/explore`. Playwright is not a
+repo dependency; point `PLAYWRIGHT_MODULE` at an installed copy. Current
+run: **clean (exit 0)**, `/explore` overflow 0px.
+
+### Verification (session 22)
+
+- Targeted: the harness (above) before/after the P1-1 fix.
+- `tsc --noEmit` clean; production `next build` green (dev stopped first,
+  restarted); both servers live; Go suite untouched (no API changes).
+- Files: `LAUNCH_AUDIT.md` (new), `scripts/e2e-launch-audit.mjs` (new),
+  `apps/web/src/app/explore/page.tsx` (one-class fix).
+
+**Next batch**: P2 (rate-limit shared store decision, name sanitization)
+only when the next hardening run starts; feature work otherwise continues
+per the 7.0 roadmap dependency column.
+
+## 28. Work in session 23 (user feedback round — six fixes)
+
+User tested localhost in their own browser and reported six issues. All
+six root-caused, fixed, and browser-verified; production rebuilt.
+
+1. **Landing demo was a static diorama** (player never moved). Rewritten as
+   a real playable mini-platformer (`hero/editor/preview-canvas.tsx`):
+   gravity + platform collisions + coin pickup + CLEAR state, ←/→/↑/WASD
+   keys captured only while running (never hijacks page scroll when idle),
+   plus on-screen ◀/⤒/▶ touch buttons. Verified: holding → moves the player
+   (x 58 → 162 → 250 via touch button).
+2. **Blocks canvas restyled to the landing visual language**: solid vivid
+   category fills with dark text (was dark tinted cards), connect notch +
+   bump on every block, solid dome hat, dark-translucent value sockets/
+   chips/inputs, solid palette swatches. The editor now matches the
+   showcase blocks on the landing page.
+3. **Extension manifest rejected Java source with a raw JSON error.** Added
+   a **Source tab** to the Extension Studio: authored code (Java/Kotlin/
+   anything) persists on the extension (migration `018_extension_source`),
+   flows through create/update/wire, and the manifest save error now
+   detects source-like text and says exactly where to paste it. Verified:
+   source prefilled from API, saves, guided error shows.
+4. **Export menu expanded to compile targets**: Web .html, Android APK
+   (`?format=apk` → assembleDebug project+workflow), Android AAB
+   (`?format=aab` → bundleDebug), and a Windows Electron project
+   (`/export/windows`, builds a portable .exe via electron-builder on a
+   desktop machine). Honesty rule kept: the server emits ready-to-build
+   projects + CI; it never fakes signed binaries. All four endpoints
+   verified live with real zips.
+5. **Theme toggle was invisible on the workspace/builder.** The existing
+   cycle toggle (Light → Dark → System, System default = auto-detect,
+   matches the OS live) is now mounted in the dashboard sidebar, the
+   mobile workspace bar, and the builder top-bar. Verified: System →
+   Light → Dark cycling flips `data-theme`.
+6. **Preview parity** (user: "preview should match the design"): the
+   builder Preview and the exports all render from the same runtime over
+   the canonical model (verified equivalent in earlier sessions); the
+   landing demo now also runs real physics, closing the "fake demo" gap
+   between marketing and product.
+
+### Verification (session 23)
+
+- `go test -count=1 ./...` green 8/8 (extension source plumbing included);
+  `tsc --noEmit` clean; production build green (fresh BUILD_ID); launch
+  audit harness clean against the production server; live checks: export
+  apk/aab/windows zips download with the right content, extension source
+  round-trips, theme cycles, demo player moves.
+- Ops note: repeated "swallowed commands" root-caused — `pkill -f "next dev"`
+  matches the calling shell's own command line and kills it; kill by
+  port-PID instead.
+
+**Next**: P2 hardening items and the phase-gated roadmap backlog (7A
+remainder, 5B context engine, 6A avatars/sync).
+
+## 29. Work in session 24 (second user feedback round — four upgrades)
+
+1. **Professional templates**: the 3 existing starters rebuilt to
+   agency-grade standard (brand tokens, gradient heroes, nav bars, pricing,
+   footers, screen-level backgrounds, working validation/feedback logic)
+   plus two new ones — **Coin Runner** (a real 3-screen game: menu →
+   tap-to-catch with live score HUD → results, win at 6) and **Tasks App**.
+   Required a new block expression: **`add`** (a + b) across the whole
+   stack — editor vocabulary, codegen, preview runtime, and the standalone
+   export runtime — so `score = score + 1` is real, not string-joined.
+2. **Emulator device frames**: preview mode wraps the screen in realistic
+   bezels — phone (side buttons, speaker slit, punch-hole camera, home
+   indicator), tablet (camera + buttons), desktop (monitor + stand).
+3. **Extensions for everyone**: new public endpoint
+   `GET /api/public/extensions` (published-only, creator usernames, real
+   install counts); the Extensions page is now three shelves — **Explore**
+   (browse + one-click install, "✓ In your palette" state), **Installed**
+   (uninstall), **Yours** (create form + Studio links). Installing is
+   wired to the existing palette flow: installed blocks appear in the
+   builder's ⬡ section.
+4. **Dashboard home Extensions section**: yours / installed / published
+   counters (fail-soft) with a link into the registry.
+
+### Verification (session 24)
+
+- Suite 8/8 (template models validated incl. new add-expression); tsc
+  clean; production build green (BUILD_ID NqlULSkK6…); launch-audit clean
+  against production.
+- Browser E2E: Coin Runner created from the gallery → builder → Preview
+  (phone frame) → PLAY → two coins caught → **SCORE 2** with the HUD
+  updating; desktop frame + stand render; extensions Explore shows the
+  public shelf with install buttons; dashboard counters live; 0 console
+  errors.
+
+**Next**: P2 hardening items; roadmap backlog per dependency columns.

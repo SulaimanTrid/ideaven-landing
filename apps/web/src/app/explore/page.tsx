@@ -47,7 +47,7 @@ export default function ExplorePage() {
           aria-label="Search projects"
           className="h-10 flex-1 rounded-lg border border-line bg-card px-3 text-[13px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
         />
-        <div className="flex gap-1 rounded-lg border border-line bg-canvas p-1" role="group" aria-label="Project type">
+        <div className="flex flex-wrap gap-1 rounded-lg border border-line bg-canvas p-1" role="group" aria-label="Project type">
           {(["all", ...PROJECT_TYPES] as const).map((t) => (
             <button
               key={t}

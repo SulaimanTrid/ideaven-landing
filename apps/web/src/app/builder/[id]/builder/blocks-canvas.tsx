@@ -259,10 +259,10 @@ export function BlocksCanvas({ handler, components, screenName }: CanvasProps) {
       >
         <div ref={contentRef} className="w-max max-w-full">
           {/* Hat block (the handler) */}
-          <div data-ui className="relative inline-block rounded-t-2xl px-4 pb-3 pt-2" style={{ background: `color-mix(in srgb, ${CATEGORY_COLORS.navigation} 16%, #141826)`, borderTop: `3px solid ${CATEGORY_COLORS.navigation}` }}>
+          <div data-ui className="relative inline-block rounded-t-[16px] px-4 pb-3 pt-2.5" style={{ background: CATEGORY_COLORS.navigation, border: "1px solid rgb(10 12 18 / 0.35)", borderBottom: "none", boxShadow: "0 2px 10px -2px rgb(0 0 0 / 0.45)" }}>
             <HatCurve color={CATEGORY_COLORS.navigation} />
-            <p className="whitespace-nowrap pr-8 text-[14px] font-medium">
-              <span className="text-sky">when</span>{" "}
+            <p className="whitespace-nowrap pr-8 text-[13.5px] font-semibold text-[#0b0e16]">
+              <span className="font-bold">when</span>{" "}
               {handler.componentId === null ? (
                 <span>Screen “{screenName}”</span>
               ) : (() => {
@@ -270,13 +270,13 @@ export function BlocksCanvas({ handler, components, screenName }: CanvasProps) {
                   return component ? (
                     <span>
                       {componentLabel(component)}{" "}
-                      <span className="text-mist">({getDef(component.type)?.label ?? component.type})</span>
+                      <span className="opacity-70">({getDef(component.type)?.label ?? component.type})</span>
                     </span>
                   ) : (
-                    <span className="text-rose">missing component</span>
+                    <span className="font-semibold text-[#7a1030]">missing component</span>
                   );
                 })()}{" "}
-              <span className="text-sky">{EVENT_LABELS[handler.event] ?? handler.event}s</span>
+              <span className="font-bold">{EVENT_LABELS[handler.event] ?? handler.event}s</span>
             </p>
             <div className="absolute right-2 top-2">
               <MiniButton label="Delete handler" danger onClick={() => actions.removeHandler(handler.id)}>
@@ -448,19 +448,27 @@ function BlockNode(props: StackProps & { block: ProjectModelBlock }) {
         event.stopPropagation();
         setSelected(isSel ? null : block.id);
       }}
-      className="relative cursor-grab rounded-lg active:cursor-grabbing"
+      className="relative cursor-grab rounded-[10px] active:cursor-grabbing"
       style={{
-        background: `color-mix(in srgb, ${color} 10%, #12151f)`,
-        border: `1px solid ${isSel ? color : `color-mix(in srgb, ${color} 35%, transparent)`}`,
-        boxShadow: isSel ? `0 0 0 2px color-mix(in srgb, ${color} 55%, transparent)` : undefined,
+        background: color,
+        border: `1px solid rgb(10 12 18 / ${isSel ? "0.55" : "0.35"})`,
+        boxShadow: isSel
+          ? `0 0 0 2.5px color-mix(in srgb, ${color} 60%, white 8%), 0 6px 18px -6px rgb(0 0 0 / 0.6)`
+          : "0 2px 8px -2px rgb(0 0 0 / 0.45)",
       }}
       aria-selected={isSel}
     >
-      {/* puzzle tab */}
+      {/* top notch cut-out (connect motif) */}
       <span
         aria-hidden
-        className="absolute -bottom-1 left-4 h-2 w-4 rounded-b-md"
-        style={{ background: `color-mix(in srgb, ${color} 26%, #12151f)` }}
+        className="absolute -top-px left-3.5 h-[5px] w-[18px] rounded-b-full bg-canvas"
+        style={{ opacity: 0.9 }}
+      />
+      {/* puzzle bump */}
+      <span
+        aria-hidden
+        className="absolute -bottom-[4px] left-3.5 h-[8px] w-[18px] rounded-b-full"
+        style={{ background: color }}
       />
 
       {/* Row actions */}
@@ -476,10 +484,10 @@ function BlockNode(props: StackProps & { block: ProjectModelBlock }) {
         </MiniButton>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2.5" style={{ borderLeft: `4px solid ${color}` }}>
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2.5">
         {parts.map((part, i) =>
           part.ref === null ? (
-            <span key={i} className="text-[13px] text-fog">
+            <span key={i} className="text-[12.5px] font-medium text-[#0b0e16]">
               {part.text}
             </span>
           ) : def?.slots?.some((s) => s.key === part.ref) ? (
@@ -569,11 +577,11 @@ function Arm({
         event.stopPropagation();
         onDrop(event);
       }}
-      className={`mx-3 mb-3 flex flex-col rounded-lg border border-dashed bg-black/20 p-2 transition-colors ${
-        over ? "border-mint" : "border-line"
+      className={`mx-3 mb-3 flex flex-col rounded-lg border border-dashed bg-black/25 p-2 transition-colors ${
+        over ? "border-mint" : "border-black/30"
       }`}
     >
-      <p className="px-1 pb-0.5 text-[10px] font-medium tracking-[0.14em] text-mist uppercase">{label}</p>
+      <p className="px-1 pb-0.5 text-[10px] font-semibold tracking-[0.14em] text-[#0b0e16]/70 uppercase">{label}</p>
       {children}
     </div>
   );
@@ -583,8 +591,8 @@ function HatCurve({ color }: { color: string }) {
   return (
     <span
       aria-hidden
-      className="absolute -top-2 left-6 h-3 w-10 rounded-t-full"
-      style={{ background: `color-mix(in srgb, ${color} 30%, #141826)` }}
+      className="absolute -top-[9px] left-5 h-[10px] w-12 rounded-t-full border border-b-0"
+      style={{ background: color, borderColor: "rgb(10 12 18 / 0.35)" }}
     />
   );
 }

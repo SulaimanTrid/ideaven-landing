@@ -119,7 +119,7 @@ export function SmallSelect({
       onChange={(event) => onChange(event.target.value)}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
-      className="h-7 max-w-44 truncate rounded-md border border-line bg-panel px-1.5 text-[12px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:opacity-50"
+      className="h-7 max-w-44 truncate rounded-[5px] border border-black/20 bg-[rgb(10_12_18_/_0.28)] px-1.5 text-[12px] text-white/95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 disabled:opacity-50 [&_option]:text-ink"
     >
       <option value="">choose…</option>
       {options.map((option) => (
@@ -238,7 +238,7 @@ export function InputEditor({
         if (event.key === "Enter") event.currentTarget.blur();
         event.stopPropagation();
       }}
-      className="h-7 w-28 rounded-md border border-line bg-panel px-2 text-[12px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+      className="h-7 w-28 rounded-[5px] border border-black/20 bg-[rgb(10_12_18_/_0.28)] px-2 text-[12px] text-white/95 placeholder:text-white/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50"
     />
   );
 }
@@ -300,10 +300,9 @@ export function SlotChip({
           const payload = readDragPayload(event);
           if (payload) accept(payload);
         }}
-        className={`inline-flex h-7 min-w-16 items-center justify-center rounded-full border border-dashed px-2 text-[12px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
-          over ? "border-solid bg-white/10" : ""
+        className={`inline-flex h-7 min-w-16 items-center justify-center rounded-[5px] border border-dashed border-black/35 px-2 text-[12px] text-black/50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 ${
+          over ? "border-solid bg-black/20 text-black/70" : "bg-[rgb(10_12_18_/_0.14)]"
         }`}
-        style={{ borderColor: over ? color : undefined }}
       >
         <span className="text-mist">＿</span>
       </span>
@@ -326,8 +325,8 @@ export function SlotChip({
         event.stopPropagation();
       }}
       onClick={(event) => event.stopPropagation()}
-      className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5"
-      style={{ borderColor: `color-mix(in srgb, ${color} 45%, transparent)`, background: "#0d1018" }}
+      className="inline-flex items-center gap-1 rounded-[5px] border border-black/25 px-1.5 py-0.5"
+      style={{ background: "rgb(10 12 18 / 0.28)" }}
     >
       {def?.inputs?.some((i) => i.key === "value") && expr.type !== "get-variable" ? (
         <InputEditor block={expr} inputKey="value" handlerId={handlerId} components={components} />

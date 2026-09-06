@@ -187,6 +187,7 @@ type Extension struct {
 	Status         string
 	Manifest       []byte
 	Docs           string
+	Source         string
 	CurrentVersion string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -203,12 +204,12 @@ type Version struct {
 
 // ---- store ------------------------------------------------------------------------
 
-const columns = `id, owner_id, slug, name, summary, kind, status, manifest, docs, current_version, created_at, updated_at`
+const columns = `id, owner_id, slug, name, summary, kind, status, manifest, docs, source, current_version, created_at, updated_at`
 
 func scanExtension(row interface{ Scan(...any) error }) (*Extension, error) {
 	var e Extension
 	err := row.Scan(&e.ID, &e.OwnerID, &e.Slug, &e.Name, &e.Summary, &e.Kind, &e.Status,
-		&e.Manifest, &e.Docs, &e.CurrentVersion, &e.CreatedAt, &e.UpdatedAt)
+		&e.Manifest, &e.Docs, &e.Source, &e.CurrentVersion, &e.CreatedAt, &e.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -235,18 +236,19 @@ type NewExtension struct {
 	Kind     string
 	Manifest []byte
 	Docs     string
+	Source   string
 }
 
 // Create inserts one extension plus its first version.
 func (s *Store) Create(ctx context.Context, input NewExtension, version string) (*Extension, error) {
 	row := s.db.QueryRowContext(ctx, `
 		WITH created AS (
-			INSERT INTO extensions (owner_id, slug, name, summary, kind, manifest, docs, current_version)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO extensions (owner_id, slug, name, summary, kind, manifest, docs, source, current_version)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			RETURNING `+columns+`
 		)
 		SELECT `+columns+` FROM created`, input.OwnerID, input.Slug, input.Name, input.Summary,
-		input.Kind, input.Manifest, input.Docs, version)
+		input.Kind, input.Manifest, input.Docs, input.Source, version)
 	created, err := scanExtension(row)
 	if err != nil {
 		return nil, fmt.Errorf("extension: create: %w", err)
@@ -293,7 +295,7 @@ func (s *Store) ListForOwner(ctx context.Context, ownerID string, limit int) ([]
 
 // UpdateMeta rewrites mutable fields; nil fields stay unchanged.
 func (s *Store) UpdateMeta(ctx context.Context, ownerID, id string,
-	name, summary *string, manifest []byte, docs *string) (*Extension, error) {
+	name, summary *string, manifest []byte, docs, source *string) (*Extension, error) {
 	sets := []string{"updated_at = now()"}
 	args := []any{ownerID, id}
 	if name != nil {
@@ -307,6 +309,10 @@ func (s *Store) UpdateMeta(ctx context.Context, ownerID, id string,
 	if docs != nil {
 		sets = append(sets, fmt.Sprintf("docs = $%d", len(args)+1))
 		args = append(args, *docs)
+	}
+	if source != nil {
+		sets = append(sets, fmt.Sprintf("source = $%d", len(args)+1))
+		args = append(args, *source)
 	}
 	if manifest != nil {
 		sets = append(sets, fmt.Sprintf("manifest = $%d", len(args)+1))
@@ -480,13 +486,14 @@ func (s *Store) VersionsByExtension(ctx context.Context, extensionID string) ([]
 // Service holds extension business logic on top of the store.
 type Service struct {
 	store   *Store
+	db      *sql.DB
 	dataDir string
 }
 
 // NewService wires a Service. dataDir is where built AIX packages live
 // (empty defaults to .data).
 func NewService(db *sql.DB, dataDir string) *Service {
-	return &Service{store: NewStore(db), dataDir: dataDir}
+	return &Service{store: NewStore(db), db: db, dataDir: dataDir}
 }
 
 func httpxNotFound(message string) *httpx.Error {
@@ -500,6 +507,48 @@ type CreateInput struct {
 	Kind     string
 	Manifest []byte
 	Docs     string
+	Source   string
+}
+
+// PublicExtensionRow is one published extension for the public shelf.
+type PublicExtensionRow struct {
+	ID             string
+	Slug           string
+	Name           string
+	Summary        string
+	Kind           string
+	CurrentVersion string
+	Creator        string
+	Installs       int
+	UpdatedAt      time.Time
+}
+
+// PublicExtensions lists every published extension with creator names and
+// install counts. Published-only by definition; nothing private leaks.
+func (s *Service) PublicExtensions(ctx context.Context) ([]PublicExtensionRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.id, e.slug, e.name, e.summary, e.kind, e.current_version,
+		       u.username, (SELECT count(*) FROM extension_installs i WHERE i.extension_id = e.id) AS installs,
+		       e.updated_at
+		FROM extensions e
+		JOIN users u ON u.id = e.owner_id
+		WHERE e.status = 'published'
+		ORDER BY installs DESC, e.updated_at DESC
+		LIMIT 60`)
+	if err != nil {
+		return nil, fmt.Errorf("extension: public list: %w", err)
+	}
+	defer rows.Close()
+	out := []PublicExtensionRow{}
+	for rows.Next() {
+		var row PublicExtensionRow
+		if err := rows.Scan(&row.ID, &row.Slug, &row.Name, &row.Summary, &row.Kind,
+			&row.CurrentVersion, &row.Creator, &row.Installs, &row.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("extension: public list scan: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 // validateID shape-checks a UUID before it reaches SQL (mirrors project).
@@ -552,7 +601,7 @@ func (s *Service) Create(ctx context.Context, ownerID string, input CreateInput)
 	slug := slugify(name)
 	created, err := s.store.Create(ctx, NewExtension{
 		OwnerID: ownerID, Slug: slug, Name: name, Summary: summary,
-		Kind: kind, Manifest: normalized, Docs: input.Docs,
+		Kind: kind, Manifest: normalized, Docs: input.Docs, Source: input.Source,
 	}, "0.1.0")
 	if err != nil {
 		return nil, fmt.Errorf("extension: create: %w", err)
@@ -587,7 +636,7 @@ func (s *Service) List(ctx context.Context, ownerID string, limit int) ([]Extens
 }
 
 // Update patches mutable fields; a manifest must validate.
-func (s *Service) Update(ctx context.Context, ownerID, id string, name, summary *string, manifest []byte, docs *string) (*Extension, error) {
+func (s *Service) Update(ctx context.Context, ownerID, id string, name, summary *string, manifest []byte, docs, source *string) (*Extension, error) {
 	if err := validateID(id); err != nil {
 		return nil, err
 	}
@@ -615,7 +664,7 @@ func (s *Service) Update(ctx context.Context, ownerID, id string, name, summary 
 		}
 		manifest = normalized
 	}
-	updated, err := s.store.UpdateMeta(ctx, ownerID, id, name, summary, manifest, docs)
+	updated, err := s.store.UpdateMeta(ctx, ownerID, id, name, summary, manifest, docs, source)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, notFound()

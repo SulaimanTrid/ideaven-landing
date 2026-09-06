@@ -102,6 +102,14 @@ export const EXPRESSION_DEFS: BlockDef[] = [
       { key: "b", label: "b" },
     ],
   },
+  {
+    type: "add", kind: "expression", category: "logic",
+    label: "{a} + {b}",
+    slots: [
+      { key: "a", label: "a" },
+      { key: "b", label: "b" },
+    ],
+  },
 ];
 
 const defsByType = new Map(

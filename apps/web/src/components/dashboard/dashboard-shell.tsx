@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
+import { ThemeToggle } from "@/theme/theme-toggle";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@ideaven/ui";
@@ -167,13 +168,19 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             Phase 3 · Workspace
           </p>
           <UserBlock />
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="px-1 text-[11.5px] text-mist">Theme</span>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 
       {/* Mobile top bar */}
       <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-line bg-canvas/85 px-4 backdrop-blur-md lg:hidden">
         <BrandLink />
-        <button
+        <div className="flex items-center gap-2">
+          <ThemeToggle compact />
+          <button
           type="button"
           className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
           aria-expanded={drawerOpen}
@@ -183,6 +190,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         >
           <IconMenu size={18} />
         </button>
+        </div>
       </div>
 
       {/* Mobile drawer */}

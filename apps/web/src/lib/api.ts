@@ -10,6 +10,7 @@ import {
 } from "@/types/auth";
 import type { ProjectIntelligence } from "@/types/intelligence";
 import type { DNAReport } from "@/types/dna";
+import type { PublicExtension } from "@/types/extension";
 import type { MemoryItem, MemoryCategory } from "@/types/memory";
 import type { ProjectIntent, IntentInput } from "@/types/intent";
 import type {
@@ -292,8 +293,11 @@ export const projectApi = {
   exportHTMLUrl(id: string): string {
     return `${API_BASE_URL}/api/projects/${encodeURIComponent(id)}/export/html`;
   },
-  exportAndroidUrl(id: string): string {
-    return `${API_BASE_URL}/api/projects/${encodeURIComponent(id)}/export/android`;
+  exportAndroidUrl(id: string, format: "apk" | "aab" = "apk"): string {
+    return `${API_BASE_URL}/api/projects/${encodeURIComponent(id)}/export/android?format=${format}`;
+  },
+  exportWindowsUrl(id: string): string {
+    return `${API_BASE_URL}/api/projects/${encodeURIComponent(id)}/export/windows`;
   },
 };
 
@@ -335,6 +339,21 @@ export const extensionApi = {
   aixUrl(id: string, version: string): string {
     return `${API_BASE_URL}/api/extensions/${encodeURIComponent(id)}/aix?version=${encodeURIComponent(version)}`;
   },
+  listPublic(): Promise<{ extensions: PublicExtension[]; total: number }> {
+    return request<{ extensions: PublicExtension[]; total: number }>("/api/public/extensions");
+  },
+
+  install(id: string): Promise<{ extension: Extension; installedVersion: string }> {
+    return request<{ extension: Extension; installedVersion: string }>(
+      `/api/extensions/${encodeURIComponent(id)}/install`,
+      { method: "POST" },
+    );
+  },
+
+  uninstall(id: string): Promise<{ ok: true }> {
+    return request<{ ok: true }>(`/api/extensions/${encodeURIComponent(id)}/install`, { method: "DELETE" });
+  },
+
   installed(): Promise<{ extensions: Extension[]; total: number }> {
     return request<{ extensions: Extension[]; total: number }>("/api/me/extensions");
   },

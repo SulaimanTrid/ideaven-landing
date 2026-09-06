@@ -6,7 +6,7 @@ import { extensionApi } from "@/lib/api";
 import type { Extension } from "@/types/extension";
 import { ApiError } from "@/types/auth";
 
-type Tab = "manifest" | "docs" | "versions" | "build";
+type Tab = "manifest" | "source" | "docs" | "versions" | "build";
 
 interface BuildResult {
   ok: boolean;
@@ -30,6 +30,7 @@ export function ExtensionStudio({ id }: { id: string }) {
 
   // Edit state per tab.
   const [manifestText, setManifestText] = useState("");
+  const [sourceText, setSourceText] = useState("");
   const [docsText, setDocsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -44,6 +45,7 @@ export function ExtensionStudio({ id }: { id: string }) {
     extensionApi.get(id).then((res) => {
       setExtension(res.extension);
       setManifestText(JSON.stringify(res.extension.manifest, null, 2));
+      setSourceText(res.extension.source ?? "");
       setDocsText(res.extension.docs);
       setBuildVersion(res.extension.currentVersion);
     }).catch((err) =>
@@ -72,16 +74,22 @@ export function ExtensionStudio({ id }: { id: string }) {
     try {
       const manifest = tab === "manifest" ? JSON.parse(manifestText) : undefined;
       const res = await extensionApi.update(id, {
-        name: tab === "manifest" ? undefined : undefined,
         manifest,
         docs: tab === "docs" ? docsText : undefined,
+        source: tab === "source" ? sourceText : undefined,
       });
       setExtension(res.extension);
       setNotice("Saved.");
     } catch (err) {
       if (err instanceof ApiError) setNotice(err.message);
-      else if (err instanceof SyntaxError) setNotice(`Manifest is not valid JSON: ${err.message}`);
-      else setNotice("Could not save. Try again shortly.");
+      else if (err instanceof SyntaxError) {
+        const looksLikeSource = /^\s*(package|import|public class|@Simple)/.test(manifestText);
+        setNotice(
+          looksLikeSource
+            ? "That looks like source code (Java), not a manifest — paste it into the Source tab. The Manifest tab only accepts JSON."
+            : `Manifest is not valid JSON: ${err.message}. The Manifest tab only accepts JSON — source code belongs in the Source tab.`,
+        );
+      } else setNotice("Could not save. Try again shortly.");
     } finally {
       setSaving(false);
     }
@@ -114,6 +122,7 @@ export function ExtensionStudio({ id }: { id: string }) {
 
   const tabs: Array<[Tab, string]> = [
     ["manifest", "Manifest"],
+    ["source", "Source"],
     ["docs", "Documentation"],
     ["versions", "Versions"],
     ["build", "Build"],
@@ -204,6 +213,38 @@ export function ExtensionStudio({ id }: { id: string }) {
               className="h-9 rounded-lg bg-violet-deep px-4 text-[12.5px] font-medium text-white transition-colors hover:bg-violet disabled:opacity-40"
             >
               {saving ? "Saving…" : "Save manifest"}
+            </button>
+            {notice ? <span className="text-[12px]">{notice}</span> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {/* Source */}
+      {tab === "source" ? (
+        <section className="rounded-2xl border border-line bg-card p-5">
+          <h3 className="text-[14px] font-semibold text-ink">Source</h3>
+          <p className="mt-1 text-[12.5px] text-fog">
+            The authored code for this extension (Java, Kotlin, anything
+            text-based). It is stored with the extension and snapshotted into
+            every version — free-form text, no JSON here.
+          </p>
+          <textarea
+            value={sourceText}
+            onChange={(event) => setSourceText(event.target.value)}
+            spellCheck={false}
+            rows={18}
+            aria-label="Extension source code"
+            placeholder={"package com.example.myextension\n\npublic class MyExtension {\n  // ...\n}"}
+            className="mt-3 w-full rounded-xl border border-line bg-code p-4 font-mono text-[12.5px] leading-6 text-fog placeholder:text-mist/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+          />
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving}
+              className="h-9 rounded-lg bg-violet-deep px-4 text-[12.5px] font-medium text-white transition-colors hover:bg-violet disabled:opacity-40"
+            >
+              {saving ? "Saving…" : "Save source"}
             </button>
             {notice ? <span className="text-[12px]">{notice}</span> : null}
           </div>

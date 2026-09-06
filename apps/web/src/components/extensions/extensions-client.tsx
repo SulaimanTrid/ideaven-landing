@@ -3,170 +3,281 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { extensionApi } from "@/lib/api";
-import type { Extension } from "@/types/extension";
 import { ApiError } from "@/types/auth";
+import type { Extension, PublicExtension } from "@/types/extension";
+import { IconPlus } from "@/components/visuals/icons";
 
 /**
- * The extension registry surface (roadmap 2.0-B, Phase A): real CRUD over
- * authored extensions and their versions. The Studio editors (manifest /
- * source / docs / build) land in Phase B on this same API — this page is the
- * registry they will open, not a placeholder.
+ * The everyone-can-use Extensions page (launch feedback): three shelves —
+ * **Explore** (every published extension from all creators, with real
+ * install counts and one-click install), **Installed** (in your palette),
+ * and **Yours** (create/author). Installing is what makes an extension's
+ * blocks appear in the builder's Blocks palette (the \u2b21 section).
  */
+
+type Shelf = "explore" | "installed" | "yours";
+
 export function ExtensionsClient() {
-  const [extensions, setExtensions] = useState<Extension[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [shelf, setShelf] = useState<Shelf>("explore");
+  const [publicItems, setPublicItems] = useState<PublicExtension[] | null>(null);
+  const [installed, setInstalled] = useState<Extension[] | null>(null);
+  const [yours, setYours] = useState<Extension[] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  // Create form (yours shelf).
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [summary, setSummary] = useState("");
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [creatingBusy, setCreatingBusy] = useState(false);
 
-  const reload = useCallback(() => {
-    extensionApi.list().then((res) => setExtensions(res.extensions)).catch((err) =>
-      setError(err instanceof ApiError ? err.message : "Could not load your extensions."),
-    );
+  const refresh = useCallback(() => {
+    extensionApi.listPublic().then((r) => setPublicItems(r.extensions)).catch(() => setPublicItems([]));
+    extensionApi.installed().then((r) => setInstalled(r.extensions)).catch(() => setInstalled([]));
+    extensionApi.list().then((r) => setYours(r.extensions)).catch(() => setYours([]));
   }, []);
   useEffect(() => {
-    reload();
-  }, [reload]);
+    refresh();
+  }, [refresh]);
 
-  const create = async () => {
-    const trimmed = name.trim();
-    if (!trimmed || creating) return;
-    setCreating(true);
-    setError(null);
+  const install = async (item: PublicExtension) => {
+    setBusy(item.id);
+    setNotice(null);
     try {
-      await extensionApi.create({
-        name: trimmed,
-        summary: summary.trim() || undefined,
-        kind: "mixed",
-      });
+      await extensionApi.install(item.id);
+      setNotice(`Installed ${item.name} \u2014 its blocks are now in your builder\u2019s Blocks palette (\u2b21 section).`);
+      refresh();
+    } catch (err) {
+      setNotice(err instanceof ApiError ? err.message : "Could not install. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const uninstall = async (extension: Extension) => {
+    setBusy(extension.id);
+    try {
+      await extensionApi.uninstall(extension.id);
+      setNotice(`Uninstalled ${extension.name}.`);
+      refresh();
+    } catch {
+      setNotice("Could not uninstall. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const create = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!name.trim() || creatingBusy) return;
+    setCreatingBusy(true);
+    try {
+      const res = await extensionApi.create({ name: name.trim(), summary: summary.trim() });
+      setNotice(`Created ${res.extension.name} \u2014 open the Studio to author it.`);
       setName("");
       setSummary("");
-      reload();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not create the extension.");
-    } finally {
       setCreating(false);
+      setShelf("yours");
+      refresh();
+    } catch (err) {
+      setNotice(err instanceof ApiError ? err.message : "Could not create. Try again.");
+    } finally {
+      setCreatingBusy(false);
     }
   };
 
-  const remove = async (extension: Extension) => {
-    if (!window.confirm(`Delete “${extension.name}” and its version history?`)) return;
-    setBusyId(extension.id);
-    try {
-      await extensionApi.remove(extension.id);
-      reload();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not delete the extension.");
-    } finally {
-      setBusyId(null);
-    }
-  };
+  const installedIds = new Set((installed ?? []).map((e) => e.id));
+  const mineIds = new Set((yours ?? []).map((e) => e.id));
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-line bg-card p-5">
-        <h2 className="text-[15px] font-semibold">New extension</h2>
-        <p className="mt-1 text-[12.5px] leading-5 text-fog">
-          Register an extension: it gets a public slug and a versioned
-          manifest. The Studio editors and .AIX build arrive in the next
-          phase — the registry below is live.
+    <div>
+      <button
+        type="button"
+        onClick={() => {
+          setShelf("yours");
+          setCreating(true);
+        }}
+        className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-violet-deep px-4 text-[13px] font-medium text-white transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+      >
+        <IconPlus size={14} /> New extension
+      </button>
+      {notice ? (
+        <p className="mt-3 rounded-lg border border-mint/30 bg-mint/[0.08] px-3 py-2 text-[12.5px] text-mint" role="status">
+          {notice}
         </p>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Extension name (e.g. Remote Control)"
-            aria-label="Extension name"
-            maxLength={60}
-            className="h-10 flex-1 rounded-lg border border-line bg-panel px-3 text-[13px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
-          />
-          <input
-            value={summary}
-            onChange={(event) => setSummary(event.target.value)}
-            placeholder="One-line summary (optional)"
-            aria-label="Extension summary"
-            maxLength={200}
-            className="h-10 flex-1 rounded-lg border border-line bg-panel px-3 text-[13px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
-          />
-          <button
-            type="button"
-            onClick={() => void create()}
-            disabled={creating || name.trim() === ""}
-            className="h-10 shrink-0 rounded-lg bg-violet-deep px-4 text-[13px] font-medium text-white transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:opacity-40"
-          >
-            {creating ? "Creating…" : "Create"}
-          </button>
-        </div>
-        {error ? <p className="mt-3 text-[12.5px] text-rose">{error}</p> : null}
-      </section>
+      ) : null}
 
-      {extensions === null ? (
-        <p className="text-sm text-fog">Loading your extensions…</p>
-      ) : extensions.length === 0 ? (
-        <div className="rounded-2xl border border-line bg-card p-10 text-center">
-          <h3 className="text-lg font-semibold text-ink">No extensions yet</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-fog">
-            Extensions add your own components, methods, events, and blocks to
-            Ideaven — packaged as .AIX and installable into any project.
-          </p>
-        </div>
-      ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {extensions.map((extension) => (
-            <li key={extension.id} className="flex h-full flex-col rounded-2xl border border-line bg-card p-5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-[11px] text-mist">
-                  {extension.kind}
-                </span>
-                <span className="rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-mist">
-                  v{extension.currentVersion}
-                </span>
-              </div>
-              <Link
-                href={`/dashboard/extensions/${extension.id}`}
-                className="mt-3 block truncate text-[15px] font-semibold text-ink hover:text-violet"
-              >
-                {extension.name}
-              </Link>
-              <p className="mt-0.5 truncate font-mono text-[11px] text-mist">{extension.slug}</p>
-              <p className="mt-2 line-clamp-2 text-[13px] leading-5 text-fog">
-                {extension.summary || "No summary."}
-              </p>
-              <dl className="mt-3 flex gap-4 text-[12px] text-fog">
-                <div>
-                  <dt className="inline text-mist">Components: </dt>
-                  <dd className="inline">{extension.manifest.components?.length ?? 0}</dd>
+      <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-line bg-canvas p-1" role="tablist" aria-label="Extension shelves">
+        {(
+          [
+            ["explore", `Explore${publicItems ? ` \u00b7 ${publicItems.length}` : ""}`],
+            ["installed", `Installed${installed ? ` \u00b7 ${installed.length}` : ""}`],
+            ["yours", `Yours${yours ? ` \u00b7 ${yours.length}` : ""}`],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={shelf === value}
+            onClick={() => setShelf(value)}
+            className={`rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+              shelf === value ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {notice && shelf !== "explore" ? null : null}
+
+      {shelf === "explore" ? (
+        publicItems === null ? (
+          <p className="mt-5 text-[13px] text-fog">Loading the public shelf\u2026</p>
+        ) : publicItems.length === 0 ? (
+          <EmptyShelf text="No published extensions yet \u2014 publish yours and it appears here for everyone." />
+        ) : (
+          <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {publicItems.map((item) => (
+              <li key={item.id} className="rounded-2xl border border-line bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-semibold text-ink">{item.name}</p>
+                    <p className="font-mono text-[10.5px] text-mist">
+                      by @{item.creator} \u00b7 v{item.version} \u00b7 {item.installs} install{item.installs === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] uppercase text-mist">
+                    {item.kind}
+                  </span>
                 </div>
-                <div>
-                  <dt className="inline text-mist">Blocks: </dt>
-                  <dd className="inline">{extension.manifest.blocks?.length ?? 0}</dd>
+                <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-5 text-fog">{item.summary}</p>
+                {installedIds.has(item.id) || mineIds.has(item.id) ? (
+                  <span className="mt-3 inline-flex rounded-lg border border-mint/40 bg-mint/10 px-3 py-1.5 text-[12px] font-medium text-mint">
+                    ✓ In your palette
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void install(item)}
+                    disabled={busy === item.id}
+                    className="mt-3 h-9 rounded-lg bg-violet-deep px-4 text-[12.5px] font-medium text-white transition-colors hover:bg-violet disabled:opacity-40"
+                  >
+                    {busy === item.id ? "Installing\u2026" : "Install"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+
+      {shelf === "installed" ? (
+        installed === null ? (
+          <p className="mt-5 text-[13px] text-fog">Loading\u2026</p>
+        ) : installed.length === 0 ? (
+          <EmptyShelf text="Nothing installed yet \u2014 install something from Explore and its blocks show up in the builder." />
+        ) : (
+          <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {installed.map((extension) => (
+              <li key={extension.id} className="rounded-2xl border border-mint/30 bg-mint/[0.05] p-4">
+                <p className="text-[14px] font-semibold text-ink">{extension.name}</p>
+                <p className="font-mono text-[10.5px] text-mist">v{extension.currentVersion}</p>
+                <p className="mt-1.5 line-clamp-2 text-[12.5px] text-fog">{extension.summary}</p>
+                <div className="mt-3 flex gap-2">
+                  <Link
+                    href={`/dashboard/extensions/${extension.id}`}
+                    className="h-9 rounded-lg border border-line px-3 text-[12px] leading-9 text-fog transition-colors hover:text-ink"
+                  >
+                    Open Studio
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => void uninstall(extension)}
+                    disabled={busy === extension.id}
+                    className="h-9 rounded-lg border border-line px-3 text-[12px] text-mist transition-colors hover:text-rose disabled:opacity-40"
+                  >
+                    Uninstall
+                  </button>
                 </div>
-                <div>
-                  <dt className="inline text-mist">Events: </dt>
-                  <dd className="inline">{extension.manifest.events?.length ?? 0}</dd>
-                </div>
-              </dl>
-              <div className="mt-auto flex gap-2 pt-4">
-                <Link
-                  href={`/dashboard/extensions/${extension.id}`}
-                  className="h-8 rounded-lg border border-line px-3 text-[12px] leading-8 text-fog transition-colors hover:text-ink"
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+
+      {shelf === "yours" ? (
+        <div className="mt-5">
+          {creating ? (
+            <form onSubmit={create} className="mb-4 rounded-2xl border border-line bg-card p-4">
+              <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">New extension</p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Extension name"
+                  aria-label="Extension name"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-panel px-3 text-[13px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+                />
+                <input
+                  value={summary}
+                  onChange={(event) => setSummary(event.target.value)}
+                  placeholder="What does it do?"
+                  aria-label="Extension summary"
+                  className="h-9 min-w-0 flex-[2] rounded-lg border border-line bg-panel px-3 text-[13px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+                />
+                <button
+                  type="submit"
+                  disabled={creatingBusy || !name.trim()}
+                  className="h-9 rounded-lg bg-violet-deep px-4 text-[12.5px] font-medium text-white transition-colors hover:bg-violet disabled:opacity-40"
                 >
-                  Open Studio
-                </Link>
+                  {creatingBusy ? "Creating\u2026" : "Create"}
+                </button>
                 <button
                   type="button"
-                  onClick={() => void remove(extension)}
-                  disabled={busyId === extension.id}
-                  className="h-8 rounded-lg border border-rose/40 px-3 text-[12px] text-rose transition-colors hover:bg-rose/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:opacity-40"
+                  onClick={() => setCreating(false)}
+                  className="h-9 rounded-lg border border-line px-3 text-[12.5px] text-fog transition-colors hover:text-ink"
                 >
-                  {busyId === extension.id ? "Deleting…" : "Delete"}
+                  Cancel
                 </button>
               </div>
-            </li>
-          ))}
-        </ul>
-      )}
+            </form>
+          ) : null}
+          {yours !== null && yours.length === 0 && !creating ? (
+            <EmptyShelf text="You haven\u2019t authored an extension yet \u2014 hit New extension and build your first." />
+          ) : (
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {(yours ?? []).map((extension) => (
+                <li key={extension.id} className="rounded-2xl border border-line bg-card p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-[14px] font-semibold text-ink">{extension.name}</p>
+                    <span className={`rounded-full px-2 py-0.5 font-mono text-[10px] uppercase ${extension.status === "published" ? "bg-mint/10 text-mint" : "bg-amber/10 text-amber"}`}>
+                      {extension.status}
+                    </span>
+                  </div>
+                  <p className="font-mono text-[10.5px] text-mist">v{extension.currentVersion} \u00b7 {extension.slug}</p>
+                  <p className="mt-1.5 line-clamp-2 text-[12.5px] text-fog">{extension.summary}</p>
+                  <Link
+                    href={`/dashboard/extensions/${extension.id}`}
+                    className="mt-3 inline-flex h-9 items-center rounded-lg border border-line px-3 text-[12px] text-fog transition-colors hover:text-ink"
+                  >
+                    Open Studio
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EmptyShelf({ text }: { text: string }) {
+  return (
+    <div className="mt-5 rounded-2xl border border-dashed border-line bg-card/50 p-8 text-center">
+      <p className="text-[13.5px] text-fog">{text}</p>
     </div>
   );
 }

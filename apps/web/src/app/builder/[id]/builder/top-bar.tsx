@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ThemeToggle } from "@/theme/theme-toggle";
 import { Logo } from "@ideaven/ui";
 import { useBuilder } from "./builder-context";
 import { PublishButton } from "./publish-button";
@@ -83,8 +84,9 @@ export function BuilderTopBar({
         })}
       </nav>
 
-      {/* Right: Ask AI + history + save */}
+      {/* Right: theme + Ask AI + history + save */}
       <div className="flex shrink-0 items-center gap-1.5">
+        <ThemeToggle compact />
         <PublishButton />
         <ExportButton />
         <button
