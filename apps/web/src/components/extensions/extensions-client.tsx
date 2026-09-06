@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { extensionApi } from "@/lib/api";
 import { ApiError } from "@/types/auth";
+import { useI18n } from "@/lib/i18n/i18n";
 import type { Extension, PublicExtension } from "@/types/extension";
 import { IconPlus } from "@/components/visuals/icons";
 
@@ -18,6 +19,7 @@ import { IconPlus } from "@/components/visuals/icons";
 type Shelf = "explore" | "installed" | "yours";
 
 export function ExtensionsClient() {
+  const { t } = useI18n();
   const [shelf, setShelf] = useState<Shelf>("explore");
   const [publicItems, setPublicItems] = useState<PublicExtension[] | null>(null);
   const [installed, setInstalled] = useState<Extension[] | null>(null);
@@ -155,7 +157,7 @@ export function ExtensionsClient() {
                 <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-5 text-fog">{item.summary}</p>
                 {installedIds.has(item.id) || mineIds.has(item.id) ? (
                   <span className="mt-3 inline-flex rounded-lg border border-mint/40 bg-mint/10 px-3 py-1.5 text-[12px] font-medium text-mint">
-                    ✓ In your palette
+                    ✓ {t("ext.inPalette")}
                   </span>
                 ) : (
                   <button

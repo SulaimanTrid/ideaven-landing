@@ -1393,3 +1393,55 @@ remainder, 5B context engine, 6A avatars/sync).
   errors.
 
 **Next**: P2 hardening items; roadmap backlog per dependency columns.
+
+## 30. Work in session 25 (master realignment — gap analysis + i18n + studio identity)
+
+Directive: realign to the 9.5/10 product bar. Phase 0/0.1 first, then the
+highest-credibility corrections.
+
+### Phase 0.1 — Gap analysis
+
+`docs/IDEAVEN_PRODUCT_GAP_ANALYSIS.md`: honest P0–P3 map. **P0: none.**
+Top P1s picked for this pass: G1 i18n (none existed), G2 App/Game studio
+identity (palette did not adapt), G4-partial (no 2D/3D game choice).
+P1-kept-for-roadmap (honest, not fakeable now): general game scene/sprite
+IR, 3D runtime, extension component runtime providers.
+
+### Implemented (session 25)
+
+1. **Real i18n (EN/ID)** — key architecture (`lib/i18n/dictionaries.ts`:
+   nav/dash/builder/ext/common groups), `I18nProvider`
+   (localStorage → browser language → English fallback), `LanguageSwitcher`
+   (site header ×2, dashboard sidebar), translations applied to site nav,
+   workspace nav, dashboard home, builder top-bar (modes, Publish/Export/
+   Assets/History/Ask AI/Save/Saved via the split button components),
+   extensions page + shelves. **Verified live**: EN→ID switch changes nav
+   ("Projects"→"Proyek"), headings ("Welcome back"→"Selamat datang
+   kembali"), builder modes ("Design/Blocks"→"Desain/Blok") and buttons
+   ("Publish/Save"→"Publikasikan/Simpan"); persists across navigation;
+   auto-detect picks up the device language (headless en-US → English,
+   system locale id → Indonesian).
+2. **Adaptive palette** — game projects surface navigation/variables/
+   control (gameplay-oriented) categories first; app projects lead with UI.
+   Same IR, no fake blocks.
+3. **Honest 2D/3D game choice** in the creation wizard: Game → "2D or 3D?"
+   — 2D fully available; 3D shows the amber "foundation in development"
+   status card (spec §69/70 compliant: coming-soon with explanation).
+4. **Fixed en route**: double `DashboardShell` wrapping on extensions/
+   templates/studio pages (two stacked fixed sidebars — caused real click
+   interception on the sidebar controls); removed the inner shells.
+5. **Docs**: README headline rewritten (no longer "Phase 1 landing page");
+   `IDEAVEN_PROGRESS.md` (single checkpoint file);
+   `docs/IDEAVEN_PRODUCT_MODEL.md`; `docs/IDEAVEN_DESIGN_SYSTEM.md`.
+
+### Verification (session 25)
+
+- `tsc` clean; production build green (BUILD_ID Gw-0ZV2… + follow-ups);
+  launch-audit harness clean against production; Go suite 8/8.
+- Browser E2E: two-way language switching with persistence, builder fully
+  translated, dashboard/extensions translated, switcher reachable
+  (double-shell bug fixed and removed).
+
+**Next (per gap analysis)**: G3 extension runtime providers, game
+scene/sprite IR milestone, i18n coverage expansion, a11y audit, P2
+hardening items.

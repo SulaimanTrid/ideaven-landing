@@ -21,6 +21,8 @@ type DeviceId = (typeof DEVICES)[number]["id"];
 
 export function BuilderCanvas() {
   const { model, activeScreenId, select, setIndicator, draggingRef, applyDrop } = useBuilder();
+  /** Game projects design against a dark SCENE stage, not a white device. */
+  const isGame = model.type === "game";
   const [device, setDevice] = useState<DeviceId>("phone");
   const [zoom, setZoom] = useState<number | "fit">("fit");
   const [fitScale, setFitScale] = useState(1);
@@ -186,7 +188,9 @@ export function BuilderCanvas() {
         >
           <div
             data-screen-frame="1"
-            className="overflow-hidden rounded-[24px] border border-line bg-white text-[#0b0e16] shadow-[0_24px_80px_-24px_rgb(0_0_0/0.8)]"
+            className={`relative overflow-hidden rounded-[24px] text-[#0b0e16] shadow-[0_24px_80px_-24px_rgb(0_0_0/0.8)] ${
+              isGame ? "border border-violet/40 bg-[#0c0f17] [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.06)_1px,transparent_0)] [background-size:22px_22px]" : "border border-line bg-white"
+            }`}
             style={{
               width: frame.width,
               height: frame.height,
@@ -196,6 +200,14 @@ export function BuilderCanvas() {
             onDragOver={onRootDragOver}
             onDrop={onRootDrop}
           >
+            {isGame ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-2 z-10 rounded-md border border-violet/40 bg-[#12151f]/90 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-violet"
+              >
+                scene · {screen.name}
+              </span>
+            ) : null}
             {/* Screen root */}
             <div
               data-node-id={screen.id}
@@ -211,7 +223,11 @@ export function BuilderCanvas() {
                 width: "100%",
                 position: "relative",
                 background:
-                  typeof screen.styles?.background === "string" ? screen.styles.background : "#ffffff",
+                  typeof screen.styles?.background === "string"
+                    ? screen.styles.background
+                    : isGame
+                      ? "#0c0f17"
+                      : "#ffffff",
                 gap: 0,
               }}
             >

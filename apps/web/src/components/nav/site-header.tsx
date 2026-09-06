@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button, ButtonLink, Container, Logo } from "@ideaven/ui";
@@ -10,19 +12,20 @@ import { ThemeToggle } from "@/theme/theme-toggle";
 import { useAuth } from "@/auth/auth-provider";
 
 const NAV_LINKS = [
-  { label: "Learn", href: "/#journey" },
-  { label: "Explore", href: "/#explore" },
-  { label: "Community", href: "/community" },
-  { label: "Pricing", href: "/pricing" },
+  { labelKey: "nav.learn", href: "/#journey" },
+  { labelKey: "nav.explore", href: "/#explore" },
+  { labelKey: "nav.community", href: "/community" },
+  { labelKey: "nav.pricing", href: "/pricing" },
 ] as const;
 
 const USER_LINKS = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Profile", href: "/profile" },
-  { label: "Settings", href: "/settings" },
+  { labelKey: "dash.home", href: "/dashboard" },
+  { labelKey: "dash.projects", href: "/dashboard/projects" },
+  { labelKey: "dash.settings", href: "/settings" },
 ] as const;
 
 export function SiteHeader() {
+  const { t } = useI18n();
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
@@ -104,12 +107,12 @@ export function SiteHeader() {
         >
           <ul className="flex items-center gap-1">
             {NAV_LINKS.map((link) => (
-              <li key={link.label}>
+              <li key={t(link.labelKey)}>
                 <Link
                   href={link.href}
                   className="rounded-md px-3 py-2 text-sm text-fog transition-colors hover:text-ink"
                 >
-                  {link.label}
+                  {t(link.labelKey)}
                 </Link>
               </li>
             ))}
@@ -157,7 +160,7 @@ export function SiteHeader() {
                           onClick={() => setMenuOpen(false)}
                           className="block rounded-lg px-3 py-2 text-sm text-fog transition-colors hover:bg-surface hover:text-ink"
                         >
-                          {link.label}
+                          {t(link.labelKey)}
                         </Link>
                       </li>
                     ))}
@@ -208,21 +211,23 @@ export function SiteHeader() {
         <Container className="py-4">
           <ul className="flex flex-col">
             {NAV_LINKS.map((link, index) => (
-              <li key={link.label}>
+              <li key={t(link.labelKey)}>
                 <Link
                   ref={index === 0 ? firstMobileLink : undefined}
                   href={link.href}
                   onClick={() => setOpen(false)}
                   className="block rounded-lg px-3 py-3 text-[15px] text-fog transition-colors hover:bg-surface hover:text-ink"
                 >
-                  {link.label}
+                  {t(link.labelKey)}
                 </Link>
               </li>
             ))}
           </ul>
           <div className="mt-4 flex items-center justify-between rounded-lg border border-line px-3 py-2">
             <span className="text-[13px] text-fog">Theme</span>
-            <ThemeToggle />
+            <LanguageSwitcher compact />
+            <LanguageSwitcher compact />
+              <ThemeToggle />
           </div>
           <div className="mt-3 flex flex-col gap-2 pb-1">
             {authenticated ? (
@@ -234,7 +239,7 @@ export function SiteHeader() {
                     href={link.href}
                     onClick={() => setOpen(false)}
                   >
-                    {link.label}
+                    {t(link.labelKey)}
                   </ButtonLink>
                 ))}
                 <Button onClick={handleSignOut} disabled={signingOut}>

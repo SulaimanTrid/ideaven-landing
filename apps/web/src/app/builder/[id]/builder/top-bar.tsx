@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ThemeToggle } from "@/theme/theme-toggle";
+import { useI18n } from "@/lib/i18n/i18n";
 import { Logo } from "@ideaven/ui";
 import { useBuilder } from "./builder-context";
 import { PublishButton } from "./publish-button";
@@ -30,6 +31,7 @@ export function BuilderTopBar({
   onToggleHistory: () => void;
 }) {
   const { project, saveState, lastSavedError, actions, saveNow, mode, setMode } = useBuilder();
+  const { t: tTop } = useI18n();
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 overflow-x-auto border-b border-line bg-panel px-3 [scrollbar-width:none] sm:px-4 [&::-webkit-scrollbar]:hidden">
@@ -57,16 +59,7 @@ export function BuilderTopBar({
       {/* Center: modes */}
       <nav aria-label="Editor modes" className="flex items-center rounded-lg border border-line bg-canvas p-1">
         {(["design", "blocks", "code", "preview", "insights"] as const).map((m) => {
-          const label =
-            m === "design"
-              ? "Design"
-              : m === "blocks"
-                ? "Blocks"
-                : m === "code"
-                  ? "Code"
-                  : m === "preview"
-                    ? "Preview"
-                    : "Insights";
+          const label = tTop(`builder.${m}` as Parameters<typeof tTop>[0]);
           const active = mode === m;
           return (
             <button
@@ -96,7 +89,7 @@ export function BuilderTopBar({
           className="flex h-9 items-center gap-1.5 rounded-lg border border-mint/40 bg-mint/10 px-3 text-[13px] font-medium text-mint transition-colors hover:bg-mint/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
         >
           <IconImage size={14} />
-          <span className="hidden sm:inline">Assets</span>
+          <span className="hidden sm:inline">{tTop("builder.assets")}</span>
         </button>
         <button
           type="button"
@@ -105,7 +98,7 @@ export function BuilderTopBar({
           className="flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-fog transition-colors hover:bg-surface-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
         >
           <IconHistory size={14} />
-          <span className="hidden sm:inline">History</span>
+          <span className="hidden sm:inline">{tTop("builder.history")}</span>
         </button>
         <button
           type="button"
@@ -114,7 +107,7 @@ export function BuilderTopBar({
           className="flex h-9 items-center gap-1.5 rounded-lg border border-violet/40 bg-violet/10 px-3 text-[13px] font-medium text-violet transition-colors hover:bg-violet/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
         >
           <IconSparkle size={14} />
-          <span className="hidden sm:inline">Ask AI</span>
+          <span className="hidden sm:inline">{tTop("builder.askAI")}</span>
         </button>
         <IconButton
           label="Undo"
@@ -181,11 +174,12 @@ function SaveStatus({
   error: string | null;
   onSave: () => void;
 }) {
+  const { t } = useI18n();
   if (state === "error") {
     return (
       <div className="flex items-center gap-2">
         <span className="hidden text-[12px] text-rose md:inline" role="status">
-          {error ?? "Save failed"}
+          {error ?? t("common.saveFailed")}
         </span>
         <button
           type="button"
@@ -200,10 +194,10 @@ function SaveStatus({
 
   const label =
     state === "saving"
-      ? "Saving…"
+      ? t("common.saving")
       : state === "dirty"
-        ? "Unsaved changes"
-        : "Saved";
+        ? t("common.unsaved")
+        : t("builder.saved");
 
   return (
     <div className="flex items-center gap-2">
@@ -221,7 +215,7 @@ function SaveStatus({
         disabled={state !== "dirty"}
         className="h-9 rounded-lg bg-violet-deep px-3.5 text-[13px] font-medium text-white shadow-[0_10px_30px_-10px] shadow-violet/50 transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:pointer-events-none disabled:opacity-40 md:disabled:opacity-60"
       >
-        Save
+        {t("builder.save")}
       </button>
     </div>
   );

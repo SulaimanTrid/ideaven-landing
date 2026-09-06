@@ -11,6 +11,7 @@ import { IconClose, IconPlus } from "@/components/visuals/icons";
  */
 export function ScreensPanel() {
   const { model, activeScreenId, actions } = useBuilder();
+  const isGame = model.type === "game";
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export function ScreensPanel() {
   return (
     <div className="border-b border-line p-3">
       <div className="flex items-center justify-between px-1 pb-1.5">
-        <h3 className="font-mono text-[10px] tracking-[0.16em] text-mist uppercase">Screens</h3>
+        <h3 className="font-mono text-[10px] tracking-[0.16em] text-mist uppercase">{isGame ? "Scenes" : "Screens"}</h3>
         <button
           type="button"
           aria-label="Add screen"

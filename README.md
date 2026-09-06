@@ -1,4 +1,12 @@
-# Ideaven — Phase 1: Landing Page & Platform Foundation
+# Ideaven — The Creation Platform
+
+> **Every idea deserves a way to exist.**
+
+Ideaven (*Idea + Haven*) is a creation platform where people build **apps**,
+**games**, and **extensions** — visually with **blocks**, or with **real
+TypeScript code**, with **AI** as a creation partner. What you build runs in
+a live preview, exports to Web/Android/Windows targets, and can be published
+for others to discover and remix.
 
 > **Every idea deserves a way to exist.**
 
@@ -7,13 +15,27 @@ and interactive experiences — visually with **blocks**, or with **real
 TypeScript code**. This repository started as **Phase 1**: a production-quality
 landing page, a clean monorepo foundation, and a minimal Go API.
 
-**Progress has moved on:** authentication, user profiles, and the project
-system (create / list / search / rename / duplicate / archive / delete, plus
-the canonical versioned Project Model) are implemented — see
-[`docs/STATUS.md`](docs/STATUS.md) for the current audit and
-[`docs/ROADMAP.md`](docs/ROADMAP.md) for what ships next (block editor,
-TypeScript editor, live preview, AI). The section below describes the original
-Phase 1 scope.
+## What ships today (all browser-verified)
+
+- **Blocks** — a Scratch-style canvas over one canonical project model:
+  drag/snap, reporters, C-blocks, zoom/pan, minimap, search, keyboard
+  shortcuts; deterministic TypeScript codegen with a block↔line source map.
+- **Preview runtime** — executes the same model live (events, navigation,
+  state, if/else, arithmetic) inside device-framed emulators (phone/tablet/
+  desktop).
+- **AI** — plan → preview → apply changesets with a credit ledger, project
+  memory, and project intent injected into every plan.
+- **Extensions** — manifest v1, Source tab, isolated AIX build worker
+  (sha256 artifacts), public shelf with one-click install into the builder
+  palette.
+- **Projects** — versioned model history (restore), publishing/remix,
+  explore gallery, creators, templates (incl. the playable Coin Runner
+  game), intelligence/DNA/graph surfaces, export to Web/Android(APK/AAB)/
+  Windows Electron projects.
+
+See [`docs/STATUS.md`](docs/STATUS.md) (session log), the roadmap files for
+the phase-gated backlog, and [`docs/IDEAVEN_PRODUCT_GAP_ANALYSIS.md`](docs/IDEAVEN_PRODUCT_GAP_ANALYSIS.md)
+for the honest gap map.
 
 ---
 

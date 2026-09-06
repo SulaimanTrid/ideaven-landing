@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { projectApi } from "@/lib/api";
+import { useI18n } from "@/lib/i18n/i18n";
 import { useBuilder } from "./builder-context";
 
 /**
@@ -24,6 +25,7 @@ type Target = {
 
 export function ExportButton() {
   const { project, saveState } = useBuilder();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -84,12 +86,12 @@ export function ExportButton() {
           <path d="M12 5v14" />
           <path d="m19 12-7 7-7-7" />
         </svg>
-        <span className="hidden lg:inline">Export</span>
+        <span className="hidden lg:inline">{t("builder.export")}</span>
       </button>
 
       {open ? (
         <div className="absolute right-0 top-11 z-50 w-96 max-w-[94vw] rounded-xl border border-line bg-card p-4 shadow-2xl">
-          <h3 className="text-[13.5px] font-semibold">Export &amp; compile</h3>
+          <h3 className="text-[13.5px] font-semibold">{t("builder.export")} &amp; compile</h3>
           <p className="mt-1 text-[12px] leading-5 text-fog">
             Every target runs your saved model through the standalone runtime.
           </p>

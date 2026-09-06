@@ -233,7 +233,19 @@ export function BlockPalette() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statements, query]);
 
-  const reporterItems = reporters.filter((def) => matches(def.label, def.type));
+  // Palette adapts to the project type (realignment §11): game projects
+  // surface flow/state/control first — the gameplay-oriented categories —
+  // while app projects lead with UI. Same IR, same blocks, different order.
+  const isGame = model.type === "game";
+  const categoryOrder = isGame
+    ? ["navigation", "variables", "control", "ui", "text", "logic"]
+    : ["ui", "variables", "navigation", "control", "text", "logic"];
+  const orderedCategories = [...groups.byCategory.entries()].sort(
+    (a, b) => categoryOrder.indexOf(a[0]) - categoryOrder.indexOf(b[0]),
+  );
+
+
+    const reporterItems = reporters.filter((def) => matches(def.label, def.type));
 
   return (
     <div className="flex flex-col gap-4 p-3">
@@ -257,7 +269,7 @@ export function BlockPalette() {
           </p>
         ) : (
           <div className="flex flex-col gap-3">
-            {[...groups.byCategory.entries()].map(([category, defs]) => (
+            {orderedCategories.map(([category, defs]) => (
               <div key={category} className="flex flex-col gap-1.5">
                 <p className="px-1 text-[11px] font-medium text-mist">{category}</p>
                 {defs.map((def) => (

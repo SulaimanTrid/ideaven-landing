@@ -25,12 +25,14 @@ import {
  */
 
 type CreationMethod = "blank" | "template" | "ai";
+type GameDimension = "2d" | "3d" | null;
 
 export function CreateProjectClient() {
   const router = useRouter();
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 12>(1);
   const [projectType, setProjectType] = useState<ProjectType | null>(null);
+  const [gameDimension, setGameDimension] = useState<GameDimension>(null);
   const [method, setMethod] = useState<CreationMethod | null>(null);
   const [templates, setTemplates] = useState<TemplateBrief[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateBrief | null>(null);
@@ -110,7 +112,8 @@ export function CreateProjectClient() {
                 icon={<IconGamepad size={26} />}
                 onSelect={() => {
                   setProjectType("game");
-                  setStep(2);
+                  setGameDimension(null);
+                  setStep(12);
                 }}
               />
             </div>
@@ -136,9 +139,55 @@ export function CreateProjectClient() {
           </section>
         ) : null}
 
+        {step === 12 && projectType === "game" ? (
+          <section aria-labelledby="create-dim" className="mt-8">
+            <Chip tone="violet">New Game</Chip>
+            <h1 id="create-dim" className="mt-5 text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+              2D or 3D?
+            </h1>
+            <p className="mt-3 max-w-xl text-pretty text-lg leading-8 text-fog">
+              Pick the dimension you want to work in.
+            </p>
+            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TypeCard
+                title="2D"
+                description="Sprites, scenes, scores, and gameplay — fully supported today. Pick a template or start blank."
+                icon={<IconAppWindow size={26} />}
+                onSelect={() => {
+                  setGameDimension("2d");
+                  setStep(2);
+                }}
+              />
+              <TypeCard
+                title="3D"
+                description="Foundation in development — the 2D tooling is fully available today, and 3D scenes build on the same blocks."
+                icon={<IconGamepad size={26} />}
+                onSelect={() => {
+                  setGameDimension("3d");
+                  setStep(2);
+                }}
+              />
+            </div>
+            {gameDimension === "3d" ? (
+              <p className="mt-6 rounded-xl border border-amber/40 bg-amber/10 px-4 py-3 text-[13px] leading-6 text-amber" role="note">
+                Honest status: 3D scenes are the next engine milestone — today you can
+                build and play the 2D workflow end to end. Your project can adopt 3D
+                scenes when the foundation lands.
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="mt-6 text-[13px] text-mist transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+            >
+              ← Change project type
+            </button>
+          </section>
+        ) : null}
+
         {step === 2 ? (
           <section aria-labelledby="create-how" className="mt-8">
-            <Chip tone="violet">New {projectType ? projectTypeLabel(projectType) : "Project"}</Chip>
+            <Chip tone="violet">New {projectType ? projectTypeLabel(projectType) : "Project"}{gameDimension === "3d" ? " · 3D (foundation)" : ""}</Chip>
             <h1 id="create-how" className="mt-5 text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
               How do you want to start?
             </h1>

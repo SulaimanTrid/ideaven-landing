@@ -60,7 +60,7 @@ export function BlocksMode() {
     <div className="flex min-w-0 flex-1 flex-col bg-canvas">
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
         <p className="text-[13px] text-fog">
-          Blocks for <span className="font-medium text-ink">{screen.name}</span>
+          {model.type === "game" ? "Scene logic for " : "Blocks for "}<span className="font-medium text-ink">{screen.name}</span>
         </p>
         <p className="hidden text-[12px] text-mist sm:block">
           Drag blocks to snap · click to select · Del removes · Ctrl+wheel zooms

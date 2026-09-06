@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n/i18n";
 import QRCode from "qrcode";
 import { projectApi } from "@/lib/api";
 import { ApiError } from "@/types/auth";
@@ -12,6 +13,7 @@ import { useBuilder } from "./builder-context";
  * republish, and unpublishing removes the public page immediately.
  */
 export function PublishButton() {
+  const { t } = useI18n();
   const { project, saveNow } = useBuilder();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -94,7 +96,7 @@ export function PublishButton() {
           <path d="M12 19V5" />
           <path d="m5 12 7-7 7 7" />
         </svg>
-        <span className="hidden sm:inline">{published ? "Published" : "Publish"}</span>
+        <span className="hidden sm:inline">{published ? t("builder.saved") : t("builder.publish")}</span>
       </button>
 
       {open ? (

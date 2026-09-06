@@ -3,6 +3,7 @@ import { Sora } from "next/font/google";
 import Script from "next/script";
 import { AuthProvider } from "@/auth/auth-provider";
 import { ThemeProvider, THEME_BOOTSTRAP_SCRIPT } from "@/theme/theme-provider";
+import { I18nProvider } from "@/lib/i18n/i18n";
 import { SiteHeader } from "@/components/nav/site-header";
 import { FooterGate } from "@/components/footer/footer-gate";
 import { SiteFooter } from "@/components/footer/site-footer";
@@ -77,6 +78,7 @@ export default function RootLayout({
           Skip to content
         </a>
         <ThemeProvider>
+          <I18nProvider>
           <AuthProvider>
             <SiteHeader />
             <main id="main">{children}</main>
@@ -84,6 +86,7 @@ export default function RootLayout({
               <SiteFooter />
             </FooterGate>
           </AuthProvider>
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>

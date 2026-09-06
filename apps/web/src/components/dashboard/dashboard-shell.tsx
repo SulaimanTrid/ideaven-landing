@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
+import { useI18n } from "@/lib/i18n/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/theme/theme-toggle";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -25,7 +27,7 @@ import {
  */
 
 type NavItem = {
-  label: string;
+  labelKey: string;
   href: string;
   icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
   /** True when the route lives outside the workspace chrome. */
@@ -33,12 +35,12 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Home", href: "/dashboard", icon: IconHome },
-  { label: "Projects", href: "/dashboard/projects", icon: IconBlocks },
-  { label: "Templates", href: "/dashboard/templates", icon: IconTemplates },
-  { label: "Extensions", href: "/dashboard/extensions", icon: IconTemplates },
-  { label: "Community", href: "/community", icon: IconUsers, external: true },
-  { label: "Settings", href: "/settings", icon: IconSettings, external: true },
+  { labelKey: "dash.home", href: "/dashboard", icon: IconHome },
+  { labelKey: "dash.projects", href: "/dashboard/projects", icon: IconBlocks },
+  { labelKey: "dash.templates", href: "/dashboard/templates", icon: IconTemplates },
+  { labelKey: "dash.extensions", href: "/dashboard/extensions", icon: IconTemplates },
+  { labelKey: "nav.community", href: "/community", icon: IconUsers, external: true },
+  { labelKey: "dash.settings", href: "/settings", icon: IconSettings, external: true },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -55,6 +57,7 @@ function NavList({
   onNavigate?: () => void;
   firstLinkRef?: React.Ref<HTMLAnchorElement>;
 }) {
+  const { t } = useI18n();
   return (
     <ul className="flex flex-col gap-1">
       {NAV_ITEMS.map((item, index) => {
@@ -83,7 +86,7 @@ function NavList({
                 size={17}
                 className={active ? "text-violet" : "text-mist group-hover:text-fog"}
               />
-              {item.label}
+              {t(item.labelKey as Parameters<typeof t>[0])}
             </Link>
           </li>
         );
@@ -171,6 +174,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <div className="mt-2 flex items-center justify-between gap-2">
             <span className="px-1 text-[11.5px] text-mist">Theme</span>
             <ThemeToggle />
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="px-1 text-[11.5px] text-mist">Language</span>
+            <LanguageSwitcher compact />
           </div>
         </div>
       </aside>
