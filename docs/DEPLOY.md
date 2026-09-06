@@ -1,103 +1,92 @@
 # DEPLOY — Ideaven Online
 
 Panduan mengubah Ideaven dari projek lokal menjadi aplikasi web yang bisa
-diakses siapa saja. Semua layanan punya paket gratis.
+diakses siapa saja. Hanya butuh **dua layanan**, keduanya gratis:
+**Neon** (database PostgreSQL) dan **Vercel** (frontend + API sekaligus,
+via Vercel Services).
 
 ```
-┌─────────────┐     HTTPS      ┌─────────────┐     Postgres     ┌─────────┐
-│  Vercel     │ ─────────────► │  Render     │ ───────────────► │  Neon   │
-│  (apps/web) │                │  (apps/api) │                  │  (DB)   │
-└─────────────┘                └─────────────┘                  └─────────┘
-  Frontend Next.js               API Go                         Database
+                         Vercel (satu project, satu domain)
+        ┌──────────────────────────────────────────────────────────┐
+        │  web  (apps/web, Next.js)          →  semua path         │
+        │  api  (apps/api, Go)               →  path /api/*        │
+        └──────────────────────────┬───────────────────────────────┘
+                                   │ DATABASE_URL
+                                   ▼
+                            Neon PostgreSQL
 ```
 
-Urutan pengerjaan: **Neon → Render → Vercel → sambungkan ulang CORS**.
-Variabel `VERCEL_URL` di bawah baru diketahui setelah Vercel selesai, jadi
-langkah terakhir adalah mengisi ulang env Render lalu redeploy.
+Routing didefinisikan di `vercel.json` root: `/api/*` ke service `api`,
+sisanya ke service `web`. Karena satu domain, cookie session otomatis
+same-origin dan tidak perlu CORS lintas domain.
+
+> Jalur alternatif (jika suatu saat ingin API long-running terpisah, misal
+> Render): blueprint `render.yaml` masih ada di repo, lihat riwayat git.
 
 ---
 
 ## 1. Neon — database PostgreSQL (gratis)
 
-1. Buka <https://neon.com> → **Sign up with GitHub**.
-2. Buat project baru (nama bebas, misal `ideaven`). Region terdekat:
-   `Singapore`.
-3. Setelah project jadi, salin **Connection string** (dimulai dengan
-   `postgresql://...neon.tech/...?sslmode=require`). Ini nilai `DATABASE_URL`.
+1. Buka <https://neon.com> → **Sign up with GitHub** (sudah dilakukan ✓).
+2. Buat project baru (nama bebas, misal `ideaven`).
+3. Salin **Connection string** yang berakhiran `-pooler...neon.tech/...?sslmode=require`
+   — gunakan varian **Pooled** (wajib untuk compute Vercel yang concurrency-nya
+   tinggi). Ini nilai `DATABASE_URL`.
 
-> Migrasi tabel dijalankan otomatis oleh API saat pertama kali start —
-> tidak perlu import SQL manual.
+> Migrasi tabel dijalankan otomatis oleh API saat start — tidak perlu
+> import SQL manual.
 
-## 2. Render — API Go (gratis)
+## 2. Vercel — web + API (gratis, satu project)
 
-1. Buka <https://render.com> → **Sign up with GitHub**, izinkan akses repo
-   `SulaimanTrid/ideaven-landing`.
-2. **New +** → **Blueprint** → pilih repo `ideaven-landing`. Render membaca
-   `render.yaml` dan mengisi sebagian besar pengaturan otomatis.
-3. Isi tiga variabel yang ditandai `sync: false`:
-   - `DATABASE_URL` → connection string dari Neon (langkah 1).
-   - `API_ALLOWED_ORIGINS` → isi dulu `https://placeholder` (diperbarui di
-     langkah 4 dengan URL Vercel yang sebenarnya).
-   - `APP_URL` → sama, `https://placeholder` untuk saat ini.
-4. **Apply** → Render membangun image Docker dari `apps/api/Dockerfile`.
-   `SESSION_SECRET` dibuat otomatis oleh Render.
-5. Tunggu status **Live**, lalu catat URL-nya, misal
-   `https://ideaven-api.onrender.com`. Uji: buka
-   `https://ideaven-api.onrender.com/api/health` (atau endpoint health yang
-   tersedia) — respons JSON berarti API hidup.
-
-> Paket free Render "tidur" setelah ±15 menit tanpa trafik; request pertama
-> berikutnya butuh 30–60 detik untuk bangun. Ini normal untuk free tier.
-
-## 3. Vercel — frontend Next.js (gratis)
+### Import
 
 1. Buka <https://vercel.com> → **Sign up with GitHub**.
-2. **Add New** → **Project** → import `SulaimanTrid/ideaven-landing`.
-3. Sebelum menekan Deploy, atur:
-   - **Root Directory** → `apps/web` (Vercel mendeteksi Next.js otomatis).
-   - **Environment Variables**:
-     | Key | Value |
-     |---|---|
-     | `NEXT_PUBLIC_API_URL` | URL Render dari langkah 2, misal `https://ideaven-api.onrender.com` |
-     | `NEXT_PUBLIC_SITE_URL` | URL Vercel default, misal `https://ideaven-landing.vercel.app` (boleh diisi belakangan lewat Settings jika belum yakin) |
-4. **Deploy** → tunggu selesai, catat URL produksi
-   `https://<vercel-anda>.vercel.app`.
+2. **Add New… → Project** → import `SulaimanTrid/ideaven-landing`.
+3. Biarkan **Root Directory kosong** (repo root) — `vercel.json` yang
+   mengatur dua service. Framework tidak perlu dipilih manual.
+4. Sebelum menekan Deploy, isi **Environment Variables** (scope: All):
 
-## 4. Sambungkan ulang CORS (Render)
+   | Key | Value | Catatan |
+   |---|---|---|
+   | `API_ENV` | `production` | Wajib. Cookie `Secure` + validasi ketat. |
+   | `DATABASE_URL` | `postgresql://...pooler...neon.tech/neondb?sslmode=require` | Dari langkah 1. |
+   | `SESSION_SECRET` | output `openssl rand -hex 32` | Wajib di produksi. |
+   | `API_ALLOWED_ORIGINS` | `https://<nama-anda>.vercel.app` | URL produksi Vercel. Isi dulu `https://placeholder.vercel.app` jika URL belum terbentuk; perbarui setelah deploy pertama. |
+   | `APP_URL` | sama dengan `API_ALLOWED_ORIGINS` | Dipakai untuk link di email. |
+   | `NEXT_PUBLIC_SITE_URL` | sama dengan di atas | Canonical URL & sitemap. |
 
-Frontend dan API saling memanggil lintas domain, jadi API harus mengizinkan
-origin Vercel:
+   `NEXT_PUBLIC_API_URL` **tidak perlu diisi** — default-nya same-origin.
 
-1. Di Render, buka layanan `ideaven-api` → **Environment**.
-2. Ubah:
-   - `API_ALLOWED_ORIGINS` → `https://<vercel-anda>.vercel.app`
-   - `APP_URL` → `https://<vercel-anda>.vercel.app`
-3. **Save** — Render otomatis redeploy. Selesai: buka URL Vercel, Ideaven
-   sudah online dan bisa login/register.
+5. **Deploy.** Vercel membangun kedua service: Next.js (apps/web) dan API
+   Go (apps/api, entrypoint `cmd/api/main.go`, listen otomatis mengikuti
+   env `PORT`).
+
+### Setelah deploy pertama
+
+1. Catat URL produksi (misal `https://ideaven-landing.vercel.app`).
+2. Jika tadi masih placeholder: **Project → Settings → Environment
+   Variables** → perbarui `API_ALLOWED_ORIGINS`, `APP_URL`, dan
+   `NEXT_PUBLIC_SITE_URL` dengan URL asli → **Redeploy** (Deployments → ⋯
+   → Redeploy).
+3. Uji kesehatan: buka `https://<nama-anda>.vercel.app/api/health` — harus
+   menjawab JSON `{"status":"ok",...}`. Lanjut uji register/login dari
+   halaman utama.
 
 ---
 
-## Opsional
+## Batasan & catatan produksi
 
-### Fitur Ask AI
-
-Tanpa variabel berikut API tetap hidup, hanya fitur Ask AI yang mati:
-
-| Key | Contoh |
-|---|---|
-| `AI_PROVIDER` | `openai` atau `anthropic` |
-| `AI_API_KEY` | API key provider |
-| `AI_MODEL` | misal `gpt-4o-mini` |
-| `AI_BASE_URL` | hanya jika pakai gateway kompatibel |
-
-### Domain sendiri
-
-- Vercel: Settings → Domains, lalu tambahkan domain baru itu ke
-  `API_ALLOWED_ORIGINS` dan `NEXT_PUBLIC_SITE_URL`.
-
-### Catatan produksi
-
-- `API_ENV=production` memaksa cookie `Secure` dan menolak start tanpa
-  `SESSION_SECRET` / `API_ALLOWED_ORIGINS` — jangan turunkan ke `development`.
-- Image Docker API sengaja membawa toolchain Go karena fitur *extension
-  build* menjalankan `go run` saat runtime.
+- **Extension build tidak aktif di Vercel.** Fitur build extension
+  menjalankan `go run ./cmd/extbuild` saat runtime, dan runtime Go Vercel
+  tidak menyertakan toolchain Go. Fitur lain (auth, project, builder,
+  publish, asset) berjalan normal. Bila fitur ini dibutuhkan online, pindah
+  service API ke runtime `container` (Dockerfile `apps/api/Dockerfile`
+  sudah membawa toolchain) atau hosting terpisah.
+- **Fitur Ask AI aktif hanya jika diisi** `AI_PROVIDER`, `AI_API_KEY`,
+  `AI_MODEL` (dan `AI_BASE_URL` bila memakai gateway kompatibel). Tanpa itu
+  API tetap hidup, fitur Ask AI yang mati.
+- **Migrasi dijalankan tiap instance API start** — idempoten, aman.
+- Paket gratis Vercel membatasi durasi & resource function; cukup untuk
+  showcase dan penggunaan ringan, bukan beban produksi berat.
+- `API_ENV=production` menolak start tanpa `SESSION_SECRET` dan
+  `API_ALLOWED_ORIGINS` — jangan turunkan ke `development`.

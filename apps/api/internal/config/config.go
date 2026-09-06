@@ -69,7 +69,7 @@ func (c Config) IsProduction() bool { return c.Env == EnvProduction }
 // Load reads configuration from the environment and .env files:
 //
 //	API_ENV               development | production   (default development)
-//	API_ADDR              listen address             (default ":8080")
+//	API_ADDR              listen address             (default PORT, then ":8080")
 //	API_ALLOWED_ORIGINS   comma-separated CORS origins (dev default localhost:3000)
 //	DATABASE_URL          PostgreSQL DSN             (dev default local podman DB)
 //	SESSION_SECRET        hex-encoded HMAC key       (dev: auto-generated)
@@ -117,8 +117,9 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		Env:            env,
-		Addr:           envOr("API_ADDR", ":8080"),
+		Env: env,
+		// Managed platforms (Vercel, Render) dictate the port via PORT.
+		Addr:           envOr("API_ADDR", envOr("PORT", ":8080")),
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		AllowedOrigins: allowed,

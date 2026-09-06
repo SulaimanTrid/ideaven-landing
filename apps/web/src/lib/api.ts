@@ -38,7 +38,10 @@ import type {
  * so every call sends credentials and no token is ever stored in JavaScript.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+// Empty = same-origin: in production the API service lives behind /api/* on
+// the same domain (Vercel services), so no host is prepended. Local dev sets
+// NEXT_PUBLIC_API_URL in .env.local (e.g. http://localhost:8081).
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
