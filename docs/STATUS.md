@@ -1200,3 +1200,64 @@ START rule, M0 ran first; Phase 7A began (no blocker) with slice 1.
 **Next**: Phase 7A remainder (universal project `type` migration, then the
 knowledge-base starter), interleaved with the 5.0/6.0 backlog per the
 dependency column.
+
+## 26. Work in session 21 ("lanjutkan semua" — universal types + command center)
+
+Continued the stacked backlog in dependency order: two verified slices.
+
+### A — Universal project types (7.0 M7, closes part of 7A) ✅
+
+- Migration `017_project_types`: the `projects.type` check constraint now
+  carries the 10-type vocabulary (app, game, website, backend, api,
+  database, experience, extension, tool, education).
+- Server: one `typeVocabulary` map backs both create validation and
+  `ValidateModel` (the second check was found by the new test — project
+  creation passed but the initial model PUT still rejected non-app/game).
+- Web: `ProjectType` union extended; `lib/project-meta.ts` adds
+  `projectTypeLabel()` and replaces every binary `=== "game" ? "Game" :
+  "App"` ternary across project cards, explore, public pages, creator
+  pages, builder top-bar, and template gallery; creation flow gains
+  "More kinds" chips under the two flagship cards plus an honest
+  "no templates for this type yet" state; explore filters list all types.
+- Tests: new `TestUniversalProjectTypes` (all 8 new types create+persist,
+  invalid type 400); old tests that used "website" as their invalid-type
+  fixture updated to "hologram".
+- Browser E2E: guided flow chip "Website" → "NEW WEBSITE" chip → blank →
+  named → created → project list shows `website | Portfolio Site`.
+
+### B — Command Center, Ctrl+K (4.0 M5 palette half; 7.0 M44/M263) ✅
+
+- `components/command-palette/command-palette.tsx` mounted in the
+  dashboard layout and inside the builder session — one platform-chrome
+  component, context-aware via pathname: navigation commands (projects,
+  templates, extensions, explore, community, learn, docs, pricing,
+  settings), lazy-loaded project search (Enter opens the builder),
+  builder-only commands (mode switches via the real buttons, Assets,
+  Ask AI), and theme toggle.
+- Keyboard model: Ctrl+K toggle, ↑/↓ move, Enter runs, Esc closes,
+  hover-syncs selection; grouped, filtered results with type hints.
+- Browser E2E: open → search "star" → Enter lands in the project's
+  builder; palette exposes builder commands there; "blocks" switches the
+  mode (aria-current verified); theme toggles both ways through the
+  palette and it reopens afterwards; Esc closes; explore shows new-type
+  filters — zero console errors. (En route finding: assertions must wait
+  for hydration before real-keyboard tests; a mid-test crash also taught
+  the theme-toggle label flips with `resolved` — both test artifacts, the
+  instrumented re-run proved close/run/reopen correct.)
+
+### Verification (session 21, consolidated)
+
+- `go test -count=1 ./...` green 8/8 (incl. the new universal-types
+  suite); `tsc --noEmit` clean; production `next build` green (dev
+  stopped first, restarted after); both servers live.
+- Security: no new endpoints; type validation tightened to a closed list
+  server-side (constraint + Go), so unknown types cannot be persisted.
+- Files: `migrations/017_project_types.sql`, `internal/project/{model,service}.go`
+  + tests, web `lib/project-meta.ts` (new), `types/project.ts`,
+  `components/command-palette/command-palette.tsx` (new),
+  `app/dashboard/layout.tsx`, builder.tsx, create-project-client.tsx,
+  explore/page.tsx, project-card.tsx, template-gallery.tsx, top-bar.tsx,
+  public/creator pages.
+
+**Next (dependency order)**: knowledge-base starter + DNA identity fields
+(7A remainder), then 5B context engine, then 6A remainder (avatars, sync).
