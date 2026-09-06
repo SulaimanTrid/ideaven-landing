@@ -17,6 +17,35 @@ interface BuildResult {
   error?: string;
 }
 
+
+// ---- manifest editor helpers (Task 02) -------------------------------------
+
+/** The real manifest schema example — loads and saves against the server. */
+const MANIFEST_EXAMPLE = `{
+  "format": 1,
+  "components": [],
+  "methods": [
+    { "id": "reverseText", "label": "Reverse text" }
+  ],
+  "events": [],
+  "blocks": [],
+  "dependencies": []
+}`;
+
+function errorPosition(message: string, code: string): { line: number; column: number } {
+  const match = message.match(/position (\d+)/);
+  if (!match) return { line: 1, column: 1 };
+  const pos = Number(match[1]);
+  const upto = code.slice(0, pos);
+  const lines = upto.split("\n");
+  return { line: lines.length, column: (lines[lines.length - 1]?.length ?? 0) + 1 };
+}
+
+/** Detects authored source code pasted into the manifest editor. */
+function looksLikeSource(code: string): boolean {
+  return /^\s*(package|import|public class|@Simple)/.test(code);
+}
+
 /**
  * The Extension Studio (roadmap 2.0 Phase 1): manifest/docs/versions/build
  * over the real registry API. Build runs the isolated worker pipeline —
@@ -31,6 +60,7 @@ export function ExtensionStudio({ id }: { id: string }) {
   // Edit state per tab.
   const [manifestText, setManifestText] = useState("");
   const [sourceText, setSourceText] = useState("");
+  const [copied, setCopied] = useState(false);
   const [docsText, setDocsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -192,19 +222,72 @@ export function ExtensionStudio({ id }: { id: string }) {
       {/* Manifest */}
       {tab === "manifest" ? (
         <section className="rounded-2xl border border-line bg-card p-5">
-          <h3 className="text-[14px] font-semibold text-ink">Manifest</h3>
+          <h3 className="text-[14px] font-semibold text-ink">Manifest JSON</h3>
           <p className="mt-1 text-[12.5px] text-fog">
-            Components, methods, events, blocks, and dependencies — format 1.
-            The server validates every save.
+            The manifest is <strong className="text-ink">information about</strong> the
+            extension in JSON (format 1 — the server validates every save). Program
+            code belongs in the{" "}
+            <button type="button" onClick={() => setTab("source")} className="underline hover:text-ink">Source tab</button>.
           </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => { try { setManifestText(JSON.stringify(JSON.parse(manifestText), null, 2)); setNotice(null); } catch { setNotice("Cannot format — fix the JSON first (see the message below)."); } }} className="h-8 rounded-lg border border-line px-2.5 text-[12px] text-fog transition-colors hover:text-ink">Format document</button>
+            <button type="button" onClick={() => { setManifestText(MANIFEST_EXAMPLE); setNotice(null); }} className="h-8 rounded-lg border border-line px-2.5 text-[12px] text-fog transition-colors hover:text-ink">Reset to example</button>
+            <button type="button" onClick={() => { void navigator.clipboard?.writeText(manifestText); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }} className="h-8 rounded-lg border border-line px-2.5 text-[12px] text-fog transition-colors hover:text-ink">{copied ? "Copied!" : "Copy"}</button>
+          </div>
           <textarea
             value={manifestText}
             onChange={(event) => setManifestText(event.target.value)}
             spellCheck={false}
-            rows={18}
+            rows={16}
             aria-label="Extension manifest JSON"
-            className="mt-3 w-full rounded-xl border border-line bg-code p-4 font-mono text-[12.5px] leading-6 text-fog focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+            className="mt-2 w-full rounded-xl border border-line bg-code p-4 font-mono text-[12.5px] leading-6 text-fog focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
           />
+          {(() => {
+            if (manifestText.trim() === "") return null;
+            try {
+              JSON.parse(manifestText);
+              return <p className="mt-2 text-[12px] text-mint">✓ Valid JSON — ready to save.</p>;
+            } catch (err) {
+              const message = err instanceof Error ? err.message : "Invalid JSON";
+              const pos = message.match(/position (\d+)/);
+              const upto = pos ? manifestText.slice(0, Number(pos[1])).split("\n") : null;
+              const lineNo = upto ? upto.length : 1;
+              const col = upto ? (upto[upto.length - 1]?.length ?? 0) + 1 : 1;
+              const sourceLike = looksLikeSource(manifestText);
+              return (
+                <div className="mt-2 rounded-xl border border-rose/40 bg-rose/[0.07] p-3 text-[12.5px] leading-5">
+                  <p className="font-medium text-rose">Manifest validation failed.</p>
+                  <p className="mt-1 text-fog">Line {lineNo}, column {col} — {message}.</p>
+                  {sourceLike ? (
+                    <p className="mt-1 text-fog">
+                      This looks like <strong className="text-ink">source code</strong> (Java/Kotlin), not JSON. Open the{" "}
+                      <button type="button" onClick={() => setTab("source")} className="underline">Source tab</button> and paste the program there —
+                      this tab only holds the JSON manifest.
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-fog">
+                      The manifest must be one valid JSON object —{" "}
+                      <button type="button" onClick={() => setManifestText(MANIFEST_EXAMPLE)} className="underline">Reset to example</button> gives
+                      a valid starting point.
+                    </p>
+                  )}
+                </div>
+              );
+            }
+          })()}
+          <details className="mt-3 rounded-xl border border-line bg-panel/60 p-3">
+            <summary className="cursor-pointer text-[12.5px] font-medium text-fog">Manifest vs Source — the simple version</summary>
+            <div className="mt-2 grid grid-cols-1 gap-3 text-[12.5px] leading-5 sm:grid-cols-2">
+              <div className="rounded-lg border border-line bg-panel p-3">
+                <p className="font-semibold text-ink">Manifest (here) = the ID card</p>
+                <p className="mt-1 text-fog">JSON like <code className="font-mono">"methods"</code>, <code className="font-mono">"version"</code> — describes what the extension offers.</p>
+              </div>
+              <div className="rounded-lg border border-line bg-panel p-3">
+                <p className="font-semibold text-ink">Source (Source tab) = the brain</p>
+                <p className="mt-1 text-fog">Real program code — functions, components, logic.</p>
+              </div>
+            </div>
+          </details>
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"
@@ -228,15 +311,49 @@ export function ExtensionStudio({ id }: { id: string }) {
             text-based). It is stored with the extension and snapshotted into
             every version — free-form text, no JSON here.
           </p>
+          <div className="flex gap-1.5">
+            {[
+              { label: "Insert: component skeleton", code: 'package com.example.myextension;\n\nimport com.google.appinventor.components.runtime.ComponentContainer;\n\npublic class MyExtension extends AndroidNonvisibleComponent {\n\n  public MyExtension(ComponentContainer container) {\n    super(container.$form());\n  }\n}\n' },
+              { label: "Insert: @SimpleFunction stub", code: '\n  @SimpleFunction(description = "Describe what this does.")\n  public void DoSomething() {\n  }\n' },
+            ].map((snippet) => (
+              <button
+                key={snippet.label}
+                type="button"
+                onClick={() => setSourceText((current) => current + snippet.code)}
+                className="h-8 rounded-lg border border-line px-2.5 text-[12px] text-fog transition-colors hover:text-ink"
+              >
+                {snippet.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative mt-2 flex overflow-hidden rounded-xl border border-line bg-code font-mono text-[12.5px] leading-6">
+            <div
+              aria-hidden="true"
+              className="select-none border-r border-line bg-panel/60 px-2 py-4 text-right text-mist"
+            >
+              {sourceText.split("\n").map((_, i) => (
+                <div key={i}>{i + 1}</div>
+              ))}
+            </div>
           <textarea
             value={sourceText}
             onChange={(event) => setSourceText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Tab") {
+                event.preventDefault();
+                const el = event.currentTarget;
+                const start = el.selectionStart;
+                setSourceText(sourceText.slice(0, start) + "  " + sourceText.slice(el.selectionEnd));
+                requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 2; });
+              }
+            }}
             spellCheck={false}
             rows={18}
             aria-label="Extension source code"
             placeholder={"package com.example.myextension\n\npublic class MyExtension {\n  // ...\n}"}
-            className="mt-3 w-full rounded-xl border border-line bg-code p-4 font-mono text-[12.5px] leading-6 text-fog placeholder:text-mist/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+            className="min-h-0 w-full flex-1 resize-none bg-transparent p-4 font-mono text-[12.5px] leading-6 text-fog placeholder:text-mist/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
           />
+          </div>
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"

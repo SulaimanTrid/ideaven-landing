@@ -3,6 +3,28 @@
 Last verified: 2026-09-06 (session 25). Full session log:
 [`docs/STATUS.md`](docs/STATUS.md).
 
+## Execution discipline (binding charter, 2026-09-06)
+
+Every session on this repository follows these non-negotiables (enforced by
+review against `docs/STATUS.md` + the LAUNCH_AUDIT harness):
+
+- CONTINUE, never replace: one repo (SulaimanTrid/ideaven-landing), one
+  canonical model, one editor, one block system.
+- INSPECT → ROOT CAUSE → SMALLEST SAFE FIX → TEST → BROWSER VERIFY → record.
+- Feature states use the closed vocabulary: PLANNED / DESIGNED /
+  PARTIALLY IMPLEMENTED / FUNCTIONAL / TESTED / PRODUCTION READY.
+- No fake anything: builds, exports, AI output, scores, stats, runtime
+  behavior, publish states. Unsupported = labeled Coming Soon / Unsupported /
+  Experimental with a reason.
+- Advanced TypeScript stays CODE-ONLY; never force it into blocks.
+- DONE = UI + state + logic + persistence + validation + error handling +
+  security + a11y + tests + browser verification, where applicable.
+- TypeScript compiling ≠ done. Screenshot ≠ done. User-flow verification is
+  the gate.
+- End of every batch: files changed, user-visible improvements, root causes
+  of fixed bugs, tests/builds run, browser verification, remaining
+  limitations — recorded in docs/STATUS.md.
+
 ## Feature status (directive §3 vocabulary)
 
 | Capability | Status |

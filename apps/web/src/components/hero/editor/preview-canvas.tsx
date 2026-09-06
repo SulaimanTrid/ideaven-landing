@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@ideaven/ui";
+import { DeviceFrame } from "@/components/builder/device-frame";
 import type { EngineStatus } from "./types";
 
 /**
@@ -24,7 +25,7 @@ const PLATFORMS = [
 ];
 
 const COINS = [
-  { cx: 92, cy: 112 },
+  { cx: 92, cy: 146 }, // on the ground walk-path — first catch is a guaranteed wow
   { cx: 178, cy: 76 },
   { cx: 262, cy: 112 },
 ];
@@ -37,7 +38,7 @@ interface Player {
   facing: 1 | -1;
 }
 
-const START: Player = { x: 58, y: 104, vx: 0, vy: 0, facing: 1 };
+const START: Player = { x: 40, y: 130, vx: 0, vy: 0, facing: 1 }; // ground spawn: first walk catches coin 1
 
 type PreviewCanvasProps = {
   status: EngineStatus;
@@ -53,7 +54,6 @@ export function PreviewCanvas({ status, onScore, className }: PreviewCanvasProps
   const stateRef = useRef({ player: START, collected: [false, false, false] as boolean[] });
   const rafRef = useRef(0);
   const lastRef = useRef(0);
-  const boxRef = useRef<HTMLDivElement | null>(null);
   const scoreRef = useRef(0);
 
   const score = collected.filter(Boolean).length;
@@ -122,6 +122,7 @@ export function PreviewCanvas({ status, onScore, className }: PreviewCanvasProps
         }
         return done || hit;
       });
+      setCollected([...s.collected]);
       setPlayer({ ...p });
 
       if (!cleared) rafRef.current = requestAnimationFrame(step);
@@ -186,13 +187,11 @@ export function PreviewCanvas({ status, onScore, className }: PreviewCanvasProps
         </span>
       </div>
 
-      <div
-        ref={boxRef}
-        className="overflow-hidden rounded-lg border border-line bg-[#0c0f17]"
-      >
+        <div className="flex justify-center">
+        <DeviceFrame kind="phone">
         <svg
           viewBox="0 0 320 200"
-          className="block w-full"
+          className="block w-full rounded-[14px]"
           role="img"
           aria-label={`Playable platformer preview: move with arrow keys, collect three coins. Score ${score} of ${COINS.length}.`}
         >
@@ -268,7 +267,8 @@ export function PreviewCanvas({ status, onScore, className }: PreviewCanvasProps
             </text>
           ) : null}
         </svg>
-      </div>
+        </DeviceFrame>
+        </div>
 
       {/* Touch controls (also usable with a mouse) */}
       <div className="mt-2 flex items-center justify-center gap-2">

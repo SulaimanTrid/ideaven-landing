@@ -39,7 +39,7 @@ export function EditorVisual() {
       <ScriptStrip tab={tab} onTabChange={setTab} />
 
       <figcaption className="border-t border-line bg-panel/60 px-4 py-2 text-center font-mono text-[10.5px] tracking-[0.08em] text-mist">
-        Playable concept — press Run, then ←/→/↑ (or the buttons) to play
+        The real Ideaven block language — press Run, then ←/→/↑ (or the buttons) to play
       </figcaption>
     </figure>
   );

@@ -1445,3 +1445,27 @@ IR, 3D runtime, extension component runtime providers.
 **Next (per gap analysis)**: G3 extension runtime providers, game
 scene/sprite IR milestone, i18n coverage expansion, a11y audit, P2
 hardening items.
+
+## 31. Work in session 25b (Task 02 — Extension Studio manifest/source UX)
+
+- Manifest tab rebuilt: title "Manifest JSON", explanation that the manifest
+  is *information* while code lives in the Source tab (with a jump link),
+  Format document / Reset to example / Copy buttons, a REAL-schema example
+  (`{format:1, methods:[…]}` — verified to load AND save server-side), live
+  validation (✓ valid badge, or "Manifest validation failed. Line N, column
+  M — …" with beginner guidance and source-code detection pointing to the
+  Source tab), and a Manifest-vs-Source explainer.
+- Source tab upgraded: line-number gutter synced to content, Tab inserts
+  indent, two real Java snippet inserts (component skeleton, @SimpleFunction
+  stub) — every insert is real text, no fake IntelliSense.
+- Double DashboardShell removed from extensions/templates/studio pages
+  (stacked fixed sidebars intercepted sidebar clicks).
+- Fixed en route: a failed `next build` corrupted `.next` under the running
+  server (ChunkLoadError) — clean rebuild rule re-applied; recorded as
+  LAUNCH_AUDIT P3-3.
+- Verified (browser E2E, production): example loads/validates/saves;
+  guided Java-paste error with line/col + Source pointer; gutter counts
+  lines; snippets insert real Java; Tab indent; source saves; 0 console
+  errors. Known limitation: no full syntax highlighting/IntelliSense yet —
+  snippets + gutter are real and honest; highlighting overlay listed for
+  the next polish pass.

@@ -11,24 +11,27 @@ import type { EditorTab } from "./types";
 
 /** [text, colorClass] pairs; whitespace is significant. */
 const CODE_TOKENS: ReadonlyArray<readonly [string, string?]> = [
-  ["player", "text-mint"],
-  [".onCollision", "text-sky"],
+  ["api", "text-mint"],
+  [".onEvent", "text-sky"],
   ["(", "text-mist"],
-  ["coin", "text-mint"],
+  ["screen", "text-mint"],
+  [", ", "text-mist"],
+  ["\"initialize\"", "text-amber"],
   [", ", "text-mist"],
   ["() ", "text-mist"],
   ["=>", "text-violet"],
   [" {", "text-mist"],
-  ["\n  score ", undefined],
-  ["+=", "text-violet"],
-  [" ", undefined],
-  ["1", "text-rose"],
-  [";", "text-mist"],
-  ["\n  ", undefined],
-  ["sound", "text-mint"],
-  [".play", "text-sky"],
+  ["\n  api.", undefined],
+  ["setVariable", "text-sky"],
   ["(", "text-mist"],
-  ['"coin"', "text-amber"],
+  ['"score"', "text-amber"],
+  [", ", "text-mist"],
+  ["0", "text-rose"],
+  [");", "text-mist"],
+  ["\n  api.", undefined],
+  ["navigate", "text-sky"],
+  ["(", "text-mist"],
+  ['"screen-gameover"', "text-amber"],
   [");", "text-mist"],
   ["\n}", undefined],
 ];
@@ -75,7 +78,9 @@ function CodeScript() {
         1<br />
         2<br />
         3<br />
-        4
+        4<br />
+        5<br />
+        6
       </span>
       <code className="whitespace-pre text-fog">
         {rendered}

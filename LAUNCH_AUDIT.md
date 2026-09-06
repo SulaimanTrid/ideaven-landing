@@ -46,6 +46,13 @@ paths, no executable injection, authorization enforced on probed endpoints.)
 
 ## P3 — backlog
 
+- P3-3 (recurred 2026-09-06, resolved): a FAILED `next build` (duplicate
+  declaration) partially rewrote `.next` while the production server was
+  serving — ChunkLoadError on every page. Documented rule re-confirmed:
+  never build while the server serves the same directory; on any
+  ChunkLoadError do `rm -rf .next && next build && restart`. The e2e audit
+  harness caught it within one run.
+
 - P3-1. `scripts/e2e-projects.ps1` is a stale Windows-era script; the live
   verification path is the committed `scripts/e2e-launch-audit.mjs`. Remove
   or port it.

@@ -1,60 +1,59 @@
 import { cn } from "@ideaven/ui";
 
-type Row = { label: string; value: React.ReactNode };
+/**
+ * The real Ideaven screen inspector (fidelity pass): the exact sections and
+ * rows the builder's Inspector shows for a screen — Name, ID, Components,
+ * Appearance/Background — over the dark scene stage of the demo project.
+ */
 
 const ROWS: Row[] = [
-  { label: "Name", value: <span className="text-ink">Player</span> },
-  { label: "Position", value: "x 48 · y 100" },
-  { label: "Size", value: "20 × 20" },
-  { label: "Rotation", value: "0°" },
-  {
-    label: "Color",
-    value: (
-      <span className="inline-flex items-center gap-1.5">
-        <span
-          aria-hidden="true"
-          className="h-3 w-3 rounded-[3px] border border-white/20"
-          style={{ backgroundColor: "var(--color-mint)" }}
-        />
-        <span className="text-mint">#46E3B4</span>
-      </span>
-    ),
-  },
+  { label: "Name", value: <span className="text-ink">Home</span> },
+  { label: "ID", value: <span className="font-mono text-[11.5px] text-fog">screen-home</span> },
+  { label: "Components", value: "5" },
 ];
 
-/** Right rail of the editor visual: properties of the selected object. */
+type Row = { label: string; value: React.ReactNode };
+
+/** Right rail of the editor visual: the screen inspector. */
 export function Properties({ className }: { className?: string }) {
   return (
     <aside
-      aria-label="Properties panel (concept)"
+      aria-label="Screen inspector"
       className={cn(
-        "flex w-44 shrink-0 flex-col border-l border-line bg-panel/70 p-3",
+        "flex w-44 shrink-0 flex-col gap-3 border-l border-line bg-panel/70 p-3",
         className,
       )}
     >
-      <div className="flex items-center justify-between">
-        <p className="font-mono text-[10px] tracking-[0.2em] text-mist uppercase">
-          Properties
-        </p>
-        <span className="rounded-full border border-mint/30 bg-mint/10 px-2 py-[2px] font-mono text-[10px] text-mint">
-          player
-        </span>
-      </div>
-      <dl className="mt-3 flex flex-col divide-y divide-line">
+      <p className="font-mono text-[10px] tracking-[0.2em] text-mist uppercase">
+        Inspector
+      </p>
+      <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">
+        Screen
+      </p>
+      <dl className="flex flex-col gap-2">
         {ROWS.map((row) => (
-          <div
-            key={row.label}
-            className="flex items-center justify-between gap-2 py-[7px]"
-          >
-            <dt className="text-[11px] text-mist">{row.label}</dt>
-            <dd className="font-mono text-[11px] text-fog">{row.value}</dd>
+          <div key={row.label} className="flex items-center justify-between gap-2">
+            <dt className="text-[11.5px] text-mist">{row.label}</dt>
+            <dd className="min-w-0 truncate text-[11.5px] text-fog">{row.value}</dd>
           </div>
         ))}
       </dl>
-      <p className="mt-auto hidden pt-6 font-mono text-[10px] leading-4 text-mist/70 xl:block">
-        scene: main
-        <br />
-        gravity: 0.35
+      <p className="mt-1 font-mono text-[10px] tracking-[0.14em] text-mist uppercase">
+        Appearance
+      </p>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11.5px] text-mist">Background</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="h-3 w-3 rounded-[3px] border border-white/20"
+            style={{ backgroundColor: "#0c0f17" }}
+          />
+          <span className="font-mono text-[11px] text-fog">#0c0f17</span>
+        </span>
+      </div>
+      <p className="mt-auto text-[11px] leading-4 text-mist">
+        Select a component on the canvas or in the tree to edit its properties.
       </p>
     </aside>
   );
