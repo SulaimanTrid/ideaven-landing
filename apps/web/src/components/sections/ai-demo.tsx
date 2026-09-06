@@ -79,7 +79,7 @@ export function AiDemo() {
 
         <div className="flex flex-1 flex-col gap-3 p-4">
           {step >= 0 ? (
-            <div className="anim-pop-in self-end rounded-xl rounded-br-sm border border-line bg-white/[0.06] px-3.5 py-2.5 text-sm text-ink">
+            <div className="anim-pop-in self-end rounded-xl rounded-br-sm border border-line bg-surface-strong px-3.5 py-2.5 text-sm text-ink">
               Add a red button below the login form.
             </div>
           ) : null}
@@ -160,11 +160,11 @@ export function AiDemo() {
             <div className="mt-6 flex flex-col gap-4">
               <div>
                 <p className="mb-1.5 text-[12px] text-fog">Email</p>
-                <div className="h-9 rounded-lg border border-line bg-white/[0.03]" />
+                <div className="h-9 rounded-lg border border-line bg-surface" />
               </div>
               <div>
                 <p className="mb-1.5 text-[12px] text-fog">Password</p>
-                <div className="h-9 rounded-lg border border-line bg-white/[0.03]" />
+                <div className="h-9 rounded-lg border border-line bg-surface" />
               </div>
               <div className="mt-1 flex h-10 items-center justify-center rounded-lg border border-violet/40 bg-violet/10 text-sm font-medium text-violet">
                 Log in

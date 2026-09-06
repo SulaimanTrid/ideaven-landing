@@ -4,13 +4,16 @@
 
 Ideaven (*Idea + Haven*) is a future platform where people create games, apps,
 and interactive experiences — visually with **blocks**, or with **real
-TypeScript code**. This repository is **Phase 1**: a production-quality landing
-page, a clean monorepo foundation, and a minimal Go API.
+TypeScript code**. This repository started as **Phase 1**: a production-quality
+landing page, a clean monorepo foundation, and a minimal Go API.
 
-**Not included (by design):** authentication, accounts, dashboard, project
-system, block editor, TypeScript editor, AI backend, marketplace, payments,
-community backend, or a database. Those belong to later phases — see
-`docs/ROADMAP.md`.
+**Progress has moved on:** authentication, user profiles, and the project
+system (create / list / search / rename / duplicate / archive / delete, plus
+the canonical versioned Project Model) are implemented — see
+[`docs/STATUS.md`](docs/STATUS.md) for the current audit and
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for what ships next (block editor,
+TypeScript editor, live preview, AI). The section below describes the original
+Phase 1 scope.
 
 ---
 
@@ -65,13 +68,23 @@ pnpm check          # tsc --noEmit + go vet + go test across the workspace
 
 ---
 
-## API (Phase 1)
+## API
 
-One endpoint:
+Liveness plus the auth, profile, and project domains:
 
 ```bash
 curl http://localhost:8080/api/health
 # {"service":"ideaven-api","status":"ok","timestamp":"...","version":"0.1.0"}
+
+# Projects (session cookie required)
+POST   /api/projects                      # create (app|game) with initial model
+GET    /api/projects                      # list: q, status, sort, limit, offset
+GET    /api/projects/{id}                 # full record incl. canonical model
+PATCH  /api/projects/{id}                 # rename / description / status / visibility
+DELETE /api/projects/{id}                 # permanent delete
+POST   /api/projects/{id}/duplicate       # fresh-ID copy as private draft
+POST   /api/projects/{id}/open            # records last_opened_at
+PUT    /api/projects/{id}/model           # save the canonical model (builder)
 ```
 
 Configuration (all optional):

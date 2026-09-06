@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Sora } from "next/font/google";
 import Script from "next/script";
 import { AuthProvider } from "@/auth/auth-provider";
+import { ThemeProvider, THEME_BOOTSTRAP_SCRIPT } from "@/theme/theme-provider";
 import { SiteHeader } from "@/components/nav/site-header";
+import { FooterGate } from "@/components/footer/footer-gate";
 import { SiteFooter } from "@/components/footer/site-footer";
 import "./globals.css";
 
@@ -58,20 +60,31 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={sora.variable}>
+    // suppressHydrationWarning: the js-flag script below adds a class to
+    // <html> before hydration on purpose, so that attribute is expected to
+    // differ from the server render. Children still hydrate strictly.
+    <html lang="en" className={sora.variable} suppressHydrationWarning>
       <body className="min-h-dvh bg-canvas font-sans text-ink antialiased">
         {/* Flags JS availability so CSS can pre-hide scroll reveals safely. */}
         <Script id="js-flag" strategy="beforeInteractive">
           {`document.documentElement.classList.add("js")`}
         </Script>
+        {/* Applies the persisted theme before first paint — no flash. */}
+        <Script id="theme-bootstrap" strategy="beforeInteractive">
+          {THEME_BOOTSTRAP_SCRIPT}
+        </Script>
         <a href="#main" className="skip-link">
           Skip to content
         </a>
-        <AuthProvider>
-          <SiteHeader />
-          <main id="main">{children}</main>
-        </AuthProvider>
-        <SiteFooter />
+        <ThemeProvider>
+          <AuthProvider>
+            <SiteHeader />
+            <main id="main">{children}</main>
+            <FooterGate>
+              <SiteFooter />
+            </FooterGate>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

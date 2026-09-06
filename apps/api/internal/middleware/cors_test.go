@@ -38,7 +38,7 @@ func TestCORSPreflight(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d, want 204", rec.Code)
 	}
-	if methods := rec.Header().Get("Access-Control-Allow-Methods"); methods != "GET, POST, OPTIONS" {
+	if methods := rec.Header().Get("Access-Control-Allow-Methods"); methods != "GET, POST, PATCH, PUT, DELETE, OPTIONS" {
 		t.Fatalf("Allow-Methods = %q", methods)
 	}
 }

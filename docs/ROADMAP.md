@@ -1,23 +1,27 @@
 # Ideaven Roadmap
 
-Phase 1 is complete. Each later phase builds on the previous one — nothing in
-Phase 1 is throwaway.
+Status as of 2026-09-03 — see `docs/STATUS.md` for the full audit. The
+builder foundation (workspace shell, design mode with palette/canvas/tree/
+inspector, autosave, undo/redo) ships between phases 4 and 5; Ask AI and
+the asset manager are in. Each later phase builds on the previous one —
+nothing is throwaway.
 
-| # | Phase            | Adds                                                     | Depends on |
-| - | ---------------- | -------------------------------------------------------- | ---------- |
-| 1 | **Foundation** ✅ | Landing page, monorepo, Go API skeleton, health endpoint | — |
-| 2 | Authentication   | Email + OAuth sign-in, sessions, user model               | 1 |
-| 3 | User Dashboard   | Project list, create/delete, profile                      | 2 |
-| 4 | Project Creation | Project model (scenes, objects, assets), persistence      | 3 |
-| 5 | Block Editor     | Palette, canvas, drag-connect blocks, block→IR compiler    | 4 |
-| 6 | TypeScript Editor| Monaco-based editor, TS project model, type-checking      | 4 |
-| 7 | Runtime          | Shared execution model: blocks IR and TS run identically   | 5, 6 |
-| 8 | Live Preview     | Hot-reload preview pane, Run/Pause/Stop (real)             | 7 |
-| 9 | Contextual AI    | Project-aware assistant, change proposals, apply engine    | 5–8 |
-| 10| Save/Versioning  | Autosave, snapshots, history, diff                         | 4 |
-| 11| Publish          | Share links, embeds, web export                            | 8 |
-| 12| Community        | Public profiles, galleries, following (replaces the "Example" showcase cards as-is) | 11 |
-| 13| Marketplace      | Templates, components, asset packs, payments               | 12 |
+| # | Phase            | Adds                                                     | Depends on | Status |
+| - | ---------------- | -------------------------------------------------------- | ---------- | ------ |
+| 1 | Foundation       | Landing page, monorepo, Go API skeleton, health endpoint | —          | ✅ |
+| 2 | Authentication   | Email sign-in, sessions, user model                      | 1          | ✅ |
+| 3 | User Dashboard   | Project list, create/delete, profile                     | 2          | ✅ |
+| 4 | Project Creation | Project model (screens, components, assets), persistence | 3          | ✅ model v1 + persistence; editors pending |
+| 5 | Block Editor     | Palette, canvas, drag-connect blocks, block→IR compiler  | 4          | ◐ block IR + editor + codegen done; free-form canvas later |
+| 6 | TypeScript Editor| Monaco-based editor, TS project model, type-checking      | 4          | ✅ Monaco + parser diagnostics + code→blocks sync done; IntelliSense polish later |
+| 7 | Runtime          | Shared execution model: blocks IR and TS run identically  | 5, 6       | ◐ IR interpreter runs in Preview; code execution shares semantics |
+| 8 | Live Preview     | Hot-reload preview pane, Run/Pause/Stop (real)            | 7          | ◐ Run/Restart + navigation real; pause/hot-reload pending |
+| 8b | Diagnostics     | Error center: errors/warnings/info, click-to-source        | 5, 6       | ✅ Foundation (Diagnostics panel + model walker); validator expansion later |
+| 9 | Contextual AI    | Project-aware assistant, change proposals, apply engine   | 5–8        | ◐ Ask AI with validated model changesets + usage accounting (session 7); credit UX later |
+| 10| Save/Versioning  | Autosave, snapshots, history, diff                        | 4          | ◐ autosave + server-side version snapshots (origin-labelled: edit/ai) + History panel restore (sessions 9–10); diff view later |
+| 11| Publish          | Share links, embeds, web export                           | 8          | ⬜ |
+| 12| Community        | Public profiles, galleries, following (replaces the "Example" showcase cards as-is) | 11 | ⬜ |
+| 13| Marketplace      | Templates, components, asset packs, payments              | 12         | ⬜ |
 
 ## What Phase 1 already prepared for each step
 

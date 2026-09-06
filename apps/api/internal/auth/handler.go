@@ -1,11 +1,7 @@
 package auth
 
 import (
-	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"ideaven/apps/api/internal/config"
@@ -34,6 +30,7 @@ type SafeUser struct {
 	Email         string     `json:"email"`
 	Username      string     `json:"username"`
 	DisplayName   string     `json:"displayName"`
+	Bio           string     `json:"bio"`
 	AvatarURL     string     `json:"avatarUrl"`
 	EmailVerified bool       `json:"emailVerified"`
 	CreatedAt     time.Time  `json:"createdAt"`
@@ -47,6 +44,7 @@ func toSafeUser(u *user.User) SafeUser {
 		Email:         u.Email,
 		Username:      u.Username,
 		DisplayName:   u.DisplayName,
+		Bio:           u.Bio,
 		AvatarURL:     u.AvatarURL,
 		EmailVerified: u.EmailVerified,
 		CreatedAt:     u.CreatedAt,
@@ -217,6 +215,69 @@ func (h *Handler) ResendVerification(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// UpdateProfile handles PATCH /api/profile. Authorization is implicit: the
+// target user is always the one behind the session cookie, and the request
+// body carries no user ID at all.
+func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(h.cookie.Name)
+	if err != nil || cookie.Value == "" {
+		httpx.WriteError(w, httpx.Errorf(http.StatusUnauthorized, httpx.CodeUnauthorized, "Sign in to continue."))
+		return
+	}
+	current, err := h.service.Authenticate(r.Context(), cookie.Value)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	var body struct {
+		Username    string `json:"username"`
+		DisplayName string `json:"displayName"`
+		Bio         string `json:"bio"`
+		AvatarURL   string `json:"avatarUrl"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	updated, err := h.service.UpdateProfile(r.Context(), current.ID, UpdateProfileInput{
+		Username: body.Username, DisplayName: body.DisplayName, Bio: body.Bio, AvatarURL: body.AvatarURL,
+	})
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]SafeUser{"user": toSafeUser(updated)})
+}
+
+// ChangePassword handles POST /api/auth/change-password. Verifies the current
+// password, stores the new one, and signs every other device out.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(h.cookie.Name)
+	if err != nil || cookie.Value == "" {
+		httpx.WriteError(w, httpx.Errorf(http.StatusUnauthorized, httpx.CodeUnauthorized, "Sign in to continue."))
+		return
+	}
+
+	var body struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	if err := h.service.ChangePassword(r.Context(), cookie.Value, body.CurrentPassword, body.NewPassword); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "Password updated. Other devices have been signed out.",
+	})
+}
+
 // setSessionCookie writes the hardened session cookie.
 func (h *Handler) setSessionCookie(w http.ResponseWriter, token string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
@@ -243,36 +304,10 @@ func (h *Handler) clearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-// decodeJSON enforces a bounded, strictly-typed JSON body. Every auth POST
-// also requires an explicit application/json Content-Type: HTML forms cannot
-// set it without a CORS preflight, which complements the SameSite cookie and
-// origin checks as CSRF defense.
+// decodeJSON enforces a bounded, strictly-typed JSON body via the shared
+// helper. Every auth POST requires an explicit application/json Content-Type:
+// HTML forms cannot set it without a CORS preflight, which complements the
+// SameSite cookie and origin checks as CSRF defense.
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(strings.ToLower(ct), "application/json") {
-		return httpx.Errorf(http.StatusUnsupportedMediaType, httpx.CodeInvalidBody, "Requests must be JSON (Content-Type: application/json).")
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody+1))
-	if err != nil {
-		return httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "Could not read the request body.")
-	}
-	if len(body) > maxRequestBody {
-		return httpx.Errorf(http.StatusRequestEntityTooLarge, httpx.CodeInvalidBody, "Request body is too large.")
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(body)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "The request body is not valid JSON.")
-	}
-	if err := ensureConsumed(decoder); err != nil {
-		return err
-	}
-	return nil
-}
-
-func ensureConsumed(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "The request body must contain a single JSON object.")
-	}
-	return nil
+	return httpx.DecodeJSON(w, r, target, maxRequestBody)
 }

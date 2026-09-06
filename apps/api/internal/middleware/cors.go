@@ -1,6 +1,14 @@
 package middleware
 
 import "net/http"
+import "strings"
+
+// allowedMethods is the single source for the preflight Allow-Methods header.
+// Every method any route registers must appear here exactly once.
+var allowedMethods = []string{
+	http.MethodGet, http.MethodPost, http.MethodPatch,
+	http.MethodPut, http.MethodDelete, http.MethodOptions,
+}
 
 // CORS emits credentialed CORS headers for requests whose Origin is
 // explicitly allowed. With no configured origins the middleware is a
@@ -23,7 +31,7 @@ func CORS(origins []string) Middleware {
 				headers.Add("Vary", "Origin")
 
 				if r.Method == http.MethodOptions {
-					headers.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+					headers.Set("Access-Control-Allow-Methods", strings.Join(allowedMethods, ", "))
 					headers.Set("Access-Control-Allow-Headers", "Content-Type")
 					headers.Set("Access-Control-Max-Age", "600")
 					w.WriteHeader(http.StatusNoContent)

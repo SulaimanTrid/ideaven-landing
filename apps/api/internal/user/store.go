@@ -18,11 +18,21 @@ type User struct {
 	Username      string
 	PasswordHash  string
 	DisplayName   string
+	Bio           string
 	AvatarURL     string
 	EmailVerified bool
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	LastLoginAt   *time.Time
+}
+
+// ProfileUpdate is the editable subset of a user's profile. ID and email are
+// intentionally absent: identity is immutable and derived from the session.
+type ProfileUpdate struct {
+	Username    string
+	DisplayName string
+	Bio         string
+	AvatarURL   string
 }
 
 // NewUser is the input for creating an account.
@@ -41,13 +51,13 @@ type Store struct {
 // NewStore builds a Store.
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-const columns = `id, email, username, password_hash, display_name, avatar_url,
+const columns = `id, email, username, password_hash, display_name, bio, avatar_url,
 	email_verified, created_at, updated_at, last_login_at`
 
 func scanUser(scanner interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	err := scanner.Scan(&u.ID, &u.Email, &u.Username, &u.PasswordHash, &u.DisplayName,
-		&u.AvatarURL, &u.EmailVerified, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
+		&u.Bio, &u.AvatarURL, &u.EmailVerified, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +109,29 @@ func (s *Store) FindByUsername(ctx context.Context, username string) (*User, err
 // FindByID looks a user up by primary key.
 func (s *Store) FindByID(ctx context.Context, id string) (*User, error) {
 	return s.findOne(ctx, `SELECT `+columns+` FROM users WHERE id = $1`, id)
+}
+
+// UpdateProfile rewrites the editable profile fields of one user. Callers
+// pass the session-derived ID only; username uniqueness is enforced here by
+// the lower(username) index and surfaced as ErrDuplicateUsername.
+func (s *Store) UpdateProfile(ctx context.Context, id string, in ProfileUpdate) (*User, error) {
+	row := s.db.QueryRowContext(ctx, `
+		UPDATE users SET username = $2, display_name = $3, bio = $4, avatar_url = $5, updated_at = now()
+		WHERE id = $1
+		RETURNING `+columns,
+		id, in.Username, in.DisplayName, in.Bio, in.AvatarURL)
+
+	user, err := scanUser(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		if isUniqueViolation(err, "users_username_key") {
+			return nil, ErrDuplicateUsername
+		}
+		return nil, fmt.Errorf("user: update profile: %w", err)
+	}
+	return user, nil
 }
 
 func (s *Store) findOne(ctx context.Context, query string, arg any) (*User, error) {

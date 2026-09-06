@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"net/mail"
+	"net/url"
 	"strings"
 	"unicode/utf8"
 
@@ -17,6 +18,8 @@ const (
 	displayMaxLen  = 50
 	passwordMinLen = 8
 	passwordMaxLen = 128
+	bioMaxLen      = 280
+	avatarMaxLen   = 500
 )
 
 // NormalizeEmail trims surrounding whitespace. Case is preserved for display;
@@ -82,6 +85,30 @@ func ValidatePassword(password string) error {
 func ValidateDisplayName(name string) error {
 	if utf8.RuneCountInString(name) > displayMaxLen {
 		return fmt.Errorf("Display names are at most %d characters.", displayMaxLen)
+	}
+	return nil
+}
+
+// ValidateBio allows an optional short public bio.
+func ValidateBio(bio string) error {
+	if utf8.RuneCountInString(bio) > bioMaxLen {
+		return fmt.Errorf("Bios are at most %d characters.", bioMaxLen)
+	}
+	return nil
+}
+
+// ValidateAvatarURL allows an optional http(s) image URL. The platform has no
+// file storage yet, so avatars ride the existing avatar_url column.
+func ValidateAvatarURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	if utf8.RuneCountInString(raw) > avatarMaxLen {
+		return fmt.Errorf("Avatar URLs are at most %d characters.", avatarMaxLen)
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("Avatar must be an http(s) image URL.")
 	}
 	return nil
 }

@@ -57,7 +57,7 @@ export function WhyIdeaven() {
               className={index === 4 ? "lg:col-start-2" : undefined}
             >
               <article className="h-full rounded-2xl border border-line bg-card p-6 transition-colors hover:border-white/15">
-                <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white/[0.03] text-violet">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-surface text-violet">
                   <Icon size={17} />
                 </span>
                 <h3 className="mt-4 text-[15px] font-medium tracking-tight text-ink">

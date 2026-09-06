@@ -9,14 +9,22 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
+	"ideaven/apps/api/internal/ai"
+	"ideaven/apps/api/internal/asset"
 	"ideaven/apps/api/internal/auth"
 	"ideaven/apps/api/internal/config"
+	"ideaven/apps/api/internal/extension"
 	"ideaven/apps/api/internal/handler"
 	"ideaven/apps/api/internal/httpx"
 	"ideaven/apps/api/internal/middleware"
+	"ideaven/apps/api/internal/project"
+	"ideaven/apps/api/internal/storage"
 )
 
 // New builds the fully-wired HTTP handler for the API.
@@ -24,7 +32,7 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	mux := http.NewServeMux()
 
 	// Phase 1: liveness probe.
-	mux.HandleFunc("GET /api/health", handler.Health)
+	route(mux, http.MethodGet, "/api/health", http.HandlerFunc(handler.Health))
 
 	// Phase 2: authentication.
 	authService := auth.NewService(db, cfg, auth.NewLogMailer(slog.Default()), slog.Default())
@@ -35,15 +43,132 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	loginLimiter := middleware.NewRateLimiter(10, time.Minute)
 	emailLimiter := middleware.NewRateLimiter(5, time.Minute)
 
-	mux.HandleFunc("POST /api/auth/register", authHandler.Register)
-	mux.Handle("POST /api/auth/login", middleware.Chain(http.HandlerFunc(authHandler.Login), loginLimiter.Middleware))
-	mux.HandleFunc("POST /api/auth/logout", authHandler.Logout)
-	mux.HandleFunc("GET /api/auth/me", authHandler.Me)
-	mux.Handle("POST /api/auth/forgot-password", middleware.Chain(http.HandlerFunc(authHandler.ForgotPassword), emailLimiter.Middleware))
-	mux.Handle("POST /api/auth/validate-reset-token", middleware.Chain(http.HandlerFunc(authHandler.ValidateResetToken), emailLimiter.Middleware))
-	mux.Handle("POST /api/auth/reset-password", middleware.Chain(http.HandlerFunc(authHandler.ResetPassword), emailLimiter.Middleware))
-	mux.HandleFunc("POST /api/auth/verify-email", authHandler.VerifyEmail)
-	mux.Handle("POST /api/auth/resend-verification", middleware.Chain(http.HandlerFunc(authHandler.ResendVerification), emailLimiter.Middleware))
+	route(mux, http.MethodPost, "/api/auth/register", http.HandlerFunc(authHandler.Register))
+	route(mux, http.MethodPost, "/api/auth/login", middleware.Chain(http.HandlerFunc(authHandler.Login), loginLimiter.Middleware))
+	route(mux, http.MethodPost, "/api/auth/logout", http.HandlerFunc(authHandler.Logout))
+	route(mux, http.MethodGet, "/api/auth/me", http.HandlerFunc(authHandler.Me))
+	route(mux, http.MethodPost, "/api/auth/forgot-password", middleware.Chain(http.HandlerFunc(authHandler.ForgotPassword), emailLimiter.Middleware))
+	route(mux, http.MethodPost, "/api/auth/validate-reset-token", middleware.Chain(http.HandlerFunc(authHandler.ValidateResetToken), emailLimiter.Middleware))
+	route(mux, http.MethodPost, "/api/auth/reset-password", middleware.Chain(http.HandlerFunc(authHandler.ResetPassword), emailLimiter.Middleware))
+	route(mux, http.MethodPost, "/api/auth/verify-email", http.HandlerFunc(authHandler.VerifyEmail))
+	route(mux, http.MethodPost, "/api/auth/resend-verification", middleware.Chain(http.HandlerFunc(authHandler.ResendVerification), emailLimiter.Middleware))
+
+	// Phase 3: profile & account. Identity is derived from the session cookie;
+	// these routes accept no user ID from the client.
+	route(mux, http.MethodPatch, "/api/profile", http.HandlerFunc(authHandler.UpdateProfile))
+	route(mux, http.MethodPost, "/api/auth/change-password", middleware.Chain(http.HandlerFunc(authHandler.ChangePassword), loginLimiter.Middleware))
+
+	// Phase 4: projects. Every route is scoped to the session's user; project
+	// IDs never travel as a trust signal.
+	projectService := project.NewService(db, slog.Default())
+	projectHandler := project.NewHandler(projectService, authService, cfg.Cookie)
+
+	// Project creation writes a row plus a model document; cap it per IP so
+	// automated accounts cannot flood the library.
+	createLimiter := middleware.NewRateLimiter(20, time.Minute)
+
+	routeMethods(mux, "/api/projects", map[string]http.Handler{
+		http.MethodPost: middleware.Chain(http.HandlerFunc(projectHandler.Create), createLimiter.Middleware),
+		http.MethodGet:  http.HandlerFunc(projectHandler.List),
+	})
+	routeMethods(mux, "/api/projects/{id}", map[string]http.Handler{
+		http.MethodGet:    http.HandlerFunc(projectHandler.Get),
+		http.MethodPatch:  http.HandlerFunc(projectHandler.Update),
+		http.MethodDelete: http.HandlerFunc(projectHandler.Delete),
+	})
+	route(mux, http.MethodPost, "/api/projects/{id}/duplicate", http.HandlerFunc(projectHandler.Duplicate))
+	route(mux, http.MethodPost, "/api/projects/{id}/open", http.HandlerFunc(projectHandler.Open))
+	route(mux, http.MethodPut, "/api/projects/{id}/model", http.HandlerFunc(projectHandler.UpdateModel))
+	route(mux, http.MethodGet, "/api/projects/{id}/versions", http.HandlerFunc(projectHandler.ListVersions))
+	route(mux, http.MethodGet, "/api/projects/{id}/versions/{versionId}", http.HandlerFunc(projectHandler.GetVersion))
+	// Roadmap 3.0 M1: project intelligence — derived-only report over the
+	// canonical model (graphs + health), owner-scoped.
+	route(mux, http.MethodGet, "/api/projects/{id}/intelligence", http.HandlerFunc(projectHandler.Intelligence))
+	// Roadmap 4.0 M3: project DNA — derived understanding document.
+	route(mux, http.MethodGet, "/api/projects/{id}/dna", http.HandlerFunc(projectHandler.DNA))
+	// Roadmap 7.0 M11 (phase 7A): project intent — structured purpose.
+	routeMethods(mux, "/api/projects/{id}/intent", map[string]http.Handler{
+		http.MethodGet: http.HandlerFunc(projectHandler.IntentGet),
+		http.MethodPut: http.HandlerFunc(projectHandler.IntentSet),
+	})
+	// Roadmap 5.0 M5 (phase 5A): project memory — durable AI rules.
+	routeMethods(mux, "/api/projects/{id}/memory", map[string]http.Handler{
+		http.MethodGet:  http.HandlerFunc(projectHandler.MemoryList),
+		http.MethodPost: http.HandlerFunc(projectHandler.MemoryAdd),
+	})
+	route(mux, http.MethodDelete, "/api/projects/{id}/memory/{memoryId}", http.HandlerFunc(projectHandler.MemoryDelete))
+
+	// Phase 19: publishing. Owner routes snapshot/unpublish; the public
+	// routes answer anonymously from the stored snapshot only.
+	route(mux, http.MethodPost, "/api/projects/{id}/publish", http.HandlerFunc(projectHandler.Publish))
+	route(mux, http.MethodPost, "/api/projects/{id}/unpublish", http.HandlerFunc(projectHandler.Unpublish))
+	route(mux, http.MethodGet, "/api/public/projects/{slug}", http.HandlerFunc(projectHandler.PublicProject))
+	route(mux, http.MethodGet, "/api/public/projects", http.HandlerFunc(projectHandler.PublicList))
+	// Phase 20/33–35: community loop — public creator pages, remix into the
+	// caller's account, and honest platform counters. Phase 4/32: templates.
+	route(mux, http.MethodGet, "/api/public/creators/{username}", http.HandlerFunc(projectHandler.PublicCreator))
+	route(mux, http.MethodPost, "/api/public/projects/{slug}/remix", http.HandlerFunc(projectHandler.Remix))
+	route(mux, http.MethodGet, "/api/public/stats", http.HandlerFunc(projectHandler.PublicStats))
+	route(mux, http.MethodGet, "/api/templates", http.HandlerFunc(projectHandler.ListTemplates))
+	// Roadmap 2.0-B: extension registry — authored extensions and their
+	// immutable versions, owner-scoped like projects.
+	extensionService := extension.NewService(db, "") // built AIX packages live under .data/extensions
+	extensionHandler := extension.NewHandler(extensionService, authService.Authenticate, config.CookieConfig{Name: cfg.Cookie.Name})
+	routeMethods(mux, "/api/extensions", map[string]http.Handler{
+		http.MethodGet:  http.HandlerFunc(extensionHandler.List),
+		http.MethodPost: http.HandlerFunc(extensionHandler.Create),
+	})
+	// Installed lives outside /{id}: a literal segment under a wildcard
+	// path conflicts with the mux's precedence rules.
+	route(mux, http.MethodGet, "/api/me/extensions", http.HandlerFunc(extensionHandler.Installed))
+	routeMethods(mux, "/api/extensions/{id}", map[string]http.Handler{
+		http.MethodGet:    http.HandlerFunc(extensionHandler.Get),
+		http.MethodPatch:  http.HandlerFunc(extensionHandler.Update),
+		http.MethodDelete: http.HandlerFunc(extensionHandler.Delete),
+	})
+	routeMethods(mux, "/api/extensions/{id}/versions", map[string]http.Handler{
+		http.MethodPost: http.HandlerFunc(extensionHandler.SaveVersion),
+		http.MethodGet:  http.HandlerFunc(extensionHandler.ListVersions),
+	})
+	route(mux, http.MethodPost, "/api/extensions/{id}/publish", http.HandlerFunc(extensionHandler.Publish))
+	route(mux, http.MethodPost, "/api/extensions/{id}/build", http.HandlerFunc(extensionHandler.Build))
+	route(mux, http.MethodGet, "/api/extensions/{id}/aix", http.HandlerFunc(extensionHandler.AIX))
+	routeMethods(mux, "/api/extensions/{id}/install", map[string]http.Handler{
+		http.MethodPost:   http.HandlerFunc(extensionHandler.Install),
+		http.MethodDelete: http.HandlerFunc(extensionHandler.Uninstall),
+	})
+
+	// Phase 26/30–31: exports — standalone HTML and an Android WebView
+	// project archive, both owner-only downloads.
+	route(mux, http.MethodGet, "/api/projects/{id}/export/html", http.HandlerFunc(projectHandler.ExportHTML))
+	route(mux, http.MethodGet, "/api/projects/{id}/export/android", http.HandlerFunc(projectHandler.ExportAndroid))
+
+	// Phase 3: Ask AI. Provider comes from AI_* env vars; without them the
+	// endpoint reports AI_NOT_CONFIGURED honestly. Keys never leave the server.
+	aiProvider := ai.LoadProvider(os.Getenv, nil)
+	aiHandler := ai.NewHandler(aiProvider, authService.Authenticate, db, ai.CookieConfig{Name: cfg.Cookie.Name})
+	aiLimiter := middleware.NewRateLimiter(10, time.Minute)
+	route(mux, http.MethodPost, "/api/ai/command", middleware.Chain(http.HandlerFunc(aiHandler.Command), aiLimiter.Middleware))
+	route(mux, http.MethodGet, "/api/ai/credits", http.HandlerFunc(aiHandler.Credits))
+	route(mux, http.MethodGet, "/api/ai/credits/activity", http.HandlerFunc(aiHandler.CreditActivity))
+
+	// Phase 3b: per-project media assets. Ownership rides the project — the
+	// authorizer reuses the project service's owner-scoped lookup, so an
+	// asset ID alone never grants access. Raw bytes are served only to the
+	// owning session.
+	assetService := asset.NewService(asset.NewStore(db), func(ctx context.Context, ownerID, projectID string) error {
+		_, err := projectService.Get(ctx, ownerID, projectID)
+		return err
+	}, storage.NewLocalAdapter(filepath.Join(".data", "assets")))
+	assetHandler := asset.NewHandler(assetService, authService.Authenticate, asset.CookieConfig{Name: cfg.Cookie.Name})
+	uploadLimiter := middleware.NewRateLimiter(30, time.Minute)
+
+	routeMethods(mux, "/api/projects/{id}/assets", map[string]http.Handler{
+		http.MethodPost: middleware.Chain(http.HandlerFunc(assetHandler.Upload), uploadLimiter.Middleware),
+		http.MethodGet:  http.HandlerFunc(assetHandler.List),
+	})
+	route(mux, http.MethodGet, "/api/assets/{id}/raw", http.HandlerFunc(assetHandler.Raw))
+	route(mux, http.MethodDelete, "/api/assets/{id}", http.HandlerFunc(assetHandler.Delete))
 
 	// Every other path is a JSON 404 — future features get real routes,
 	// never silent defaults.
@@ -58,6 +183,30 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		middleware.CORS(cfg.AllowedOrigins),
 		middleware.OriginGuard(cfg.AllowedOrigins),
 	)
+}
+
+// route registers a method-specific handler and a same-path fallback that
+// answers every other method with an RFC-correct 405 and Allow header — the
+// catch-all "/" would otherwise shadow method mismatches with a 404.
+func route(mux *http.ServeMux, method, path string, h http.Handler) {
+	routeMethods(mux, path, map[string]http.Handler{method: h})
+}
+
+// routeMethods registers one handler per method for a single path plus the
+// shared 405 fallback. Multi-method paths (list+create, get+patch+delete)
+// must use this — two route() calls on one path would register duplicate
+// fallbacks and panic the mux.
+func routeMethods(mux *http.ServeMux, path string, handlers map[string]http.Handler) {
+	allow := make([]string, 0, len(handlers))
+	for method, h := range handlers {
+		mux.Handle(method+" "+path, h)
+		allow = append(allow, method)
+	}
+	sort.Strings(allow)
+	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", strings.Join(allow, ", "))
+		httpx.WriteError(w, httpx.Errorf(http.StatusMethodNotAllowed, httpx.CodeMethodNotAllowed, "That method is not allowed for this route."))
+	}))
 }
 
 // Run starts the API, applies migrations, and shuts down gracefully on

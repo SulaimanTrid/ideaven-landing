@@ -82,7 +82,7 @@ function AppArt() {
         </p>
         <p className="font-mono text-[10px] text-mist">3 / 5</p>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-strong">
         <div className="h-full w-3/5 rounded-full bg-violet" />
       </div>
 

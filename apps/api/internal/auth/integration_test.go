@@ -130,6 +130,8 @@ func newHarness(t *testing.T) *harness {
 	mux.HandleFunc("POST /api/auth/reset-password", authHandler.ResetPassword)
 	mux.HandleFunc("POST /api/auth/verify-email", authHandler.VerifyEmail)
 	mux.HandleFunc("POST /api/auth/resend-verification", authHandler.ResendVerification)
+	mux.HandleFunc("PATCH /api/profile", authHandler.UpdateProfile)
+	mux.HandleFunc("POST /api/auth/change-password", authHandler.ChangePassword)
 
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -688,5 +690,202 @@ func TestUnknownFieldsAndTrailingGarbageRejected(t *testing.T) {
 	res2.Body.Close()
 	if res2.StatusCode != http.StatusBadRequest {
 		t.Fatalf("trailing garbage accepted: %d", res2.StatusCode)
+	}
+}
+
+// ---- profile & account ------------------------------------------------------
+
+func TestUpdateProfileRequiresSession(t *testing.T) {
+	h := newHarness(t)
+	res, payload := call(t, h, http.MethodPatch, "/api/profile", map[string]string{
+		"username": "intruder", "displayName": "X", "bio": "", "avatarUrl": "",
+	}, nil)
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", res.StatusCode)
+	}
+	if errorCode(payload) != "UNAUTHORIZED" {
+		t.Fatalf("code = %q, want UNAUTHORIZED", errorCode(payload))
+	}
+}
+
+func TestUpdateProfileRewritesFieldsAndPersists(t *testing.T) {
+	h := newHarness(t)
+	res, _ := register(t, h, "profile@ideaven.test", "profileuser", "Correct-Horse-9")
+	cookie := sessionCookie(t, res)
+	if cookie == nil {
+		t.Fatal("register did not set a session cookie")
+	}
+
+	res, payload := call(t, h, http.MethodPatch, "/api/profile", map[string]string{
+		"username": "renameduser", "displayName": "Renamed", "bio": "I build tiny games.",
+		"avatarUrl": "https://cdn.example.com/a.png",
+	}, cookie)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, payload %v", res.StatusCode, payload)
+	}
+	user := userOf(payload)
+	if user["username"] != "renameduser" || user["displayName"] != "Renamed" ||
+		user["bio"] != "I build tiny games." || user["avatarUrl"] != "https://cdn.example.com/a.png" {
+		t.Fatalf("updated fields wrong: %v", user)
+	}
+	// ID is immutable and untouched.
+	if user["id"] == "" {
+		t.Fatal("id missing from response")
+	}
+
+	// The change persists through a fresh GET /me.
+	res, payload = call(t, h, http.MethodGet, "/api/auth/me", nil, cookie)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("me status = %d", res.StatusCode)
+	}
+	if userOf(payload)["username"] != "renameduser" {
+		t.Fatalf("username did not persist: %v", payload)
+	}
+}
+
+func TestUpdateProfileUsernameUniqueness(t *testing.T) {
+	h := newHarness(t)
+	res, _ := register(t, h, "first@ideaven.test", "firstuser", "Correct-Horse-9")
+	_ = sessionCookie(t, res)
+	res, _ = register(t, h, "second@ideaven.test", "seconduser", "Correct-Horse-9")
+	cookie := sessionCookie(t, res)
+
+	// Taking the other user's handle fails with a field-scoped error.
+	res, payload := call(t, h, http.MethodPatch, "/api/profile", map[string]string{
+		"username": "FIRSTUSER", "displayName": "", "bio": "", "avatarUrl": "",
+	}, cookie)
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", res.StatusCode)
+	}
+	if errorCode(payload) != "USERNAME_TAKEN" {
+		t.Fatalf("code = %q, want USERNAME_TAKEN", errorCode(payload))
+	}
+
+	// Keeping your own handle (case change) is not a conflict.
+	res, payload = call(t, h, http.MethodPatch, "/api/profile", map[string]string{
+		"username": "SecondUser", "displayName": "", "bio": "", "avatarUrl": "",
+	}, cookie)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("own-handle status = %d, payload %v", res.StatusCode, payload)
+	}
+}
+
+func TestUpdateProfileValidation(t *testing.T) {
+	h := newHarness(t)
+	res, _ := register(t, h, "valid@ideaven.test", "validuser", "Correct-Horse-9")
+	cookie := sessionCookie(t, res)
+
+	cases := []struct {
+		name   string
+		body   map[string]string
+		field  string
+		expect string
+	}{
+		{"short username", map[string]string{"username": "ab", "displayName": "", "bio": "", "avatarUrl": ""}, "username", "VALIDATION_ERROR"},
+		{"bad username chars", map[string]string{"username": "not allowed!", "displayName": "", "bio": "", "avatarUrl": ""}, "username", "VALIDATION_ERROR"},
+		{"long bio", map[string]string{"username": "validuser", "displayName": "", "bio": strings.Repeat("x", 281), "avatarUrl": ""}, "bio", "VALIDATION_ERROR"},
+		{"bad avatar scheme", map[string]string{"username": "validuser", "displayName": "", "bio": "", "avatarUrl": "javascript:alert(1)"}, "avatarUrl", "VALIDATION_ERROR"},
+	}
+	for _, tc := range cases {
+		res, payload := call(t, h, http.MethodPatch, "/api/profile", tc.body, cookie)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400", tc.name, res.StatusCode)
+		}
+		if errorCode(payload) != tc.expect {
+			t.Fatalf("%s: code = %q", tc.name, errorCode(payload))
+		}
+		errObj, _ := payload["error"].(map[string]any)
+		details, _ := errObj["details"].([]any)
+		if len(details) == 0 {
+			t.Fatalf("%s: expected field details", tc.name)
+		}
+		first, _ := details[0].(map[string]any)
+		if first["field"] != tc.field {
+			t.Fatalf("%s: detail field = %v, want %s", tc.name, first["field"], tc.field)
+		}
+	}
+}
+
+func TestChangePasswordFlow(t *testing.T) {
+	h := newHarness(t)
+	res, _ := register(t, h, "changer@ideaven.test", "changer", "Correct-Horse-9")
+	cookie := sessionCookie(t, res)
+
+	// Wrong current password is rejected without revealing more.
+	res, payload := call(t, h, http.MethodPost, "/api/auth/change-password", map[string]string{
+		"currentPassword": "wrong-pass-1", "newPassword": "New-Stable-7",
+	}, cookie)
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong-current status = %d, payload %v", res.StatusCode, payload)
+	}
+
+	// A second device (session) exists before the change.
+	res, _ = call(t, h, http.MethodPost, "/api/auth/login", map[string]string{
+		"identifier": "changer", "password": "Correct-Horse-9",
+	}, nil)
+	otherCookie := sessionCookie(t, res)
+	if otherCookie == nil {
+		t.Fatal("second login did not set a cookie")
+	}
+
+	// Correct change: this device stays signed in.
+	res, payload = call(t, h, http.MethodPost, "/api/auth/change-password", map[string]string{
+		"currentPassword": "Correct-Horse-9", "newPassword": "New-Stable-7",
+	}, cookie)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("change status = %d, payload %v", res.StatusCode, payload)
+	}
+
+	res, _ = call(t, h, http.MethodGet, "/api/auth/me", nil, cookie)
+	if res.StatusCode != http.StatusOK {
+		t.Fatal("current device was signed out by its own password change")
+	}
+
+	// The other device was revoked.
+	res, _ = call(t, h, http.MethodGet, "/api/auth/me", nil, otherCookie)
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatal("other device survived the password change")
+	}
+
+	// The old password no longer works; the new one does.
+	res, _ = call(t, h, http.MethodPost, "/api/auth/login", map[string]string{
+		"identifier": "changer", "password": "Correct-Horse-9",
+	}, nil)
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatal("old password still accepted")
+	}
+	res, _ = call(t, h, http.MethodPost, "/api/auth/login", map[string]string{
+		"identifier": "changer", "password": "New-Stable-7",
+	}, nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatal("new password rejected")
+	}
+}
+
+func TestChangePasswordRequiresSession(t *testing.T) {
+	h := newHarness(t)
+	res, payload := call(t, h, http.MethodPost, "/api/auth/change-password", map[string]string{
+		"currentPassword": "x", "newPassword": "New-Stable-7",
+	}, nil)
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", res.StatusCode)
+	}
+	if errorCode(payload) != "UNAUTHORIZED" {
+		t.Fatalf("code = %q", errorCode(payload))
+	}
+}
+
+func TestMeIncludesBio(t *testing.T) {
+	h := newHarness(t)
+	res, _ := register(t, h, "bio@ideaven.test", "biouser", "Correct-Horse-9")
+	cookie := sessionCookie(t, res)
+
+	res, payload := call(t, h, http.MethodGet, "/api/auth/me", nil, cookie)
+	user := userOf(payload)
+	if _, present := user["bio"]; !present {
+		t.Fatal("bio missing from /me payload")
+	}
+	if _, present := user["passwordHash"]; present {
+		t.Fatal("password hash leaked into /me payload")
 	}
 }

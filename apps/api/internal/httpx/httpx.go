@@ -7,7 +7,9 @@ package httpx
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 )
 
 // FieldError attaches a validation message to a request field.
@@ -29,20 +31,21 @@ func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
 // Common error codes and constructors.
 const (
-	CodeValidation      = "VALIDATION_ERROR"
-	CodeInvalidBody     = "INVALID_REQUEST_BODY"
-	CodeUnauthorized    = "UNAUTHORIZED"
-	CodeInvalidCreds    = "INVALID_CREDENTIALS"
-	CodeEmailTaken      = "EMAIL_TAKEN"
-	CodeUsernameTaken   = "USERNAME_TAKEN"
-	CodeTokenInvalid    = "TOKEN_INVALID"
-	CodeTokenExpired    = "TOKEN_EXPIRED"
-	CodeAlreadyVerified = "EMAIL_ALREADY_VERIFIED"
-	CodeRateLimited     = "RATE_LIMITED"
-	CodeForbidden       = "FORBIDDEN"
-	CodeNotFound        = "NOT_FOUND"
-	CodeInternal        = "INTERNAL_ERROR"
-	CodeConflict        = "CONFLICT"
+	CodeValidation       = "VALIDATION_ERROR"
+	CodeInvalidBody      = "INVALID_REQUEST_BODY"
+	CodeUnauthorized     = "UNAUTHORIZED"
+	CodeInvalidCreds     = "INVALID_CREDENTIALS"
+	CodeEmailTaken       = "EMAIL_TAKEN"
+	CodeUsernameTaken    = "USERNAME_TAKEN"
+	CodeTokenInvalid     = "TOKEN_INVALID"
+	CodeTokenExpired     = "TOKEN_EXPIRED"
+	CodeAlreadyVerified  = "EMAIL_ALREADY_VERIFIED"
+	CodeRateLimited      = "RATE_LIMITED"
+	CodeForbidden        = "FORBIDDEN"
+	CodeNotFound         = "NOT_FOUND"
+	CodeMethodNotAllowed = "METHOD_NOT_ALLOWED"
+	CodeInternal         = "INTERNAL_ERROR"
+	CodeConflict         = "CONFLICT"
 )
 
 // Errorf builds an *Error.
@@ -71,4 +74,31 @@ func WriteError(w http.ResponseWriter, err error) {
 		apiErr = Errorf(http.StatusInternalServerError, CodeInternal, "Something went wrong on our side. Try again shortly.")
 	}
 	WriteJSON(w, apiErr.Status, map[string]*Error{"error": apiErr})
+}
+
+// DecodeJSON enforces a bounded, strictly-typed JSON body. Handlers must also
+// require an explicit application/json Content-Type: HTML forms cannot set it
+// without a CORS preflight, which complements SameSite cookies and origin
+// checks as CSRF defense.
+func DecodeJSON(w http.ResponseWriter, r *http.Request, target any, maxBytes int64) error {
+	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(strings.ToLower(ct), "application/json") {
+		return Errorf(http.StatusUnsupportedMediaType, CodeInvalidBody, "Requests must be JSON (Content-Type: application/json).")
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxBytes+1))
+	if err != nil {
+		return Errorf(http.StatusBadRequest, CodeInvalidBody, "Could not read the request body.")
+	}
+	if int64(len(body)) > maxBytes {
+		return Errorf(http.StatusRequestEntityTooLarge, CodeInvalidBody, "Request body is too large.")
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(body)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return Errorf(http.StatusBadRequest, CodeInvalidBody, "The request body is not valid JSON.")
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return Errorf(http.StatusBadRequest, CodeInvalidBody, "The request body must contain a single JSON object.")
+	}
+	return nil
 }

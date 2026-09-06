@@ -90,7 +90,7 @@ export function CoreIdea() {
             >
               <div className="w-full max-w-xs rounded-xl border border-line bg-panel/80 p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <span className="rounded-md border border-line bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-fog">
+                  <span className="rounded-md border border-line bg-surface px-2 py-0.5 font-mono text-[10px] text-fog">
                     player.scene.ts
                   </span>
                   <span className="font-mono text-[10px] text-mist">ts</span>

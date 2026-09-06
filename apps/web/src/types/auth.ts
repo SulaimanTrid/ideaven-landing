@@ -8,6 +8,7 @@ export interface User {
   email: string;
   username: string;
   displayName: string;
+  bio: string;
   avatarUrl: string;
   emailVerified: boolean;
   createdAt: string;
@@ -28,6 +29,19 @@ export interface RegisterRequest {
 export interface LoginRequest {
   identifier: string;
   password: string;
+}
+
+/** Editable profile fields — sent as a full replacement to PATCH /api/profile. */
+export interface UpdateProfileRequest {
+  username: string;
+  displayName: string;
+  bio: string;
+  avatarUrl: string;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export interface FieldError {
