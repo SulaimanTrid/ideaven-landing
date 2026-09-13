@@ -4,7 +4,7 @@
 > The repository is the source of truth; this file only points at it.
 
 CURRENT_DATE: 2026-09-14
-CURRENT_COMMIT: 2d2f270 (base) + this session's uncommitted tilemap-paint slice
+CURRENT_COMMIT: 35fd4a1 (feat(2d): tilemap painting workflow + honest per-cell collision)
 CURRENT_BRANCH: main
 
 CURRENT_OBJECTIVE:
@@ -95,7 +95,7 @@ SESSION LOG:
 
 ## Session 40 (2026-09-14)
 DATE: 2026-09-14
-COMMIT: (working tree on 2d2f270; tilemap-paint slice)
+COMMIT: 35fd4a1 — feat(2d): tilemap painting workflow + honest per-cell collision
 CURRENT PHASE: 8.0 / 2D Game Engine — PHASE F, SYSTEM 4 (Tilemap)
 CURRENT FEATURE: Tilemap painting + honest per-cell collision
 COMPLETED THIS SESSION:
