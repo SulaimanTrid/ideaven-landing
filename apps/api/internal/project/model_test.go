@@ -1,6 +1,8 @@
-﻿package project
+package project
 
 import (
+	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 )
@@ -23,6 +25,51 @@ func TestInitialModelIsValid(t *testing.T) {
 		if len(model.Screens[0].Components) != 0 {
 			t.Fatalf("%s: initial screen should have no components", projectType)
 		}
+	}
+}
+
+// TASK 11: preview settings vocabulary and bounds.
+func TestValidatePreviewSettings(t *testing.T) {
+	base := func() *Model {
+		m := InitialModel("app")
+		m.Screens = []Screen{{ID: "s1", Name: "One", Components: []Component{{ID: "c1", Type: "text"}}}}
+		m.Navigation.StartScreenID = "s1"
+		return &m
+	}
+
+	valid := base()
+	valid.Settings.Preview = &PreviewSettings{Device: "phone", Orientation: "landscape"}
+	if err := ValidateModel(valid); err != nil {
+		t.Fatalf("valid preview rejected: %v", err)
+	}
+
+	custom := base()
+	custom.Settings.Preview = &PreviewSettings{Device: "custom", Orientation: "portrait", Width: 800, Height: 600}
+	if err := ValidateModel(custom); err != nil {
+		t.Fatalf("custom preview rejected: %v", err)
+	}
+
+	badDevice := base()
+	badDevice.Settings.Preview = &PreviewSettings{Device: "holodeck"}
+	if err := ValidateModel(badDevice); err == nil {
+		t.Fatal("unknown device accepted")
+	}
+
+	badOrientation := base()
+	badOrientation.Settings.Preview = &PreviewSettings{Device: "phone", Orientation: "diagonal"}
+	if err := ValidateModel(badOrientation); err == nil {
+		t.Fatal("unknown orientation accepted")
+	}
+
+	badSize := base()
+	badSize.Settings.Preview = &PreviewSettings{Device: "custom", Width: 50, Height: 600}
+	if err := ValidateModel(badSize); err == nil {
+		t.Fatal("undersized custom viewport accepted")
+	}
+
+	absent := base()
+	if err := ValidateModel(absent); err != nil {
+		t.Fatalf("absent preview settings rejected: %v", err)
 	}
 }
 
@@ -113,6 +160,37 @@ func TestValidateModelRejections(t *testing.T) {
 				}}},
 			}}
 		}},
+		{"duplicate block id across handler and parked", func(m *Model) {
+			m.Screens[0].Logic = &Logic{
+				Handlers: []EventHandler{
+					{ID: "h1", Event: "click", Body: []Block{{ID: "b1", Kind: "statement", Type: "show-message"}}},
+				},
+				Parked: [][]Block{{{ID: "b1", Kind: "statement", Type: "navigate"}}},
+			}
+		}},
+		{"parked block without id", func(m *Model) {
+			m.Screens[0].Logic = &Logic{
+				Parked: [][]Block{{{Kind: "statement", Type: "show-message"}}},
+			}
+		}},
+		{"empty parked run", func(m *Model) {
+			m.Screens[0].Logic = &Logic{Parked: [][]Block{nil}}
+		}},
+		{"position with NaN coordinate", func(m *Model) {
+			m.Screens[0].Logic = &Logic{
+				Positions: map[string]Position{"h1": {X: math.NaN(), Y: 10}},
+			}
+		}},
+		{"position out of range", func(m *Model) {
+			m.Screens[0].Logic = &Logic{
+				Positions: map[string]Position{"h1": {X: 2_000_000, Y: 0}},
+			}
+		}},
+		{"position with empty key", func(m *Model) {
+			m.Screens[0].Logic = &Logic{
+				Positions: map[string]Position{" ": {X: 0, Y: 0}},
+			}
+		}},
 	}
 	for _, tc := range cases {
 		model := InitialModel(TypeApp)
@@ -136,6 +214,50 @@ func TestValidateModelAcceptsNestedComponents(t *testing.T) {
 	}
 	if err := ValidateModel(&model); err != nil {
 		t.Fatalf("valid nested model rejected: %v", err)
+	}
+}
+
+func TestValidateModelAcceptsParkedBlocksAndPositions(t *testing.T) {
+	model := InitialModel(TypeApp)
+	model.Screens[0].Logic = &Logic{
+		Handlers: []EventHandler{
+			{ID: "h1", Event: "click", Body: []Block{
+				{ID: "b1", Kind: "statement", Type: "show-message"},
+			}},
+		},
+		Parked: [][]Block{
+			{
+				{ID: "b2", Kind: "statement", Type: "navigate", Inputs: map[string]any{"screenId": "s1"}},
+				{ID: "b3", Kind: "statement", Type: "show-message"},
+			},
+			{{ID: "b4", Kind: "expression", Type: "number", Inputs: map[string]any{"value": 1}}},
+		},
+		Positions: map[string]Position{
+			"h1": {X: 48, Y: 28},
+			"b2": {X: 420, Y: 60},
+			"b4": {X: 420, Y: 190},
+		},
+	}
+	if err := ValidateModel(&model); err != nil {
+		t.Fatalf("parked/positions model rejected: %v", err)
+	}
+
+	// The same document must round-trip through JSON without losing the
+	// canvas layout — that is what makes block positions persistent.
+	raw, err := json.Marshal(model)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded Model
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	logic := decoded.Screens[0].Logic
+	if logic == nil || len(logic.Parked) != 2 || len(logic.Positions) != 3 {
+		t.Fatalf("parked/positions lost on JSON round-trip: %+v", logic)
+	}
+	if logic.Positions["h1"] != (Position{X: 48, Y: 28}) {
+		t.Fatalf("script position changed: %+v", logic.Positions["h1"])
 	}
 }
 

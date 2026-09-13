@@ -1,24 +1,31 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CATEGORY_COLORS } from "@/lib/project-model/blocks";
+import { CATEGORY_COLORS, CATEGORY_LABELS } from "@/lib/project-model/blocks";
 import {
   allExpressionDefs,
   allStatementDefs,
   createRegistryBlock,
   extensionNameFor,
+  getAnyBlockDef,
   isExtensionBlock,
 } from "@/lib/project-model/block-registry";
-import { eventsFor, getDef, EVENT_LABELS, SCREEN_EVENTS } from "@/lib/project-model/registry";
+import { eventsFor, getDef, EVENT_LABELS, SCREEN_EVENTS, ENTITY_TYPES, eventLabel, translatedBlockLabel, translatedEventLabel, translatedCategoryLabel } from "@/lib/project-model/registry";
+import { entitiesOf, touchEventFor, targetOfTouchEvent } from "@/lib/project-model/scene";
+import { useI18n } from "@/lib/i18n/i18n";
 import { useBuilder, componentLabel } from "./builder-context";
-import { setDragPayload, type BlockDragPayload } from "./blocks-editors";
+import { useBlocksDnd } from "./blocks-dnd";
+import { BlockIcon } from "./blocks-visual";
 import { IconClose, IconPlus } from "@/components/visuals/icons";
 import type { ProjectModelComponent } from "@/types/project";
 
 /**
  * Side panels for Blocks mode: the handler list for the active screen (left),
  * plus the statement palette and project variables (right). Handlers appear
- * automatically from the components that exist on the screen.
+ * automatically from the components that exist on the screen. The palette is
+ * context-aware: with a component handler selected it surfaces blocks
+ * pre-wired to that component, and blocks declared by installed extensions
+ * group under the extension's name.
  */
 export function BlocksSidePanel() {
   return <HandlersPanel />;
@@ -26,6 +33,7 @@ export function BlocksSidePanel() {
 
 function HandlersPanel() {
   const { model, activeScreenId, selectedHandlerId, selectHandler, actions } = useBuilder();
+  const { t } = useI18n();
   const screen = model.screens.find((s) => s.id === activeScreenId);
   const handlers = screen?.logic?.handlers ?? [];
 
@@ -46,7 +54,23 @@ function HandlersPanel() {
   })();
 
   const target = targetId === "" ? null : components.find((c) => c.id === targetId) ?? null;
-  const availableEvents = target ? eventsFor(target.type) : [...SCREEN_EVENTS];
+  const sceneEntities = screen ? entitiesOf(screen) : [];
+  // Scene entities expose dynamic touch events: "when <this> touches <other>".
+  const touchEvents =
+    target && ENTITY_TYPES.has(target.type)
+      ? sceneEntities.filter((e) => e.id !== target.id).map((e) => touchEventFor(e.id))
+      : [];
+  const availableEvents = [
+    ...(target ? eventsFor(target.type) : [...SCREEN_EVENTS]),
+    ...touchEvents,
+  ];
+  /** Human label for any event, resolving scene touch targets by name. */
+  const eventDisplayName = (name: string): string => {
+    const touched = targetOfTouchEvent(name);
+    if (touched === null) return translatedEventLabel(name, t as unknown as (key: string) => string);
+    const other = sceneEntities.find((e) => e.id === touched);
+    return `Touches ${other ? componentLabel(other) : "a missing entity"}`;
+  };
 
   const submit = () => {
     const componentId = target ? target.id : null;
@@ -62,7 +86,7 @@ function HandlersPanel() {
   return (
     <div className="border-b border-line p-3">
       <div className="flex items-center justify-between px-1 pb-1.5">
-        <h3 className="font-mono text-[10px] tracking-[0.16em] text-mist uppercase">Event handlers</h3>
+        <h3 className="font-mono text-[10px] uppercase tracking-[0.16em] text-mist">Event handlers</h3>
         <button
           type="button"
           aria-label="Add handler"
@@ -86,12 +110,15 @@ function HandlersPanel() {
             ? components.find((c) => c.id === handler.componentId)
             : null;
           const selected = handler.id === selectedHandlerId;
+          const eventText = eventLabel(handler.event) === "Touches"
+            ? eventDisplayName(handler.event)
+            : translatedEventLabel(handler.event, t as unknown as (key: string) => string);
           const label =
             handler.componentId === null
-              ? `Screen ${EVENT_LABELS[handler.event] ?? handler.event}`
+              ? `${t("block.when")} Screen ${translatedEventLabel(handler.event, t as unknown as (key: string) => string)}`
               : component
-                ? `${componentLabel(component)} ${EVENT_LABELS[handler.event] ?? handler.event}`
-                : `Missing component ${EVENT_LABELS[handler.event] ?? handler.event}`;
+                ? `${componentLabel(component)} ${eventText}`
+                : `Missing component ${translatedEventLabel(handler.event, t as unknown as (key: string) => string)}`;
           return (
             <li key={handler.id}>
               <div
@@ -139,7 +166,7 @@ function HandlersPanel() {
           >
             <option value="">Screen events</option>
             {components
-              .filter((c) => eventsFor(c.type).length > 0)
+              .filter((c) => eventsFor(c.type).length > 0 || ENTITY_TYPES.has(c.type))
               .map((c) => (
                 <option key={c.id} value={c.id}>
                   {componentLabel(c)} · {getDef(c.type)?.label ?? c.type}
@@ -155,7 +182,7 @@ function HandlersPanel() {
             <option value="">choose event…</option>
             {availableEvents.map((name) => (
               <option key={name} value={name}>
-                {EVENT_LABELS[name] ?? name}
+                {eventDisplayName(name)}
               </option>
             ))}
           </select>
@@ -183,33 +210,64 @@ function HandlersPanel() {
   );
 }
 
-/** Statement palette (right rail in Blocks mode): search, drag sources, click-to-add. */
-export function BlockPalette() {
+/** Statement palette (right rail in Blocks mode): search, drag sources, click-to-add.
+ * `extensionTick` bumps whenever installed extensions register, so the
+ * vocabulary memo re-derives with the freshly registered blocks. */
+export function BlockPalette({ extensionTick = 0 }: { extensionTick?: number }) {
   const { model, activeScreenId, selectedHandlerId, actions } = useBuilder();
+  const { t } = useI18n();
+  const dnd = useBlocksDnd();
   const screen = model.screens.find((s) => s.id === activeScreenId);
   const handler = screen?.logic?.handlers.find((h) => h.id === selectedHandlerId) ?? null;
 
   const [query, setQuery] = useState("");
 
-  const statements = useMemo(() => allStatementDefs(), []);
-  const reporters = useMemo(() => allExpressionDefs(), []);
+  const statements = useMemo(() => allStatementDefs(), [extensionTick]);
+  const reporters = useMemo(() => allExpressionDefs(), [extensionTick]);
 
-  const matches = (label: string, type: string) => {
-    const q = query.trim().toLowerCase();
-    if (q === "") return true;
-    return label.toLowerCase().includes(q) || type.toLowerCase().includes(q);
-  };
+  const q = query.trim().toLowerCase();
+  const matches = (label: string, type: string, category: string) =>
+    q === "" || label.toLowerCase().includes(q) || type.toLowerCase().includes(q) || category.toLowerCase().includes(q);
 
-  const add = (type: string) => {
+  // Context: the handler's component gets a dedicated group with blocks
+  // pre-wired to it (Button1 → set/get-property for Button1 at the top).
+  const contextComponent = handler?.componentId
+    ? (() => {
+        const list: ProjectModelComponent[] = [];
+        const walk = (nodes: ProjectModelComponent[]) => {
+          for (const node of nodes) {
+            list.push(node);
+            if (node.children) walk(node.children);
+          }
+        };
+        if (screen) walk(screen.components);
+        return list.find((c) => c.id === handler.componentId) ?? null;
+      })()
+    : null;
+
+  // Typing a variable's name surfaces that variable's data blocks first.
+  const variableMatches = useMemo(() => {
+    if (q === "") return [];
+    return model.variables.filter((v) => v.name.toLowerCase().includes(q)).slice(0, 3);
+  }, [model.variables, q]);
+
+  const add = (type: string, preset?: { inputs?: Record<string, string | number | boolean> }) => {
     if (!handler) return;
-    const block = createRegistryBlock(type);
+    const block = createRegistryBlock(type, preset);
     if (!block) return;
     actions.addStatement(handler.id, null, handler.body.length, block);
   };
 
-  const startDrag = (event: React.DragEvent, payload: BlockDragPayload, marker: string) => {
-    setDragPayload(event, payload);
-    event.dataTransfer.setData(marker, "");
+  const startStatementDrag = (
+    event: React.PointerEvent,
+    type: string,
+    preset?: { inputs?: Record<string, string | number | boolean> },
+  ) => {
+    dnd.begin({ type: "palette-statement", blockType: type, preset }, event);
+  };
+
+  const startReporterDrag = (event: React.PointerEvent, type: string) => {
+    dnd.begin({ type: "palette-reporter", blockType: type }, event);
   };
 
   // Group statements: built-in categories first, then one group per extension.
@@ -217,7 +275,7 @@ export function BlockPalette() {
     const byCategory = new Map<string, typeof statements>();
     const byExtension = new Map<string, typeof statements>();
     for (const def of statements) {
-      if (!matches(def.label, def.type)) continue;
+      if (!matches(translatedBlockLabel(def, t as unknown as (key: string) => string), def.type, translatedCategoryLabel(def.category, t as unknown as (key: string) => string))) continue;
       if (isExtensionBlock(def.type)) {
         const name = extensionNameFor(def.type) ?? "Extension";
         const list = byExtension.get(name) ?? [];
@@ -231,21 +289,21 @@ export function BlockPalette() {
     }
     return { byCategory, byExtension };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statements, query]);
+  }, [statements, q, extensionTick]);
 
   // Palette adapts to the project type (realignment §11): game projects
   // surface flow/state/control first — the gameplay-oriented categories —
   // while app projects lead with UI. Same IR, same blocks, different order.
   const isGame = model.type === "game";
   const categoryOrder = isGame
-    ? ["navigation", "variables", "control", "ui", "text", "logic"]
-    : ["ui", "variables", "navigation", "control", "text", "logic"];
+    ? ["navigation", "variables", "control", "audio", "ui", "text", "logic"]
+    : ["ui", "variables", "navigation", "control", "audio", "text", "logic"];
   const orderedCategories = [...groups.byCategory.entries()].sort(
     (a, b) => categoryOrder.indexOf(a[0]) - categoryOrder.indexOf(b[0]),
   );
 
-
-    const reporterItems = reporters.filter((def) => matches(def.label, def.type));
+  const reporterItems = reporters.filter((def) => matches(translatedBlockLabel(def, t as unknown as (key: string) => string), def.type, translatedCategoryLabel(def.category, t as unknown as (key: string) => string)));
+  const variableReporters = q !== "" ? reporterItems.filter((def) => def.type === "get-variable") : [];
 
   return (
     <div className="flex flex-col gap-4 p-3">
@@ -253,85 +311,136 @@ export function BlockPalette() {
         type="search"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search blocks…"
+        placeholder="Search blocks… (Ctrl+F)"
         aria-label="Search blocks"
+        data-block-search
+        onKeyDown={(event) => event.stopPropagation()}
         className="h-8 w-full rounded-md border border-line bg-panel px-2 text-[12px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
       />
 
+      {variableMatches.length > 0 ? (
+        <section aria-label="Blocks for matching variables">
+          <h3 className="px-1 pb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-mist">
+            For variable{variableMatches.length > 1 ? "s" : ""} {variableMatches.map((v) => `“${v.name}”`).join(", ")}
+          </h3>
+          <div className="flex flex-col gap-1.5">
+            {["set-variable", "change-variable"].map((type) => (
+              <PaletteStatement
+                key={type}
+                blockType={type}
+                onAdd={() => add(type, { inputs: { name: variableMatches[0]?.name ?? "" } })}
+                onDragStart={(event) =>
+                  startStatementDrag(event, type, { inputs: { name: variableMatches[0]?.name ?? "" } })
+                }
+                disabled={!handler}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {contextComponent ? (
+        <section aria-label={`Blocks for ${componentLabel(contextComponent)}`}>
+          <h3 className="px-1 pb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-mist">
+            For {componentLabel(contextComponent)}
+          </h3>
+          <div className="flex flex-col gap-1.5">
+            <PaletteStatement
+              blockType="set-property"
+              onAdd={() => add("set-property", { inputs: { componentId: contextComponent.id } })}
+              onDragStart={(event) =>
+                startStatementDrag(event, "set-property", { inputs: { componentId: contextComponent.id } })
+              }
+            />
+            <PaletteStatement
+              blockType="show-message"
+              onAdd={() => add("show-message")}
+              onDragStart={(event) => startStatementDrag(event, "show-message")}
+            />
+          </div>
+        </section>
+      ) : null}
+
       <section aria-label="Statement blocks">
-        <h3 className="px-1 pb-1.5 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
+        <h3 className="px-1 pb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-mist">
           Statement blocks
         </h3>
         {!handler ? (
           <p className="px-1 text-[12px] leading-5 text-mist">
-            Select a handler on the left to add blocks. You can still drag
-            blocks onto the canvas once one is open.
+            Click adds to the selected handler — pick one on the left. You can
+            still drag blocks onto the canvas: drop them on a script to connect,
+            or on free canvas to park them as drafts.
           </p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {orderedCategories.map(([category, defs]) => (
-              <div key={category} className="flex flex-col gap-1.5">
-                <p className="px-1 text-[11px] font-medium text-mist">{category}</p>
-                {defs.map((def) => (
-                  <PaletteStatement
-                    key={def.type}
-                    def={def}
-                    onAdd={() => add(def.type)}
-                    onDragStart={(event) =>
-                      startDrag(event, { kind: "statement-new", blockType: def.type }, "x-ideaven-statement")
-                    }
-                  />
-                ))}
-              </div>
-            ))}
-            {[...groups.byExtension.entries()].map(([name, defs]) => (
-              <div key={name} className="flex flex-col gap-1.5">
-                <p className="px-1 text-[11px] font-medium text-violet">⬡ {name}</p>
-                {defs.map((def) => (
-                  <PaletteStatement
-                    key={def.type}
-                    def={def}
-                    onAdd={() => add(def.type)}
-                    onDragStart={(event) =>
-                      startDrag(event, { kind: "statement-new", blockType: def.type }, "x-ideaven-statement")
-                    }
-                  />
-                ))}
-              </div>
-            ))}
-            {groups.byCategory.size === 0 && groups.byExtension.size === 0 ? (
-              <p className="px-1 text-[12px] text-mist">No blocks match “{query}”.</p>
-            ) : null}
-          </div>
-        )}
+        ) : null}
+        <div className="flex flex-col gap-3">
+          {orderedCategories.map(([category, defs]) => (
+            <div key={category} className="flex flex-col gap-1.5">
+              <p className="px-1 text-[11px] font-medium text-mist">{translatedCategoryLabel(category as string, t as unknown as (key: string) => string)}</p>
+              {defs.map((def) => (
+                <PaletteStatement
+                  key={def.type}
+                  blockType={def.type}
+                  labelOverride={translatedBlockLabel(def, t as unknown as (key: string) => string)}
+                  onAdd={() => add(def.type)}
+                  onDragStart={(event) => startStatementDrag(event, def.type)}
+                  disabled={!handler}
+                />
+              ))}
+            </div>
+          ))}
+          {[...groups.byExtension.entries()].map(([name, defs]) => (
+            <div key={name} className="flex flex-col gap-1.5">
+              <p className="px-1 text-[11px] font-medium text-violet">⬡ {name}</p>
+              {defs.map((def) => (
+                <PaletteStatement
+                  key={def.type}
+                  blockType={def.type}
+                  labelOverride={translatedBlockLabel(def, t as unknown as (key: string) => string)}
+                  onAdd={() => add(def.type)}
+                  onDragStart={(event) => startStatementDrag(event, def.type)}
+                  disabled={!handler}
+                />
+              ))}
+            </div>
+          ))}
+          {handler && groups.byCategory.size === 0 && groups.byExtension.size === 0 ? (
+            <p className="px-1 text-[12px] text-mist">No blocks match “{query}”.</p>
+          ) : null}
+        </div>
       </section>
 
       <section aria-label="Value blocks">
-        <h3 className="px-1 pb-1.5 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
+        <h3 className="px-1 pb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-mist">
           Values · drag into a socket
         </h3>
-        <div className="flex flex-wrap gap-1.5">
-          {reporterItems.map((def) => {
-            const color = CATEGORY_COLORS[def.category];
-            return (
-              <span
-                key={def.type}
-                draggable
-                data-palette-reporter={def.type}
-                title="Drag into a value socket on the canvas"
+        {variableReporters.length > 0 ? (
+          <div className="mb-2 flex flex-col gap-1.5">
+            {variableMatches.map((v) => (
+              <PaletteReporter
+                key={v.id}
+                blockType="get-variable"
+                label={`variable ${v.name}`}
                 onDragStart={(event) =>
-                  startDrag(event, { kind: "reporter-new", blockType: def.type }, "x-ideaven-reporter")
+                  dnd.begin(
+                    { type: "palette-reporter", blockType: "get-variable", preset: { inputs: { name: v.name } } },
+                    event,
+                  )
                 }
-                className="cursor-grab rounded-[8px] px-2.5 py-1 text-[11.5px] font-medium text-[#0b0e16] active:cursor-grabbing"
-                style={{
-                  background: color,
-                  border: "1px solid rgb(10 12 18 / 0.3)",
-                }}
-              >
-                {def.label.replace(/\{(\w+)\}/g, "＿")}
-              </span>
-            );
-          })}
+              />
+            ))}
+          </div>
+        ) : null}
+        <div className="flex flex-wrap gap-1.5">
+          {reporterItems
+            .filter((def) => !(q !== "" && def.type === "get-variable"))
+            .map((def) => (
+              <PaletteReporter
+                key={def.type}
+                blockType={def.type}
+                label={translatedBlockLabel(def, t as unknown as (key: string) => string).replace(/\{(\w+)\}/g, "＿")}
+                onDragStart={(event) => startReporterDrag(event, def.type)}
+              />
+            ))}
           {reporterItems.length === 0 ? (
             <p className="px-1 text-[12px] text-mist">No value blocks match.</p>
           ) : null}
@@ -341,40 +450,80 @@ export function BlockPalette() {
       <VariablesPanel />
 
       <p className="px-1 text-[11px] leading-5 text-mist">
-        Drag blocks between the palette and the canvas to snap them in place.
-        The same logic drives the generated code in Code mode.
+        Drag a block onto a script to connect it, or onto free canvas to park
+        it. The same logic drives the generated code in Code mode.
       </p>
     </div>
   );
 }
 
 function PaletteStatement({
-  def,
+  blockType,
+  labelOverride,
   onAdd,
   onDragStart,
+  disabled,
 }: {
-  def: { type: string; label: string; category: keyof typeof CATEGORY_COLORS };
+  blockType: string;
+  labelOverride?: string;
   onAdd: () => void;
-  onDragStart: (event: React.DragEvent) => void;
+  onDragStart: (event: React.PointerEvent) => void;
+  disabled?: boolean;
 }) {
-  const color = CATEGORY_COLORS[def.category];
+  const dnd = useBlocksDnd();
+  const color = CATEGORY_COLORS[getAnyBlockDef(blockType)?.category ?? "ui"];
+  const label = labelOverride ?? blockType;
   return (
     <button
       type="button"
-      draggable
-      data-palette-statement={def.type}
-      onDragStart={onDragStart}
-      onClick={onAdd}
-      title="Click to append · drag to place"
-      className="cursor-grab rounded-[9px] px-2.5 py-2 text-left text-[12px] font-medium text-[#0b0e16] transition-transform hover:translate-x-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 active:cursor-grabbing"
+      data-palette-statement={blockType}
+      onPointerDown={onDragStart}
+      onClick={() => {
+        if (!dnd.wasDrag()) onAdd();
+      }}
+      title={disabled ? "Select a handler first — or drag onto the canvas" : "Click to append · drag to place"}
+      aria-disabled={disabled || undefined}
+      className={`flex cursor-grab items-center gap-1.5 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-medium text-[#0b0e16] transition-transform hover:translate-x-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 active:cursor-grabbing ${
+        disabled ? "opacity-80" : ""
+      }`}
       style={{
         background: color,
         border: "1px solid rgb(10 12 18 / 0.3)",
         boxShadow: "0 2px 6px -2px rgb(0 0 0 / 0.5)",
       }}
     >
-      {def.label.replace(/\{(\w+)\}/g, "＿")}
+      <span className="shrink-0">
+        <BlockIcon type={blockType} />
+      </span>
+      <span className="min-w-0">{label.replace(/\{(\w+)\}/g, "＿")}</span>
     </button>
+  );
+}
+
+function PaletteReporter({
+  blockType,
+  label,
+  onDragStart,
+}: {
+  blockType: string;
+  label: string;
+  onDragStart: (event: React.PointerEvent) => void;
+}) {
+  const color = CATEGORY_COLORS[getAnyBlockDef(blockType)?.category ?? "ui"];
+  return (
+    <span
+      data-palette-reporter={blockType}
+      draggable={false}
+      onPointerDown={onDragStart}
+      title="Drag into a value socket on the canvas — or onto free canvas to park it"
+      className="cursor-grab rounded-[8px] px-2.5 py-1 text-[11.5px] font-medium text-[#0b0e16] active:cursor-grabbing"
+      style={{
+        background: color,
+        border: "1px solid rgb(10 12 18 / 0.3)",
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -390,7 +539,7 @@ function VariablesPanel() {
 
   return (
     <section aria-label="Variables">
-      <h3 className="px-1 pb-1.5 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
+      <h3 className="px-1 pb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-mist">
         Variables
       </h3>
       {model.variables.length === 0 ? (

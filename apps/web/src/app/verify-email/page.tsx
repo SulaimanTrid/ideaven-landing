@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { AuthShell } from "@/components/auth/auth-shell";
+import { LocalizedAuthShell } from "@/components/auth/localized-auth-shell";
 import { VerifyEmailContent } from "@/components/auth/verify-email-content";
 
 export const metadata: Metadata = {
@@ -11,15 +11,15 @@ export const metadata: Metadata = {
 
 export default function VerifyEmailPage() {
   return (
-    <AuthShell
-      kicker="One last step"
-      title="Verify your email"
-      description="Confirming your address keeps your account recoverable."
+    <LocalizedAuthShell
+      kickerKey="auth.verifyTitle"
+      titleKey="auth.verifyTitle"
+      descriptionKey="auth.verifyTitle"
     >
       {/* useSearchParams requires a Suspense boundary during prerender. */}
       <Suspense fallback={<p className="text-center text-sm text-fog">Verifying…</p>}>
         <VerifyEmailContent />
       </Suspense>
-    </AuthShell>
+    </LocalizedAuthShell>
   );
 }

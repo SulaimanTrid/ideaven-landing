@@ -7,6 +7,7 @@ import { useAuth } from "@/auth/auth-provider";
 import { FormAlert, SubmitButton } from "@/components/auth/form-alert";
 import { FormField, PasswordInput, TextInput } from "@/components/auth/form-field";
 import { ApiError } from "@/types/auth";
+import { useI18n, type TranslationKey } from "@/lib/i18n/i18n";
 
 /** Mirrors the backend's rules (apps/api/internal/auth/validate.go). */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -45,6 +46,7 @@ export function validateRegisterForm(input: {
 }
 
 export function RegisterForm() {
+  const { t } = useI18n();
   const { register } = useAuth();
   const router = useRouter();
 
@@ -107,7 +109,7 @@ export function RegisterForm() {
     <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
       {formError ? <FormAlert tone="error">{formError}</FormAlert> : null}
 
-      <FormField label="Email" error={fieldErrors.email}>
+      <FormField label={t("auth.email")} error={fieldErrors.email}>
         {({ id, describedBy, invalid }) => (
           <TextInput
             id={id}
@@ -125,7 +127,7 @@ export function RegisterForm() {
         )}
       </FormField>
 
-      <FormField label="Username" error={fieldErrors.username} hint="Your public handle — letters, numbers, - and _.">
+      <FormField label={t("auth.username")} error={fieldErrors.username} hint="Your public handle — letters, numbers, - and _.">
         {({ id, describedBy, invalid }) => (
           <TextInput
             id={id}
@@ -141,7 +143,7 @@ export function RegisterForm() {
         )}
       </FormField>
 
-      <FormField label="Password" error={fieldErrors.password} hint="At least 8 characters.">
+      <FormField label={t("auth.password")} error={fieldErrors.password} hint="At least 8 characters.">
         {({ id, describedBy, invalid }) => (
           <PasswordInput
             id={id}
@@ -157,7 +159,7 @@ export function RegisterForm() {
         )}
       </FormField>
 
-      <FormField label="Confirm password" error={fieldErrors.confirmPassword}>
+      <FormField label={t("auth.password")} error={fieldErrors.confirmPassword}>
         {({ id, describedBy, invalid }) => (
           <PasswordInput
             id={id}
@@ -173,7 +175,7 @@ export function RegisterForm() {
         )}
       </FormField>
 
-      <FormField label="Display name" error={fieldErrors.displayName} hint="Optional — defaults to your username.">
+      <FormField label={t("settings.profile")} error={fieldErrors.displayName} hint="Optional — defaults to your username.">
         {({ id, describedBy, invalid }) => (
           <TextInput
             id={id}
@@ -187,8 +189,8 @@ export function RegisterForm() {
         )}
       </FormField>
 
-      <SubmitButton pending={pending} pendingLabel="Creating account…">
-        Create account
+      <SubmitButton pending={pending} pendingLabel={t("common.loading")}>
+        {t("auth.join")}
       </SubmitButton>
 
       <p className="text-center text-sm text-fog">
@@ -197,7 +199,7 @@ export function RegisterForm() {
           href="/login"
           className="font-medium text-violet underline-offset-4 transition-colors hover:underline"
         >
-          Sign in
+          {t("auth.signIn")}
         </Link>
       </p>
     </form>

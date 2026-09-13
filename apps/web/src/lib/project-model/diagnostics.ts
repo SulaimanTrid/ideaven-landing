@@ -56,6 +56,19 @@ export function collectModelDiagnostics(model: ProjectModel): ModelDiagnostic[] 
     };
     walk(screen.components);
     const componentIds = new Set(flat.map((c) => c.id));
+    // Property references resolve across the whole model: the runtime seeds
+    // state for every screen, so a handler on one screen may lawfully target
+    // another screen's component (e.g. filling the results screen's score).
+    const modelComponentIds = new Set<string>();
+    for (const anyScreen of model.screens) {
+      const walkAll = (nodes: typeof screen.components) => {
+        for (const node of nodes) {
+          modelComponentIds.add(node.id);
+          if (node.children) walkAll(node.children);
+        }
+      };
+      walkAll(anyScreen.components);
+    }
 
     for (const component of flat) {
       if (component.type !== "image") continue;
@@ -116,7 +129,7 @@ export function collectModelDiagnostics(model: ProjectModel): ModelDiagnostic[] 
         }
         if (block.type === "set-property" || block.type === "get-property") {
           const componentId = block.inputs?.componentId;
-          if (typeof componentId === "string" && componentId !== "" && !componentIds.has(componentId)) {
+          if (typeof componentId === "string" && componentId !== "" && !modelComponentIds.has(componentId)) {
             out.push({
               severity: "error",
               message: `${block.type === "set-property" ? "Set" : "Get"} property references a deleted component.`,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"ideaven/apps/api/internal/config"
 	"ideaven/apps/api/internal/httpx"
@@ -16,16 +17,47 @@ import (
 // auth.Service; keeps this package free of auth imports).
 type Authenticator func(ctx context.Context, token string) (*user.User, error)
 
+// FixGate guards the AI fix endpoint with the shared AI credit allowance.
+type FixGate func(ctx context.Context, userID string) bool
+
+// UsageRecorder logs one AI-assisted request for credits accounting.
+type UsageRecorder func(userID, provider, model string, promptChars, outputChars int, ok bool)
+
 // Handler translates HTTP requests into Service calls.
 type Handler struct {
-	service *Service
-	auth    Authenticator
-	cookie  config.CookieConfig
+	service  *Service
+	auth     Authenticator
+	cookie   config.CookieConfig
+	fixProv  FixProvider
+	fixGate  FixGate
+	usageRec UsageRecorder
+}
+
+// HandlerOption configures optional handler capabilities.
+type HandlerOption func(*Handler)
+
+// WithFixProvider enables the AI build-fix endpoint (nil disables it).
+func WithFixProvider(p FixProvider) HandlerOption {
+	return func(h *Handler) { h.fixProv = p }
+}
+
+// WithFixGate installs the shared AI credit gate.
+func WithFixGate(g FixGate) HandlerOption {
+	return func(h *Handler) { h.fixGate = g }
+}
+
+// WithUsageRecorder installs AI usage accounting.
+func WithUsageRecorder(r UsageRecorder) HandlerOption {
+	return func(h *Handler) { h.usageRec = r }
 }
 
 // NewHandler builds the extension handler.
-func NewHandler(service *Service, auth Authenticator, cookie config.CookieConfig) *Handler {
-	return &Handler{service: service, auth: auth, cookie: cookie}
+func NewHandler(service *Service, auth Authenticator, cookie config.CookieConfig, opts ...HandlerOption) *Handler {
+	h := &Handler{service: service, auth: auth, cookie: cookie}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // currentUser resolves the session, mirroring the project handler.
@@ -289,7 +321,8 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 }
 
 // Build handles POST /api/extensions/{id}/build — runs the isolated worker
-// pipeline and returns the step logs.
+// pipeline and returns the step logs (non-streaming, kept for clients that
+// poll a single result).
 func (h *Handler) Build(w http.ResponseWriter, r *http.Request) {
 	current, err := h.currentUser(r)
 	if err != nil {
@@ -312,6 +345,124 @@ func (h *Handler) Build(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"build": result})
 }
 
+// BuildStream handles POST /api/extensions/{id}/build/stream — the same
+// pipeline over Server-Sent Events: every real worker state and log line is
+// flushed the moment it happens, ending with one terminal result or
+// conflict event.
+func (h *Handler) BuildStream(w http.ResponseWriter, r *http.Request) {
+	current, err := h.currentUser(r)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	var body struct {
+		Version   string `json:"version"`
+		Changelog string `json:"changelog"`
+	}
+	if err := decode(w, r, &body); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	// Headers must be set before the first Flush commits the status; Flush
+	// on a connection that cannot stream returns an error with nothing
+	// written yet, so the JSON error path stays available.
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	// ResponseController resolves Flusher through middleware wrappers
+	// (logging/recovery), which a bare type assertion cannot.
+	controller := http.NewResponseController(w)
+	if err := controller.Flush(); err != nil {
+		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal,
+			"Streaming is not supported on this connection."))
+		return
+	}
+
+	emit := func(ev BuildEvent) error {
+		data, err := json.Marshal(ev)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+			return err
+		}
+		return controller.Flush()
+	}
+	// Transport errors (client disconnect) end the stream; the service records
+	// the run's real outcome. Operational setup errors still need a terminal
+	// SSE result because headers have already been sent at this point.
+	if err := h.service.StreamBuild(r.Context(), current.ID, r.PathValue("id"), body.Version, body.Changelog, emit); err != nil {
+		_ = emit(BuildEvent{Type: "result", OK: false, Error: "The build could not be started. Try again shortly.", FailedStep: "spawn"})
+	}
+}
+
+// ListBuilds handles GET /api/extensions/{id}/builds — the real build
+// history (every run: success, failure, cancellation).
+func (h *Handler) ListBuilds(w http.ResponseWriter, r *http.Request) {
+	current, err := h.currentUser(r)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	if err := validateID(id); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	if _, err := h.service.Get(r.Context(), current.ID, id); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	builds, err := h.service.Builds(r.Context(), current.ID, id, 50)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"builds": builds})
+}
+
+// Fix handles POST /api/extensions/{id}/fix — asks the AI provider to
+// propose a fix for one failed build. The response is a validated,
+// diff-based proposal; applying it stays a client decision through the
+// existing PATCH endpoint.
+func (h *Handler) Fix(w http.ResponseWriter, r *http.Request) {
+	current, err := h.currentUser(r)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	if h.fixProv == nil {
+		httpx.WriteError(w, httpx.Errorf(http.StatusServiceUnavailable, "AI_NOT_CONFIGURED",
+			"AI is not configured on this server. Set AI_PROVIDER, AI_API_KEY and AI_MODEL to enable Fix with AI."))
+		return
+	}
+	if h.fixGate != nil && h.fixGate(r.Context(), current.ID) {
+		httpx.WriteError(w, httpx.Errorf(http.StatusTooManyRequests, "AI_CREDITS_EXHAUSTED",
+			"You have used all of today's free AI commands. The allowance resets at midnight."))
+		return
+	}
+	var body struct {
+		BuildID string `json:"buildId"`
+	}
+	if err := decode(w, r, &body); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	if strings.TrimSpace(body.BuildID) == "" {
+		httpx.WriteError(w, httpx.Errorf(http.StatusBadRequest, httpx.CodeValidation, "Which build should be fixed?"))
+		return
+	}
+	proposal, err := h.service.FixWithAI(r.Context(), current.ID, body.BuildID, h.fixProv)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	if h.usageRec != nil {
+		h.usageRec(current.ID, proposal.Provider, proposal.Model, 0, len(proposal.NewContent), true)
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"fix": proposal})
+}
+
 // AIX handles GET /api/extensions/{id}/aix?version= — owner-only download
 // of a verified built package.
 func (h *Handler) AIX(w http.ResponseWriter, r *http.Request) {
@@ -325,13 +476,17 @@ func (h *Handler) AIX(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, err)
 		return
 	}
-	data, _, err := h.service.AIX(r.Context(), current.ID, r.PathValue("id"), r.URL.Query().Get("version"))
+	version := strings.TrimSpace(r.URL.Query().Get("version"))
+	if version == "" {
+		version = found.CurrentVersion
+	}
+	data, _, err := h.service.AIX(r.Context(), current.ID, r.PathValue("id"), version)
 	if err != nil {
 		httpx.WriteError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", found.Slug+"-"+r.URL.Query().Get("version")+".aix"))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", found.Slug+"-"+version+".aix"))
 	w.Header().Set("Content-Length", fmt.Sprint(len(data)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)

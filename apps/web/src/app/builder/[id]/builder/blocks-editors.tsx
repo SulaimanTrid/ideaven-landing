@@ -1,71 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { CATEGORY_COLORS, setSlot as setSlotOp } from "@/lib/project-model/blocks";
-import { createRegistryBlock, getAnyBlockDef } from "@/lib/project-model/block-registry";
-import { useBuilder, componentLabel } from "./builder-context";
+import { useBuilder } from "./builder-context";
+import { useBlocksDnd } from "./blocks-dnd";
+import { getAnyBlockDef } from "@/lib/project-model/block-registry";
 import { getDef, type FieldDef } from "@/lib/project-model/registry";
 import type { ProjectModelBlock, ProjectModelComponent } from "@/types/project";
 import { IconClose } from "@/components/visuals/icons";
 
 /**
- * Shared block editors for the Blocks canvas and palette: label parsing,
- * typed input editors, and the drag payloads that move blocks between the
- * palette and the canvas. Everything edits the one canonical IR through the
- * builder actions — the canvas is a view, never a second model.
+ * Shared block editors for the Blocks canvas and palette: typed input
+ * editors, the value-socket pill, and small chrome controls. Everything
+ * edits the one canonical IR through the builder actions — the canvas is a
+ * view, never a second model. Drag gestures are owned by the pointer-based
+ * drag controller (blocks-dnd); these components only mark their drop zones
+ * and hand gesture starts to the canvas callbacks.
  */
-
-/** Split a block label into text segments and {placeholder} references. */
-export function parseLabel(label: string): { text: string; ref: string | null }[] {
-  const parts: { text: string; ref: string | null }[] = [];
-  const regex = /\{(\w+)\}/g;
-  let last = 0;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(label)) !== null) {
-    if (match.index > last) parts.push({ text: label.slice(last, match.index), ref: null });
-    parts.push({ text: match[1] ?? "", ref: match[1] ?? null });
-    last = match.index + match[0].length;
-  }
-  if (last < label.length) parts.push({ text: label.slice(last), ref: null });
-  return parts;
-}
-
-// ---- drag payloads -----------------------------------------------------------------
-
-/** What travels on the dataTransfer between palette, canvas stacks, and slots. */
-export type BlockDragPayload =
-  | { kind: "statement-new"; blockType: string }
-  | { kind: "statement-move"; handlerId: string; blockId: string }
-  | { kind: "reporter-new"; blockType: string }
-  | {
-      kind: "reporter-move";
-      handlerId: string;
-      ownerBlockId: string;
-      slotKey: string;
-      expr: ProjectModelBlock;
-    };
-
-export const DND_MIME = "application/x-ideaven-block";
-
-export function setDragPayload(event: React.DragEvent, payload: BlockDragPayload): void {
-  event.dataTransfer.setData(DND_MIME, JSON.stringify(payload));
-  event.dataTransfer.effectAllowed = "copyMove";
-}
-
-export function readDragPayload(event: React.DragEvent): BlockDragPayload | null {
-  const raw = event.dataTransfer.getData(DND_MIME);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as BlockDragPayload;
-  } catch {
-    return null;
-  }
-}
-
-export function categoryColor(type: string): string {
-  const def = getAnyBlockDef(type);
-  return def ? CATEGORY_COLORS[def.category] : "#6f7789";
-}
 
 // ---- small controls ------------------------------------------------------------------
 
@@ -85,6 +34,7 @@ export function MiniButton({
       type="button"
       aria-label={label}
       title={label}
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
@@ -117,8 +67,8 @@ export function SmallSelect({
       value={value}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
       className="h-7 max-w-44 truncate rounded-[5px] border border-black/20 bg-[rgb(10_12_18_/_0.28)] px-1.5 text-[12px] text-white/95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 disabled:opacity-50 [&_option]:text-ink"
     >
       <option value="">choose…</option>
@@ -150,7 +100,7 @@ export function InputEditor({
   if (!spec) return <span className="text-[13px] text-mist">{`{${inputKey}}`}</span>;
 
   const value = block.inputs?.[inputKey];
-  const commit = (next: string | number) => actions.setBlockInput(handlerId, block.id, inputKey, next);
+  const commit = (next: string | number | boolean) => actions.setBlockInput(handlerId, block.id, inputKey, next);
 
   if (spec.kind === "component") {
     const known = components.some((c) => c.id === value);
@@ -162,7 +112,7 @@ export function InputEditor({
         options={[
           ...components.map((c) => ({
             value: c.id,
-            label: `${componentLabel(c)} · ${getDef(c.type)?.label ?? c.type}`,
+            label: `${componentLabelOf(c)} · ${getDef(c.type)?.label ?? c.type}`,
           })),
           ...(typeof value === "string" && value !== "" && !known
             ? [{ value, label: "(missing component)" }]
@@ -217,6 +167,23 @@ export function InputEditor({
     );
   }
 
+  // boolean literal: a real true/false select (never a string pretending).
+  if (spec.kind === "boolean") {
+    return (
+      <select
+        value={value === true ? "true" : "false"}
+        aria-label={spec.label}
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onChange={(event) => commit(event.target.value === "true")}
+        className="h-7 w-20 rounded-[5px] border border-black/20 bg-[rgb(10_12_18_/_0.28)] px-1 text-[12px] text-white/95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50"
+      >
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
+    );
+  }
+
   // text / number literal inputs
   return (
     <input
@@ -224,6 +191,7 @@ export function InputEditor({
       defaultValue={typeof value === "string" || typeof value === "number" ? String(value) : ""}
       placeholder={spec.label}
       aria-label={spec.label}
+      onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
       onBlur={(event) => {
         const raw = event.target.value;
@@ -243,9 +211,16 @@ export function InputEditor({
   );
 }
 
+function componentLabelOf(node: ProjectModelComponent): string {
+  const text = node.props?.text ?? node.props?.label;
+  return typeof text === "string" && text.trim() !== "" ? text.trim() : node.type;
+}
+
 // ---- expression slot -----------------------------------------------------------------
-// One reporter socket: shows the wired expression pill (draggable to another
-// socket) or an empty dashed socket that accepts palette/canvas reporters.
+// One reporter socket: shows the wired expression pill (grabbable to another
+// socket or onto the canvas) or an empty dashed socket that accepts palette /
+// canvas reporters. Drop resolution happens on the canvas via the data-dz
+// attributes; the drag controller's target drives the highlight.
 
 export function SlotChip({
   block,
@@ -253,56 +228,55 @@ export function SlotChip({
   handlerId,
   components,
   color,
+  beginDrag,
 }: {
   block: ProjectModelBlock;
   slotKey: string;
   handlerId: string;
   components: ProjectModelComponent[];
   color: string;
+  beginDrag: (
+    event: React.PointerEvent,
+    handlerId: string,
+    ownerBlockId: string,
+    slotKey: string,
+    expr: ProjectModelBlock,
+  ) => void;
 }) {
-  const { model, activeScreenId, actions, commitModel } = useBuilder();
-  const [over, setOver] = useState(false);
+  void color;
+  const { actions } = useBuilder();
+  const dnd = useBlocksDnd();
   const expr = block.slots?.[slotKey];
 
-  const accept = (payload: BlockDragPayload) => {
-    if (payload.kind === "reporter-new") {
-      const created = createRegistryBlock(payload.blockType);
-      if (created) actions.setSlot(handlerId, block.id, slotKey, created);
-      return;
-    }
-    if (payload.kind === "reporter-move") {
-      const same =
-        payload.handlerId === handlerId && payload.ownerBlockId === block.id && payload.slotKey === slotKey;
-      if (same) return;
-      const exprClone: ProjectModelBlock = JSON.parse(JSON.stringify(payload.expr));
-      // One undoable step: clear the old socket, wire the new one.
-      const cleared = setSlotOp(model, activeScreenId, handlerId, payload.ownerBlockId, payload.slotKey, null);
-      commitModel(setSlotOp(cleared, activeScreenId, handlerId, block.id, slotKey, exprClone));
-    }
-  };
+  const isReportedDrag = dnd.drag?.kind === "reporter";
+  const isOwnDrag =
+    dnd.drag?.source.type === "slot" &&
+    dnd.drag.source.ownerBlockId === block.id &&
+    dnd.drag.source.slotKey === slotKey;
+  const active =
+    isReportedDrag &&
+    dnd.target?.type === "socket" &&
+    dnd.target.handlerId === handlerId &&
+    dnd.target.blockId === block.id &&
+    dnd.target.slotKey === slotKey;
 
-  if (!expr) {
+  if (!expr || isOwnDrag) {
     return (
       <span
+        data-dz="socket"
+        data-h={handlerId}
+        data-block={block.id}
+        data-slot={slotKey}
         role="button"
         tabIndex={0}
-        aria-label={`Empty ${slotKey} socket — drop or click to add a value`}
-        onDragOver={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setOver(true);
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setOver(false);
-          const payload = readDragPayload(event);
-          if (payload) accept(payload);
-        }}
-        className={`inline-flex h-7 min-w-16 items-center justify-center rounded-[5px] border border-dashed border-black/35 px-2 text-[12px] text-black/50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/50 ${
-          over ? "border-solid bg-black/20 text-black/70" : "bg-[rgb(10_12_18_/_0.14)]"
-        }`}
+        aria-label={`Empty ${slotKey} socket — drop a value block here`}
+        className={`inline-flex h-7 min-w-16 items-center justify-center rounded-[5px] border border-dashed px-2 text-[12px] transition-colors ${
+          active
+            ? "border-solid border-mint bg-mint/20 shadow-[0_0_0_2px_rgba(70,227,180,0.4)]"
+            : isReportedDrag
+              ? "border-mint/60 bg-[rgb(10_12_18_/_0.14)]"
+              : "border-black/35 bg-[rgb(10_12_18_/_0.14)]"
+        } ${isOwnDrag ? "opacity-40" : ""}`}
       >
         <span className="text-mist">＿</span>
       </span>
@@ -313,20 +287,22 @@ export function SlotChip({
 
   return (
     <span
-      draggable
-      onDragStart={(event) => {
-        setDragPayload(event, {
-          kind: "reporter-move",
-          handlerId,
-          ownerBlockId: block.id,
-          slotKey,
-          expr: JSON.parse(JSON.stringify(expr)),
-        });
+      data-dz="socket"
+      data-h={handlerId}
+      data-block={block.id}
+      data-slot={slotKey}
+      onPointerDown={(event) => {
+        const target = event.target as Element;
+        if (target.closest("input, select, textarea, button")) return;
         event.stopPropagation();
+        beginDrag(event, handlerId, block.id, slotKey, expr);
       }}
       onClick={(event) => event.stopPropagation()}
-      className="inline-flex items-center gap-1 rounded-[5px] border border-black/25 px-1.5 py-0.5"
+      className={`inline-flex cursor-grab items-center gap-1 rounded-[5px] border border-black/25 px-1.5 py-0.5 transition-shadow active:cursor-grabbing ${
+        active ? "shadow-[0_0_0_2.5px_rgba(70,227,180,0.65)]" : ""
+      }`}
       style={{ background: "rgb(10 12 18 / 0.28)" }}
+      aria-label={`${slotKey} value — drag to move`}
     >
       {def?.inputs?.some((i) => i.key === "value") && expr.type !== "get-variable" ? (
         <InputEditor block={expr} inputKey="value" handlerId={handlerId} components={components} />
@@ -340,9 +316,9 @@ export function SlotChip({
         <InputEditor block={expr} inputKey="name" handlerId={handlerId} components={components} />
       ) : expr.type === "join" || expr.type === "equals" ? (
         <>
-          <SlotChip block={expr} slotKey="a" handlerId={handlerId} components={components} color={color} />
+          <SlotChip block={expr} slotKey="a" handlerId={handlerId} components={components} color={color} beginDrag={beginDrag} />
           <span className="text-[12px] text-mist">{expr.type === "join" ? "&" : "="}</span>
-          <SlotChip block={expr} slotKey="b" handlerId={handlerId} components={components} color={color} />
+          <SlotChip block={expr} slotKey="b" handlerId={handlerId} components={components} color={color} beginDrag={beginDrag} />
         </>
       ) : (
         <span className="text-[12px] text-mist">{expr.type}</span>
@@ -351,6 +327,7 @@ export function SlotChip({
         type="button"
         aria-label="Clear value"
         title="Clear"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
           actions.setSlot(handlerId, block.id, slotKey, null);

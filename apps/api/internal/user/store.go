@@ -20,6 +20,9 @@ type User struct {
 	DisplayName   string
 	Bio           string
 	AvatarURL     string
+	// Locale is the account-level UI language (TASK 10): "" (unset), "en",
+	// or "id". Empty means the client falls back to its own preference.
+	Locale        string
 	EmailVerified bool
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -33,6 +36,8 @@ type ProfileUpdate struct {
 	DisplayName string
 	Bio         string
 	AvatarURL   string
+	// Locale is the account-level UI language: "" (unset), "en", or "id".
+	Locale string
 }
 
 // NewUser is the input for creating an account.
@@ -51,13 +56,13 @@ type Store struct {
 // NewStore builds a Store.
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-const columns = `id, email, username, password_hash, display_name, bio, avatar_url,
+const columns = `id, email, username, password_hash, display_name, bio, avatar_url, locale,
 	email_verified, created_at, updated_at, last_login_at`
 
 func scanUser(scanner interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	err := scanner.Scan(&u.ID, &u.Email, &u.Username, &u.PasswordHash, &u.DisplayName,
-		&u.Bio, &u.AvatarURL, &u.EmailVerified, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
+		&u.Bio, &u.AvatarURL, &u.Locale, &u.EmailVerified, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
 	if err != nil {
 		return nil, err
 	}
@@ -116,10 +121,10 @@ func (s *Store) FindByID(ctx context.Context, id string) (*User, error) {
 // the lower(username) index and surfaced as ErrDuplicateUsername.
 func (s *Store) UpdateProfile(ctx context.Context, id string, in ProfileUpdate) (*User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		UPDATE users SET username = $2, display_name = $3, bio = $4, avatar_url = $5, updated_at = now()
+		UPDATE users SET username = $2, display_name = $3, bio = $4, avatar_url = $5, locale = $6, updated_at = now()
 		WHERE id = $1
 		RETURNING `+columns,
-		id, in.Username, in.DisplayName, in.Bio, in.AvatarURL)
+		id, in.Username, in.DisplayName, in.Bio, in.AvatarURL, in.Locale)
 
 	user, err := scanUser(row)
 	if err != nil {

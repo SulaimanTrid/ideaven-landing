@@ -78,7 +78,7 @@ export function cssFor(styles: PropsMap | undefined): CSSProperties {
 
 /** Layout axis a parent uses to arrange its children. */
 export function axisOf(parentType: string | null): "v" | "h" {
-  return parentType === "row" ? "h" : "v";
+  return parentType === "row" || parentType === "h-scroll" ? "h" : "v";
 }
 
 /** First child whose midpoint is past the pointer defines the insert index. */
@@ -277,7 +277,7 @@ export function ComponentNode({
         });
         return;
       }
-      const innerAxis = node.type === "row" ? "h" : "v";
+      const innerAxis = axisOf(node.type);
       const index = indexByPointer(kids, event.clientX, event.clientY, innerAxis);
       const line = lineRectFor(el, kids, index, innerAxis);
       setIndicator({ parentId: node.id, screenId, index, ...line, horizontal: innerAxis === "h", mode: "line" });
@@ -523,7 +523,119 @@ export function ComponentNode({
           }}
         />
       );
-    default:
+    case "h-scroll":
+      return (
+        <div
+          {...handlers}
+          style={{ ...interactive, display: "flex", flexDirection: "row", overflowX: "auto", overflowY: "hidden", minWidth: 0 }}
+        >
+          {children.map((child) => (
+            <ComponentNode key={child.id} node={child} screenId={screenId} parentId={node.id} parentAxis="h" />
+          ))}
+          <DropLine containerId={node.id} screenId={screenId} />
+        </div>
+      );
+    case "v-scroll":
+      return (
+        <div
+          {...handlers}
+          style={{ ...interactive, display: "flex", flexDirection: "column", overflowY: "auto", overflowX: "hidden", minWidth: 0 }}
+        >
+          {children.map((child) => (
+            <ComponentNode key={child.id} node={child} screenId={screenId} parentId={node.id} parentAxis="v" />
+          ))}
+          <DropLine containerId={node.id} screenId={screenId} />
+        </div>
+      );
+    case "table": {
+      const columns = typeof props.columns === "number" && props.columns > 0 ? props.columns : 2;
+      return (
+        <div
+          {...handlers}
+          style={{ ...interactive, display: "grid", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, minWidth: 0 }}
+        >
+          {children.map((child) => (
+            <ComponentNode key={child.id} node={child} screenId={screenId} parentId={node.id} parentAxis="v" />
+          ))}
+          <DropLine containerId={node.id} screenId={screenId} />
+        </div>
+      );
+    }
+    case "listview": {
+      const items = typeof props.items === "string"
+        ? props.items.split("\n").map((item) => item.trim()).filter((item) => item !== "")
+        : [];
+      const selection = typeof props.selection === "string" ? props.selection : "";
+      return (
+        <div {...handlers} style={{ ...interactive, alignSelf: "stretch", overflowY: "auto" }}>
+          {items.length === 0 ? (
+            <div style={{ padding: 12, color: "#9aa1b2", fontSize: 13 }}>ListView — add items in the inspector</div>
+          ) : (
+            items.map((item, index) => (
+              <div
+                key={index}
+                style={{
+                  padding: "10px 12px",
+                  background: item === selection ? "#efecff" : "transparent",
+                  borderTop: index === 0 ? "none" : "1px solid #eef0f4",
+                }}
+              >
+                {item}
+              </div>
+            ))
+          )}
+        </div>
+      );
+    }
+    case "canvas":
+      return (
+        <div
+          {...handlers}
+          style={{
+            ...interactive,
+            height: px(styles.height, "220px"),
+            alignSelf: "stretch",
+            background:
+              typeof props.background === "string" ? props.background : "#ffffff",
+            backgroundImage: "radial-gradient(circle at 1px 1px, rgb(0 0 0 / 0.08) 1px, transparent 0)",
+            backgroundSize: "16px 16px",
+          }}
+        >
+          <span style={{ fontSize: 11, color: "#8a91a3", fontFamily: "monospace" }}>
+            canvas · touch {typeof props.lastX === "number" ? `(${props.lastX}, ${props.lastY})` : ""}
+          </span>
+        </div>
+      );
+    default: {
+      // Non-visible + designed components render as honest chips.
+      if (def) {
+        const isDesigned = Boolean(def.designed);
+        return (
+          <div
+            {...handlers}
+            style={{
+              ...interactive,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              alignSelf: "flex-start",
+              padding: "4px 10px",
+              borderRadius: 8,
+              border: `1px dashed ${isDesigned ? "#c9a227" : "#b8bfd0"}`,
+              background: isDesigned ? "#fffbeb" : "#f6f7fa",
+              color: isDesigned ? "#8a6d1a" : "#5b6478",
+              fontSize: 11.5,
+            }}
+            title={def.designed ?? `${def.label} — non-visible component; drive it with blocks`}
+          >
+            <span style={{ fontFamily: "monospace", letterSpacing: "0.06em" }}>
+              ◈ {def.label}
+              {isDesigned ? " · designed" : ""}
+            </span>
+          </div>
+        );
+      }
       return <div {...handlers} style={interactive}><UnknownComponent node={node} /></div>;
+    }
   }
 }

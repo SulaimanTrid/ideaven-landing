@@ -743,6 +743,41 @@ func TestUpdateProfileRewritesFieldsAndPersists(t *testing.T) {
 	}
 }
 
+// TASK 10: the account-level UI language persists through /profile and
+// /auth/me, and rejects an unknown locale with a field error.
+func TestAccountLocalePersists(t *testing.T) {
+	h := newHarness(t)
+	res, _ := register(t, h, "locale@ideaven.test", "localeuser", "Correct-Horse-9")
+	cookie := sessionCookie(t, res)
+
+	res, payload := call(t, h, http.MethodPatch, "/api/profile", map[string]string{
+		"username": "localeuser", "displayName": "Locale User", "bio": "", "avatarUrl": "",
+		"locale": "id",
+	}, cookie)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, payload %v", res.StatusCode, payload)
+	}
+	if userOf(payload)["locale"] != "id" {
+		t.Fatalf("locale not in response: %v", payload)
+	}
+
+	res, payload = call(t, h, http.MethodGet, "/api/auth/me", nil, cookie)
+	if userOf(payload)["locale"] != "id" {
+		t.Fatalf("locale did not persist through /me: %v", payload)
+	}
+
+	res, payload = call(t, h, http.MethodPatch, "/api/profile", map[string]string{
+		"username": "localeuser", "displayName": "Locale User", "bio": "", "avatarUrl": "",
+		"locale": "klingon",
+	}, cookie)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown locale = %d, want 400", res.StatusCode)
+	}
+	if errorCode(payload) != "VALIDATION_ERROR" {
+		t.Fatalf("error code = %v", payload)
+	}
+}
+
 func TestUpdateProfileUsernameUniqueness(t *testing.T) {
 	h := newHarness(t)
 	res, _ := register(t, h, "first@ideaven.test", "firstuser", "Correct-Horse-9")

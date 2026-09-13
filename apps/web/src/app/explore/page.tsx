@@ -5,6 +5,7 @@ import Link from "next/link";
 import { publicApi, type PublicationSummary } from "@/lib/api";
 import { PROJECT_TYPES, projectTypeLabel } from "@/lib/project-meta";
 import type { ProjectType } from "@/types/project";
+import { ProjectThumb } from "@/components/community/project-thumb";
 
 /**
  * The public gallery (roadmap 21): search and filter over the live
@@ -93,6 +94,11 @@ export default function ExplorePage() {
                 href={`/p/${publication.slug}`}
                 className="group flex h-full flex-col rounded-2xl border border-line bg-card p-5 transition-colors hover:border-violet/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
               >
+                <ProjectThumb
+                  slug={publication.slug}
+                  name={publication.name}
+                  className="mb-4 aspect-[16/9] w-full rounded-xl border border-line object-cover"
+                />
                 <div className="flex items-center justify-between gap-2">
                   <span className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-[11px] text-mist">
                     {projectTypeLabel(publication.type)}

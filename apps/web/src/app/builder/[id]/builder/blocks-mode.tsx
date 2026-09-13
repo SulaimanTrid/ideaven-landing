@@ -5,15 +5,18 @@ import { extensionApi } from "@/lib/api";
 import { registerExtensionBlocks } from "@/lib/project-model/block-registry";
 import { useBuilder } from "./builder-context";
 import { BlocksCanvas } from "./blocks-canvas";
+import { BlocksDndProvider } from "./blocks-dnd";
+import { BlockPalette } from "./blocks-side";
 import type { ProjectModelComponent } from "@/types/project";
 
 /**
- * Blocks mode (2.0 Phase 2): the Scratch-style canvas. Handlers come from
- * the screen's real components; blocks declared by installed extensions are
+ * Blocks mode: the Scratch-style free canvas. All of a screen's handlers are
+ * scripts on one workspace; blocks declared by installed extensions are
  * registered into the block vocabulary on entry (namespaced, honestly
- * skipped by codegen/preview until runtime providers exist).
+ * skipped by codegen/preview until runtime providers exist). The provider
+ * owns the pointer-drag gesture shared by the palette and the canvas.
  */
-export function BlocksMode() {
+export function BlocksMode({ extensionTick = 0 }: { extensionTick?: number }) {
   const { model, activeScreenId, selectedHandlerId } = useBuilder();
   const screen = model.screens.find((s) => s.id === activeScreenId);
   const handlers = screen?.logic?.handlers ?? [];
@@ -31,8 +34,36 @@ export function BlocksMode() {
     return list;
   }, [screen]);
 
+  if (!screen) return null;
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col bg-canvas">
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
+        <p className="text-[13px] text-fog">
+          {model.type === "game" ? "Scene logic for " : "Blocks for "}
+          <span className="font-medium text-ink">{screen.name}</span>
+        </p>
+        <p className="hidden text-[12px] text-mist sm:block">
+          Drag blocks onto a script to connect · drop on free canvas to park · Del removes · Ctrl+wheel zooms
+        </p>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        <BlocksCanvas key={extensionTick} screen={screen} components={flatComponents} screenName={screen.name} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Blocks mode workspace: the canvas plus the palette rail, sharing one drag
+ * controller. Rendered as a fragment so it slots into the builder's
+ * left-rail / center / right-rail flex row unchanged.
+ */
+export function BlocksWorkspace() {
   // Installed extensions contribute their declared blocks to the vocabulary.
-  const [, setExtensionTick] = useState(0);
+  // Lives here so both the canvas and the palette rail see the same tick.
+  const [extensionTick, setExtensionTick] = useState(0);
   useEffect(() => {
     let cancelled = false;
     extensionApi
@@ -54,32 +85,24 @@ export function BlocksMode() {
     };
   }, []);
 
-  if (!screen) return null;
-
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-canvas">
-      <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
-        <p className="text-[13px] text-fog">
-          {model.type === "game" ? "Scene logic for " : "Blocks for "}<span className="font-medium text-ink">{screen.name}</span>
-        </p>
-        <p className="hidden text-[12px] text-mist sm:block">
-          Drag blocks to snap · click to select · Del removes · Ctrl+wheel zooms
-        </p>
-      </div>
+    <BlocksDndProvider>
+      <BlocksMode extensionTick={extensionTick} />
+      <BlocksPaletteRail extensionTick={extensionTick} />
+    </BlocksDndProvider>
+  );
+}
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        {!handler ? (
-          <div className="mx-auto mt-16 max-w-md rounded-2xl border border-dashed border-line bg-card/50 p-8 text-center">
-            <p className="text-lg font-medium">No handler selected.</p>
-            <p className="mt-2 text-sm leading-6 text-fog">
-              Pick one on the left, or create a handler for a component event.
-              Components you add in Design mode appear here automatically.
-            </p>
-          </div>
-        ) : (
-          <BlocksCanvas handler={handler} components={flatComponents} screenName={screen.name} />
-        )}
+function BlocksPaletteRail({ extensionTick }: { extensionTick: number }) {
+  return (
+    <aside className="hidden w-72 shrink-0 flex-col border-l border-line bg-panel lg:flex">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="p-3 pb-1">
+          <h3 className="px-1 font-mono text-[10px] uppercase tracking-[0.16em] text-mist">Blocks</h3>
+        </div>
+        <BlockPalette extensionTick={extensionTick} />
+        <div className="h-6" />
       </div>
-    </div>
+    </aside>
   );
 }

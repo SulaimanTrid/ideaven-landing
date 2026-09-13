@@ -25,10 +25,10 @@ type DNAVariable struct {
 }
 
 type DNAAsset struct {
-	Name  string `json:"name"`
-	Kind  string `json:"kind"`
-	UsedBy int   `json:"usedBy"`
-	Orphan bool  `json:"orphan"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	UsedBy int    `json:"usedBy"`
+	Orphan bool   `json:"orphan"`
 }
 
 type DNAReport struct {

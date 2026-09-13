@@ -3,13 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createRuntime, screenOf, type ScreenRuntime } from "@/lib/project-model/runtime";
 import { RuntimeNode } from "@/components/runtime/runtime-node";
+import { SceneStage } from "@/components/runtime/scene-stage";
+import { ViewportFrame } from "@/components/builder/viewport";
+import { isSceneScreen } from "@/lib/project-model/scene";
 import type { ProjectModel, PropsMap } from "@/types/project";
 
 /**
  * The published app (roadmap 19): executes a project's snapshotted model
  * with the same runtime Preview mode uses — a visitor interacts with the
- * real app, not a screenshot. One undo of scope versus the editor: the
- * visitor sees the phone frame and a restart, nothing else.
+ * real app, not a screenshot. Scene screens (TASK 08) play with the same
+ * real game loop as the editor preview. One undo of scope versus the
+ * editor: the visitor sees the phone frame and a restart, nothing else.
  */
 export function LiveApp({ model }: { model: ProjectModel }) {
   const [screenId, setScreenId] = useState(
@@ -18,7 +22,9 @@ export function LiveApp({ model }: { model: ProjectModel }) {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
   const [, setTick] = useState(0);
+  const [runId, setRunId] = useState(0);
   const runtimeRef = useRef<ScreenRuntime | null>(null);
+  const canvasesRef = useRef(new Map<string, HTMLCanvasElement>());
 
   const showToast = useCallback((text: string) => {
     setToast(text);
@@ -27,18 +33,26 @@ export function LiveApp({ model }: { model: ProjectModel }) {
   }, []);
 
   const start = useCallback(() => {
+    runtimeRef.current?.dispose();
     const startScreen = model.navigation.startScreenId || model.screens[0]?.id || "";
     runtimeRef.current = createRuntime(model, startScreen, {
       onMessage: showToast,
       onNavigate: (id) => setScreenId(id),
+      onUpdate: () => setTick((t) => t + 1),
+      canvases: canvasesRef.current,
     });
     setScreenId(startScreen);
+    setRunId((r) => r + 1);
     setTick((t) => t + 1);
   }, [model, showToast]);
 
   useEffect(() => {
     start();
   }, [start]);
+
+  useEffect(() => {
+    return () => runtimeRef.current?.dispose();
+  }, []);
 
   const emit = useCallback((componentId: string | null, event: string) => {
     runtimeRef.current?.emit(componentId, event);
@@ -52,6 +66,7 @@ export function LiveApp({ model }: { model: ProjectModel }) {
   }, []);
 
   const screen = screenOf(model, screenId) ?? model.screens[0];
+  const isScene = isSceneScreen(screen);
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -69,24 +84,50 @@ export function LiveApp({ model }: { model: ProjectModel }) {
         </button>
       </div>
 
-      <div
-        className="relative max-w-full overflow-hidden rounded-[24px] border border-line bg-white text-[#0b0e16] shadow-[0_24px_80px_-24px_rgb(0_0_0/0.8)]"
-        style={{ width: 390, height: 844 }}
+      <ViewportFrame
+        kind={isScene ? "game" : "app"}
+        settings={{ device: "phone", orientation: "portrait", safeArea: model.settings.preview?.safeArea }}
+        className="max-w-full"
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            minHeight: "100%",
-            width: "100%",
-            background:
-              typeof screen?.styles?.background === "string" ? screen.styles.background : "#ffffff",
-          }}
-        >
-          {(screen?.components ?? []).map((child) => (
-            <RuntimeNode key={child.id} node={child} runtime={runtimeRef.current} emit={emit} setProps={setProps} />
-          ))}
-        </div>
+      <div
+        className="relative overflow-hidden text-[#0b0e16]"
+        style={{
+          width: 390,
+          height: 844,
+          background: isScene
+            ? typeof screen?.styles?.background === "string"
+              ? screen.styles.background
+              : "#0c0f17"
+            : "#ffffff",
+        }}
+      >
+        {isScene && screen ? (
+          <SceneStage
+            key={runId}
+            screen={screen}
+            runtime={runtimeRef.current}
+            emit={emit}
+            onRestart={start}
+            onTrace={() => undefined}
+            width={390}
+            height={844}
+          />
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: "100%",
+              width: "100%",
+              background:
+                typeof screen?.styles?.background === "string" ? screen.styles.background : "#ffffff",
+            }}
+          >
+            {(screen?.components ?? []).map((child) => (
+              <RuntimeNode key={child.id} node={child} runtime={runtimeRef.current} emit={emit} setProps={setProps} canvases={canvasesRef.current} />
+            ))}
+          </div>
+        )}
 
         {toast ? (
           <div
@@ -98,6 +139,7 @@ export function LiveApp({ model }: { model: ProjectModel }) {
           </div>
         ) : null}
       </div>
+      </ViewportFrame>
     </div>
   );
 }

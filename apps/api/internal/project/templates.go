@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Built-in project templates: real, valid models the creation wizard starts
@@ -452,10 +453,22 @@ func coinRunnerModel() Model {
 		}},
 	}
 
-	coinButton := func(id string) Component {
-		return styled(id, "button", map[string]any{"label": "🪙"}, map[string]any{
-			"background": "#1c2340", "color": brandAmber, "padding": "22px 26px", "radius": "16px", "fontSize": 30,
-		})
+	// A real 2D scene (TASK 08): the player walks and jumps through the stage
+	// and collects coins by TOUCHING them — the runtime runs input → movement
+	// → AABB collision → `touches-<coin>` events → these block handlers. The
+	// scene is 390×844 (the phone frame the preview and published page use).
+	entityNames := map[string]int{}
+	entity := func(id, entityType string, x, y, w, h float64, color string, extra map[string]any) Component {
+		entityNames[entityType]++
+		props := map[string]any{
+			"name": fmt.Sprintf("%s %d", strings.Title(entityType), entityNames[entityType]),
+			"x":    x, "y": y, "width": w, "height": h,
+			"color": color, "visible": true, "collider": true,
+		}
+		for key, value := range extra {
+			props[key] = value
+		}
+		return comp(id, entityType, props, nil)
 	}
 
 	play := Screen{
@@ -463,36 +476,36 @@ func coinRunnerModel() Model {
 		Name:   "Play",
 		Styles: map[string]any{"background": "#0c0f17"},
 		Components: []Component{
-			styled("p-box", "column", nil, map[string]any{"padding": "28px 22px 32px", "gap": "14px", "height": "100%", "background": "#0c0f17"},
-				styled("p-hud", "row", nil, map[string]any{"align": "center", "justify": "between"},
-					comp("p-hud-label", "text", map[string]any{"text": "SCORE"}, map[string]any{"fontSize": 12, "color": "#7c8499", "letterSpacing": "2px"}),
-					comp("p-hud-score", "text", map[string]any{"text": "0"}, map[string]any{"fontSize": 30, "fontWeight": "900", "color": brandAmber}),
-				),
-				comp("p-tip", "text", map[string]any{"text": "Tap the coins before they vanish! Each catch is worth 1."}, map[string]any{"fontSize": 12, "color": "#a9b0c2"}),
-				styled("p-gap", "spacer", nil, map[string]any{"height": "6px"}),
-				styled("p-field", "column", nil, map[string]any{"gap": "12px", "align": "center"},
-					styled("p-row-1", "row", nil, map[string]any{"gap": "12px"},
-						coinButton("p-coin-1"),
-						coinButton("p-coin-2"),
-					),
-					styled("p-row-2", "row", nil, map[string]any{"gap": "12px"},
-						coinButton("p-coin-3"),
-						coinButton("p-coin-4"),
-					),
-					styled("p-row-3", "row", nil, map[string]any{"gap": "12px"},
-						coinButton("p-coin-5"),
-						coinButton("p-coin-6"),
-					),
-				),
-			),
+			// HUD (positioned text entities).
+			comp("p-hud-label", "text", map[string]any{"x": 18, "y": 16, "text": "SCORE"}, map[string]any{"fontSize": 13, "color": "#7c8499", "letterSpacing": "2px"}),
+			comp("p-hud-score", "text", map[string]any{"x": 330, "y": 10, "text": "0"}, map[string]any{"fontSize": 28, "fontWeight": "900", "color": brandAmber}),
+			comp("p-tip", "text", map[string]any{"x": 18, "y": 40, "text": "←/→ move · ↑ jump · touch the coins"}, map[string]any{"fontSize": 11, "color": "#a9b0c2"}),
+
+			// Player (36×36) spawns on the ground floor.
+			entity("p-player", "player", 30, 744, 36, 36, "#46e3b4", map[string]any{"layer": "player"}),
+
+			// Solid geometry: floor + four platforms.
+			entity("p-floor", "platform", 0, 780, 390, 64, "#1b2130", nil),
+			entity("p-plat-1", "platform", 40, 640, 140, 18, "#2a3348", nil),
+			entity("p-plat-2", "platform", 210, 520, 150, 18, "#2a3348", nil),
+			entity("p-plat-3", "platform", 60, 380, 130, 18, "#2a3348", nil),
+			entity("p-plat-4", "platform", 230, 270, 120, 18, "#2a3348", nil),
+
+			// Six coins: one on the walk path, the rest over the platforms.
+			entity("p-coin-1", "coin", 150, 752, 28, 28, brandAmber, nil),
+			entity("p-coin-2", "coin", 96, 596, 28, 28, brandAmber, nil),
+			entity("p-coin-3", "coin", 270, 476, 28, 28, brandAmber, nil),
+			entity("p-coin-4", "coin", 110, 336, 28, 28, brandAmber, nil),
+			entity("p-coin-5", "coin", 276, 226, 28, 28, brandAmber, nil),
+			entity("p-coin-6", "coin", 330, 740, 28, 28, brandAmber, nil),
 		},
 		Logic: &Logic{Handlers: []EventHandler{
-			catchHandler("h-catch-1", "p-coin-1", "b-c1"),
-			catchHandler("h-catch-2", "p-coin-2", "b-c2"),
-			catchHandler("h-catch-3", "p-coin-3", "b-c3"),
-			catchHandler("h-catch-4", "p-coin-4", "b-c4"),
-			catchHandler("h-catch-5", "p-coin-5", "b-c5"),
-			catchHandler("h-catch-6", "p-coin-6", "b-c6"),
+			touchCatchHandler("h-catch-1", "p-coin-1", "b-c1"),
+			touchCatchHandler("h-catch-2", "p-coin-2", "b-c2"),
+			touchCatchHandler("h-catch-3", "p-coin-3", "b-c3"),
+			touchCatchHandler("h-catch-4", "p-coin-4", "b-c4"),
+			touchCatchHandler("h-catch-5", "p-coin-5", "b-c5"),
+			touchCatchHandler("h-catch-6", "p-coin-6", "b-c6"),
 		}},
 	}
 
@@ -534,10 +547,14 @@ func coinRunnerModel() Model {
 	}
 }
 
-// catchHandler builds one coin's click logic: score += 1, update the HUD
-// text, then check the win condition (if score ≥ 6 → results screen).
-func catchHandler(id, componentID, uid string) EventHandler {
-	return handlerPtr(id, ptr(componentID), "click",
+// touchCatchHandler builds one coin's collision logic (TASK 08): when the
+// player touches the coin — hide the coin, score += 1, update the HUD, then
+// check the win condition (score = 6 → fill the results score and navigate).
+func touchCatchHandler(id, coinID, uid string) EventHandler {
+	return handlerPtr(id, ptr("p-player"), "touches-"+coinID,
+		stmt(uid+"-hide", "set-property", map[string]any{"componentId": coinID, "property": "visible"}, map[string]*Block{
+			"value": exprPtr(uid+"-hide-false", "boolean", map[string]any{"value": false}, nil),
+		}),
 		stmt(uid+"-inc", "set-variable", map[string]any{"name": "score"}, map[string]*Block{
 			"value": exprPtr(uid+"-inc-add", "add", nil, map[string]*Block{
 				"a": numberExpr(uid+"-inc-one", 1),
@@ -553,6 +570,9 @@ func catchHandler(id, componentID, uid string) EventHandler {
 				"b": numberExpr(uid+"-win-six", 6),
 			}),
 		},
+			stmt(uid+"-win-score", "set-property", map[string]any{"componentId": "g-score", "property": "text"}, map[string]*Block{
+				"value": getVar("score", uid+"-win-score-get"),
+			}),
 			stmt(uid+"-win-nav", "navigate", map[string]any{"screenId": "screen-gameover"}, nil),
 		),
 	)

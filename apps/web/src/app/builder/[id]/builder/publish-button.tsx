@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { projectApi } from "@/lib/api";
 import { ApiError } from "@/types/auth";
 import { useBuilder } from "./builder-context";
+import { validateModel } from "./export-button";
 
 /**
  * Publish (roadmap 19): snapshots the current model server-side and opens
@@ -14,7 +15,7 @@ import { useBuilder } from "./builder-context";
  */
 export function PublishButton() {
   const { t } = useI18n();
-  const { project, saveNow } = useBuilder();
+  const { project, model, saveNow } = useBuilder();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [published, setPublished] = useState(project.status === "published");
@@ -154,13 +155,41 @@ export function PublishButton() {
             <>
               <p className="mt-1 text-[12px] leading-5 text-fog">
                 Publishing snapshots your project and opens a public page at{" "}
-                <span className="font-mono text-[11px]">/p/{project.slug}</span>. Nothing goes
-                public until you confirm.
+                <span className="font-mono text-[11px]">/p/{project.slug}</span>. Draft →
+                validate → confirm — nothing goes public until you do.
               </p>
+              {(() => {
+                const issues = validateModel(model);
+                const errors = issues.filter((i) => i.severity === "error");
+                return (
+                  <div
+                    className={`mt-2 rounded-lg border p-2.5 text-[11.5px] leading-4 ${
+                      errors.length > 0 ? "border-rose/50 bg-rose/10" : "border-mint/50 bg-mint/10"
+                    }`}
+                  >
+                    <p className="font-medium text-ink">
+                      {errors.length > 0 ? "Validation found problems" : "✓ Validation passed"}
+                    </p>
+                    <ul className="mt-1 flex flex-col gap-1">
+                      {errors.map((i) => (
+                        <li key={i.message} className="text-rose">• {i.message}</li>
+                      ))}
+                      {issues
+                        .filter((i) => i.severity === "warning")
+                        .map((i) => (
+                          <li key={i.message} className="text-amber">• {i.message}</li>
+                        ))}
+                      {errors.length === 0 ? (
+                        <li className="text-fog">• {model.screens.length} screen{model.screens.length === 1 ? "" : "s"} · start screen ok · model is exportable</li>
+                      ) : null}
+                    </ul>
+                  </div>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => void publish()}
-                disabled={busy}
+                disabled={busy || validateModel(model).some((i) => i.severity === "error")}
                 className="mt-3 h-8 w-full rounded-lg bg-violet-deep text-[12px] font-medium text-white transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:opacity-40"
               >
                 {busy ? "Publishing…" : "Publish to the web"}

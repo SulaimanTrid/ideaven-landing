@@ -131,7 +131,7 @@ func (s *Store) PublicationBySlug(ctx context.Context, slug string) (*Publicatio
 // Metadata only — the model document is fetched per project page.
 func (s *Store) RecentPublications(ctx context.Context, limit int) ([]PublicationSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT p.slug, p.name, p.description, p.type, u.username, u.display_name, pub.published_at
+		SELECT p.slug, p.name, p.description, p.type, u.username, u.display_name, COALESCE(p.thumbnail, ''), pub.published_at
 		FROM projects p
 		JOIN publications pub ON pub.project_id = p.id
 		JOIN users u ON u.id = p.owner_id
@@ -146,7 +146,7 @@ func (s *Store) RecentPublications(ctx context.Context, limit int) ([]Publicatio
 	out := []PublicationSummary{}
 	for rows.Next() {
 		var s PublicationSummary
-		if err := rows.Scan(&s.Slug, &s.Name, &s.Description, &s.Type, &s.Author, &s.AuthorName, &s.PublishedAt); err != nil {
+		if err := rows.Scan(&s.Slug, &s.Name, &s.Description, &s.Type, &s.Author, &s.AuthorName, &s.Thumbnail, &s.PublishedAt); err != nil {
 			return nil, fmt.Errorf("project: recent publications: scan: %w", err)
 		}
 		out = append(out, s)
@@ -162,6 +162,7 @@ type PublicationSummary struct {
 	Type        string    `json:"type"`
 	Author      string    `json:"author"`
 	AuthorName  string    `json:"authorName,omitempty"`
+	Thumbnail   string    `json:"thumbnail,omitempty"`
 	PublishedAt time.Time `json:"publishedAt"`
 }
 
@@ -169,7 +170,7 @@ type PublicationSummary struct {
 // first. Creators are identified by their public username.
 func (s *Store) PublicationsByCreator(ctx context.Context, username string, limit int) ([]PublicationSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT p.slug, p.name, p.description, p.type, u.username, u.display_name, pub.published_at
+		SELECT p.slug, p.name, p.description, p.type, u.username, u.display_name, COALESCE(p.thumbnail, ''), pub.published_at
 		FROM projects p
 		JOIN publications pub ON pub.project_id = p.id
 		JOIN users u ON u.id = p.owner_id
@@ -184,7 +185,7 @@ func (s *Store) PublicationsByCreator(ctx context.Context, username string, limi
 	out := []PublicationSummary{}
 	for rows.Next() {
 		var s PublicationSummary
-		if err := rows.Scan(&s.Slug, &s.Name, &s.Description, &s.Type, &s.Author, &s.AuthorName, &s.PublishedAt); err != nil {
+		if err := rows.Scan(&s.Slug, &s.Name, &s.Description, &s.Type, &s.Author, &s.AuthorName, &s.Thumbnail, &s.PublishedAt); err != nil {
 			return nil, fmt.Errorf("project: publications by creator: scan: %w", err)
 		}
 		out = append(out, s)
@@ -381,7 +382,7 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"project": wire(published, false),
+		"project":    wire(published, false),
 		"publicPath": "/p/" + published.Slug,
 	})
 }

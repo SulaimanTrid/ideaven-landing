@@ -103,6 +103,57 @@ function emitStatement(
         { blockId: block.id },
       );
       return;
+    case "change-variable":
+      push(
+        `${pad}api.changeVariable(${JSON.stringify(str(block.inputs?.name))}, ${emitExpression(push, model, block.slots?.amount)});`,
+        { blockId: block.id },
+      );
+      return;
+    case "play-sound":
+      push(`${pad}api.playSound(${JSON.stringify(str(block.inputs?.sound))});`, {
+        blockId: block.id,
+      });
+      return;
+    case "stop-sound":
+      push(`${pad}api.stopSound();`, { blockId: block.id });
+      return;
+    case "tinydb-store":
+      push(
+        `${pad}api.storeValue(${JSON.stringify(str(block.inputs?.key))}, ${emitExpression(push, model, block.slots?.value)});`,
+        { blockId: block.id },
+      );
+      return;
+    case "notifier-alert":
+      push(`${pad}api.notify(${emitExpression(push, model, block.slots?.message)});`, {
+        blockId: block.id,
+      });
+      return;
+    case "web-get":
+      push(`${pad}api.webGet(${JSON.stringify(str(block.inputs?.url))});`, {
+        blockId: block.id,
+      });
+      return;
+    case "location-request":
+      push(`${pad}api.requestLocation();`, { blockId: block.id });
+      return;
+    case "tts-speak":
+      push(`${pad}api.speak(${emitExpression(push, model, block.slots?.message)});`, {
+        blockId: block.id,
+      });
+      return;
+    case "canvas-clear":
+      push(`${pad}api.canvasClear();`, { blockId: block.id });
+      return;
+    case "canvas-draw-circle": {
+      const x = typeof block.inputs?.x === "number" ? block.inputs.x : 0;
+      const y = typeof block.inputs?.y === "number" ? block.inputs.y : 0;
+      const r = typeof block.inputs?.r === "number" ? block.inputs.r : 10;
+      push(
+        `${pad}api.drawCircle(${x}, ${y}, ${r}, ${JSON.stringify(str(block.inputs?.color))});`,
+        { blockId: block.id },
+      );
+      return;
+    }
     case "show-message":
       push(`${pad}api.show(${emitExpression(push, model, block.slots?.message)});`, {
         blockId: block.id,
@@ -144,6 +195,8 @@ function emitExpression(
       const value = block.inputs?.value;
       return typeof value === "number" ? String(value) : "0";
     }
+    case "boolean":
+      return block.inputs?.value === false ? "false" : "true";
     case "get-property":
       return `api.getProperty(${JSON.stringify(str(block.inputs?.componentId))}, ${JSON.stringify(str(block.inputs?.property))})`;
     case "get-variable":
@@ -154,6 +207,14 @@ function emitExpression(
       return `api.equals(${emitExpression(push, model, block.slots?.a)}, ${emitExpression(push, model, block.slots?.b)})`;
     case "add":
       return `(Number(${emitExpression(push, model, block.slots?.a)}) + Number(${emitExpression(push, model, block.slots?.b)}))`;
+    case "tinydb-get":
+      return `api.getValue(${JSON.stringify(str(block.inputs?.key))})`;
+    case "clock-now":
+      return `api.now()`;
+    case "location-latitude":
+      return `api.latitude()`;
+    case "location-longitude":
+      return `api.longitude()`;
     default:
       return `null /* unsupported expression "${block.type}" */`;
   }

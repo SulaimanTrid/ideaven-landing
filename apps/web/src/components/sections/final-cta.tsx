@@ -1,9 +1,13 @@
+"use client";
+
 import { ButtonLink, Container } from "@ideaven/ui";
 import { Reveal } from "@/components/reveal";
 import { Block } from "@/components/visuals/block";
+import { useI18n } from "@/lib/i18n/i18n";
 import { IconArrowRight } from "@/components/visuals/icons";
 
 export function FinalCta() {
+  const { t } = useI18n();
   return (
     <section
       aria-labelledby="final-cta-title"
@@ -38,7 +42,7 @@ export function FinalCta() {
             id="final-cta-title"
             className="mx-auto max-w-2xl text-balance text-3xl leading-[1.12] font-semibold tracking-tight sm:text-5xl"
           >
-            Your idea deserves to become something real.
+            {t("landing.finalTitle")}
           </h2>
         </Reveal>
         <Reveal delay={100}>

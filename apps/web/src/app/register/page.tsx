@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { AuthShell } from "@/components/auth/auth-shell";
+import { LocalizedAuthShell } from "@/components/auth/localized-auth-shell";
 import { RegisterForm } from "@/components/auth/register-form";
 
 export const metadata: Metadata = {
@@ -11,25 +10,13 @@ export const metadata: Metadata = {
 
 export default function RegisterPage() {
   return (
-    <AuthShell
-      kicker="Start building"
-      title="Create your account"
-      description="Every idea deserves a way to exist. Yours starts here."
-      footer={
-        <>
-          By creating an account you agree to our{" "}
-          <Link href="/terms" className="underline underline-offset-4 hover:text-ink">
-            Terms
-          </Link>{" "}
-          and{" "}
-          <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">
-            Privacy Policy
-          </Link>
-          .
-        </>
-      }
+    <LocalizedAuthShell
+      kickerKey="landing.heroBadge"
+      titleKey="auth.signupTitle"
+      descriptionKey="auth.signupSub"
+      footer="signup"
     >
       <RegisterForm />
-    </AuthShell>
+    </LocalizedAuthShell>
   );
 }

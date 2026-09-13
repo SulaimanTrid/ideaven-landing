@@ -203,6 +203,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
     switch (b.type) {
       case "text": return String((b.inputs && b.inputs.value) != null ? b.inputs.value : "");
       case "number": return Number(b.inputs && b.inputs.value) || 0;
+      case "boolean": return b.inputs && b.inputs.value === true;
       case "get-variable": return variables[b.inputs.name];
       case "get-property": {
         var props = componentProps[b.inputs.componentId];
@@ -211,6 +212,20 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       case "join": return String(evalBlock(b.slots.a)) + String(evalBlock(b.slots.b));
       case "equals": return evalBlock(b.slots.a) === evalBlock(b.slots.b);
       case "add": return Number(evalBlock(b.slots.a)) + Number(evalBlock(b.slots.b));
+      case "tinydb-get":
+        try { var tv = localStorage.getItem(TINYDB_PREFIX + (b.inputs.key || "")); return tv === null ? "" : JSON.parse(tv); } catch (e) { return ""; }
+      case "clock-now": {
+        var now = new Date();
+        var p2 = function (n) { return String(n).length < 2 ? "0" + n : String(n); };
+        return now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()) + " " + p2(now.getHours()) + ":" + p2(now.getMinutes()) + ":" + p2(now.getSeconds());
+      }
+      case "location-latitude":
+      case "location-longitude": {
+        var lid = firstComponentIdOf("location-sensor");
+        var lp = lid ? componentProps[lid] : null;
+        if (!lp) return 0;
+        return b.type === "location-latitude" ? (lp.latitude || 0) : (lp.longitude || 0);
+      }
       default: return undefined;
     }
   }
@@ -226,6 +241,69 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
         case "set-variable":
           variables[b.inputs.name] = evalBlock(b.slots.value);
           break;
+        case "change-variable": {
+          var current = Number(variables[b.inputs.name]) || 0;
+          var delta = Number(evalBlock(b.slots.amount)) || 0;
+          variables[b.inputs.name] = current + delta;
+          break;
+        }
+        case "play-sound":
+          playSound(String((b.inputs && b.inputs.sound) != null ? b.inputs.sound : ""));
+          break;
+        case "stop-sound":
+          if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; currentAudio = null; }
+          break;
+        case "tinydb-store":
+          try { localStorage.setItem(TINYDB_PREFIX + (b.inputs.key || ""), JSON.stringify(evalBlock(b.slots.value))); } catch (e) { showToast("\u26A0 TinyDB could not write"); }
+          break;
+        case "notifier-alert":
+          showToast(evalBlock(b.slots.message));
+          break;
+        case "web-get":
+          fetch(String((b.inputs && b.inputs.url) || "")).then(function (r) { return r.text(); }).then(function (text) {
+            componentProps[firstComponentIdOf("web")].response = String(text).slice(0, 20000);
+            rerender();
+          }).catch(function (err) {
+            componentProps[firstComponentIdOf("web")].response = "Error: " + String(err).slice(0, 200);
+            rerender();
+          });
+          break;
+        case "location-request":
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function (pos) {
+              componentProps[firstComponentIdOf("location-sensor")].latitude = Number(pos.coords.latitude.toFixed(6));
+              componentProps[firstComponentIdOf("location-sensor")].longitude = Number(pos.coords.longitude.toFixed(6));
+              componentProps[firstComponentIdOf("location-sensor")].available = true;
+              emit(firstComponentIdOf("location-sensor"), "location");
+            }, function (err) {
+              showToast("\u26A0 Location unavailable \u2014 " + err.message);
+            });
+          } else {
+            showToast("\u26A0 Location is not available in this browser");
+          }
+          break;
+        case "tts-speak":
+          if (window.speechSynthesis) {
+            var u = new SpeechSynthesisUtterance(String(evalBlock(b.slots.message) || ""));
+            window.speechSynthesis.speak(u);
+          } else { showToast("\u26A0 TextToSpeech is not available"); }
+          break;
+        case "canvas-clear": {
+          var cc = document.querySelector("canvas[data-canvas]");
+          if (cc) { var cx2 = cc.getContext("2d"); cx2.fillStyle = "#ffffff"; cx2.fillRect(0, 0, cc.width, cc.height); }
+          break;
+        }
+        case "canvas-draw-circle": {
+          var dc = document.querySelector("canvas[data-canvas]");
+          if (dc) {
+            var dx2 = dc.getContext("2d");
+            dx2.beginPath();
+            dx2.arc(Number(b.inputs.x) || 0, Number(b.inputs.y) || 0, Math.max(0.5, Number(b.inputs.r) || 10), 0, Math.PI * 2);
+            dx2.fillStyle = String(b.inputs.color || "#5743d9");
+            dx2.fill();
+          }
+          break;
+        }
         case "show-message":
           showToast(evalBlock(b.slots.message));
           break;
@@ -250,6 +328,275 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
     toastTimer = setTimeout(function () { el.style.display = "none"; }, 2600);
   }
 
+  // ---- audio ------------------------------------------------------------------
+  // play-sound resolves real project media: an "asset:<id>" reference, a name
+  // from the project's asset library, or an external URL. Unresolvable sounds
+  // warn once per session — never a fake playback.
+  var currentAudio = null;
+  var warnedSounds = {};
+
+  function assetSrc(ref) {
+    return ASSET_BASE + "/api/assets/" + encodeURIComponent(ref.slice(6)) + "/raw";
+  }
+
+  function playSound(name) {
+    var asset = null;
+    (model.assets || []).forEach(function (a) {
+      if (a.name === name && (asset === null || a.kind === "audio")) asset = a;
+    });
+    var src = name.indexOf("asset:") === 0
+      ? assetSrc(name)
+      : asset !== null
+        ? assetSrc("asset:" + asset.id)
+        : /^https?:\/\//.test(name) ? name : null;
+    if (!src) {
+      if (!warnedSounds[name]) {
+        warnedSounds[name] = true;
+        showToast("\u26A0 Sound \u201C" + name + "\u201D was not found \u2014 add it in Assets");
+      }
+      return;
+    }
+    try {
+      var audio = new Audio(src);
+      audio.play().catch(function () {});
+      currentAudio = audio;
+    } catch (e) { void e; }
+  }
+
+  // ---- app-studio capabilities -------------------------------------------------
+  var TINYDB_PREFIX = "ideaven-tinydb:" + (document.title || "app") + ":default:";
+
+  function firstComponentIdOf(type) {
+    var id = null;
+    model.screens.forEach(function (sc) {
+      (function walk(nodes) {
+        (nodes || []).forEach(function (n) {
+          if (id) return;
+          if (n.type === type) { id = n.id; return; }
+          walk(n.children);
+        });
+      })(sc.components);
+    });
+    return id;
+  }
+
+  function wireSensors() {
+    // Clock timers: real intervals for every enabled Clock.
+    model.screens.forEach(function (sc) {
+      (function walk(nodes) {
+        (nodes || []).forEach(function (n) {
+          if (n.type === "clock" && n.props && n.props.enabled === true && Number(n.props.interval) >= 100) {
+            setInterval(function () { emit(n.id, "timer"); }, Number(n.props.interval));
+          }
+          if (n.type === "accelerometer-sensor" && window.DeviceMotionEvent) {
+            var lastShake = 0;
+            window.addEventListener("devicemotion", function (ev) {
+              var a = ev.accelerationIncludingGravity;
+              if (!a) return;
+              componentProps[n.id].x = Number((a.x || 0).toFixed(2));
+              componentProps[n.id].y = Number((a.y || 0).toFixed(2));
+              componentProps[n.id].z = Number((a.z || 0).toFixed(2));
+              componentProps[n.id].available = true;
+              var mag = Math.hypot(componentProps[n.id].x, componentProps[n.id].y, componentProps[n.id].z);
+              if (mag > 18 && Date.now() - lastShake > 800) { lastShake = Date.now(); emit(n.id, "shake"); }
+            });
+          }
+          walk(n.children);
+        });
+      })(sc.components);
+    });
+  }
+
+  // ---- 2D scene engine (TASK 08) ---------------------------------------------
+  // Screens containing game entities (player/platform/coin/enemy/trigger/
+  // sprite) play as real scenes: input, gravity, AABB collision, and dynamic
+  // touches-<id> events dispatched into the same block runtime. Only the
+  // player moves; solids block landing; triggers fire events.
+  var ENTITY_TYPES = { player: 1, platform: 1, coin: 1, enemy: 1, trigger: 1, sprite: 1 };
+  var ENTITY_DEFAULTS = {
+    player: { x: 24, y: 560, width: 36, height: 36 },
+    platform: { x: 24, y: 640, width: 160, height: 20 },
+    coin: { x: 120, y: 520, width: 28, height: 28 },
+    enemy: { x: 220, y: 560, width: 32, height: 32 },
+    trigger: { x: 260, y: 480, width: 100, height: 80 },
+    sprite: { x: 160, y: 300, width: 48, height: 48 }
+  };
+  var SCENE_GRAVITY = 1500, SCENE_MOVE = 190, SCENE_JUMP = 520;
+  var sceneState = null; // persists the player across handler-triggered rerenders
+
+  function isSceneScreen(sc) {
+    return (sc.components || []).some(function (c) { return ENTITY_TYPES[c.type] === 1; });
+  }
+  function sceneRect(props, type) {
+    var d = ENTITY_DEFAULTS[type] || { x: 16, y: 16, width: 40, height: 40 };
+    var num = function (v, f) { return typeof v === "number" && isFinite(v) ? v : f; };
+    return { x: num(props.x, d.x), y: num(props.y, d.y), width: num(props.width, d.width), height: num(props.height, d.height) };
+  }
+  function sceneVisible(props) { return props.visible !== false; }
+  function sceneTrigger(type, props) {
+    if (props.collider === false) return false;
+    if (type === "coin" || type === "enemy" || type === "trigger") return props.trigger !== false;
+    return props.trigger === true;
+  }
+  function sceneSolid(type, props) {
+    return sceneVisible(props) && props.collider !== false && !sceneTrigger(type, props);
+  }
+  function overlap(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  }
+
+  function buildScene(screen) {
+    var keepState = sceneState && sceneState.screenId === currentScreenId ? sceneState : null;
+    root.innerHTML = "";
+    var bg = screen.styles && typeof screen.styles.background === "string" ? screen.styles.background : "#0c0f17";
+    root.style.background = bg;
+    var stage = document.createElement("div");
+    stage.style.cssText = "position:relative;overflow:hidden;touch-action:none";
+    stage.style.width = (root.clientWidth || 390) + "px";
+    stage.style.height = (root.clientHeight || 844) + "px";
+    var refs = {};
+    var playerComponent = null;
+    (screen.components || []).forEach(function (n) {
+      if (ENTITY_TYPES[n.type] !== 1) return; // HUD text renders below
+      var props = componentProps[n.id] || {};
+      var r = sceneRect(props, n.type);
+      var el = document.createElement("div");
+      el.style.cssText = "position:absolute;user-select:none";
+      el.style.left = r.x + "px"; el.style.top = r.y + "px";
+      el.style.width = r.width + "px"; el.style.height = r.height + "px";
+      var color = typeof props.color === "string" ? props.color : "#58c7f0";
+      if (!sceneVisible(props)) el.style.display = "none";
+      if (typeof props.rotation === "number" && props.rotation) el.style.transform = "rotate(" + props.rotation + "deg)";
+      if (typeof props.src === "string" && props.src.trim() !== "") {
+        var tex = document.createElement("img");
+        tex.style.cssText = "width:100%%;height:100%%;object-fit:fill;image-rendering:pixelated;pointer-events:none";
+        tex.alt = "";
+        var ref = props.src.trim();
+        tex.src = ref.indexOf("asset:") === 0 ? assetSrc(ref) : ref;
+        el.style.overflow = "hidden";
+        el.appendChild(tex);
+        stage.appendChild(el);
+        refs[n.id] = el;
+        return;
+      }
+      switch (n.type) {
+        case "player":
+          playerComponent = n;
+          el.style.borderRadius = "9px"; el.style.background = color;
+          el.style.boxShadow = "inset -4px -4px 0 rgb(0 0 0 / .18)"; el.style.zIndex = 5;
+          break;
+        case "platform":
+          el.style.background = color; el.style.borderRadius = "4px";
+          el.style.boxShadow = "inset 0 2px 0 rgb(255 255 255 / .12)";
+          break;
+        case "coin":
+          el.style.borderRadius = "50%%"; el.style.background = color;
+          el.style.boxShadow = "inset -3px -3px 0 rgb(0 0 0 / .28)";
+          break;
+        case "enemy":
+          el.style.borderRadius = "8px"; el.style.background = color;
+          el.style.boxShadow = "inset -3px -3px 0 rgb(0 0 0 / .22)";
+          break;
+        case "trigger":
+          el.style.border = "2px dashed " + color; el.style.borderRadius = "8px";
+          el.style.background = color + "22";
+          break;
+        default:
+          el.style.background = color; el.style.borderRadius = "6px"; el.style.opacity = ".92";
+      }
+      stage.appendChild(el);
+      refs[n.id] = el;
+    });
+    // Non-entity positioned components (HUD text) render at their x/y.
+    (screen.components || []).forEach(function (n) {
+      if (ENTITY_TYPES[n.type] === 1) return;
+      var props = componentProps[n.id] || {};
+      var r = sceneRect(props, n.type);
+      var el = document.createElement("div");
+      el.style.cssText = "position:absolute;user-select:none;color:#e8ecf6;font-weight:800;letter-spacing:2px;white-space:pre-wrap";
+      el.style.left = r.x + "px"; el.style.top = r.y + "px";
+      el.style.fontSize = (typeof props.fontSize === "number" ? props.fontSize : 20) + "px";
+      el.textContent = String(props.text || "");
+      stage.appendChild(el);
+    });
+    root.appendChild(stage);
+    if (keepState) {
+      keepState.refs = refs;
+      sceneState = keepState;
+      return;
+    }
+    var spawn = playerComponent ? sceneRect(componentProps[playerComponent.id] || {}, "player") : { x: 24, y: 24 };
+    sceneState = {
+      screenId: currentScreenId, refs: refs, playerComponentId: playerComponent ? playerComponent.id : null,
+      player: { x: spawn.x, y: spawn.y, vx: 0, vy: 0, facing: 1, grounded: false },
+      spawn: { x: spawn.x, y: spawn.y }, touching: {}, keys: { left: false, right: false },
+      width: stage.clientWidth || 390, height: stage.clientHeight || 844
+    };
+  }
+
+  // Global input: one listener set serves whichever scene is active.
+  window.addEventListener("keydown", function (ev) {
+    if (!sceneState) return;
+    var k = ev.key.toLowerCase();
+    if (k === "arrowleft" || k === "a") { sceneState.keys.left = true; ev.preventDefault(); }
+    if (k === "arrowright" || k === "d") { sceneState.keys.right = true; ev.preventDefault(); }
+    if ((k === "arrowup" || k === "w" || k === " ") && sceneState.player.grounded) { ev.preventDefault(); sceneState.player.vy = -SCENE_JUMP; sceneState.player.grounded = false; }
+  });
+  window.addEventListener("keyup", function (ev) {
+    if (!sceneState) return;
+    var k = ev.key.toLowerCase();
+    if (k === "arrowleft" || k === "a") sceneState.keys.left = false;
+    if (k === "arrowright" || k === "d") sceneState.keys.right = false;
+  });
+
+  var sceneLast = 0;
+  function sceneTick(now) {
+    requestAnimationFrame(sceneTick);
+    var screen = screenOf(currentScreenId);
+    if (!screen || !isSceneScreen(screen) || !sceneState || sceneState.screenId !== currentScreenId || !sceneState.playerComponentId) { sceneLast = now; return; }
+    var dt = Math.min((now - sceneLast) / 1000, 0.05);
+    sceneLast = now;
+    var p = sceneState.player;
+    p.vx = (sceneState.keys.left ? -SCENE_MOVE : 0) + (sceneState.keys.right ? SCENE_MOVE : 0);
+    if (p.vx !== 0) p.facing = p.vx > 0 ? 1 : -1;
+    var body = { x: p.x, y: p.y, width: 36, height: 36 };
+    body.x = Math.max(0, Math.min(sceneState.width - body.width, body.x + p.vx * dt));
+    p.vy += SCENE_GRAVITY * dt;
+    body.y += p.vy * dt;
+    p.grounded = false;
+    (screen.components || []).forEach(function (n) {
+      if (n.id === sceneState.playerComponentId) return;
+      var props = componentProps[n.id] || {};
+      if (!sceneSolid(n.type, props)) return;
+      var r = sceneRect(props, n.type);
+      var withinX = body.x + body.width > r.x + 2 && body.x < r.x + r.width - 2;
+      var feet = body.y + body.height;
+      var landing = p.vy >= 0 && feet >= r.y && feet <= r.y + r.height + 10 && feet - p.vy * dt <= r.y + 4;
+      if (withinX && landing) { body.y = r.y - body.height; p.vy = 0; p.grounded = true; }
+    });
+    if (body.y + body.height >= sceneState.height) { body.y = sceneState.height - body.height; p.vy = 0; p.grounded = true; }
+    if (body.y < -60) { body.y = -60; p.vy = 0; }
+    if (body.y > sceneState.height + 120) { body.x = sceneState.spawn.x; body.y = sceneState.spawn.y; p.vy = 0; sceneState.touching = {}; }
+    p.x = body.x; p.y = body.y;
+
+    var pel = sceneState.refs[sceneState.playerComponentId];
+    if (pel) { pel.style.left = p.x + "px"; pel.style.top = p.y + "px"; }
+
+    var still = {};
+    (screen.components || []).forEach(function (n) {
+      if (n.id === sceneState.playerComponentId) return;
+      var props = componentProps[n.id] || {};
+      if (!sceneTrigger(n.type, props) || !sceneVisible(props)) return;
+      var r = sceneRect(props, n.type);
+      if (overlap(body, r)) {
+        still[n.id] = 1;
+        if (!sceneState.touching[n.id]) emit(sceneState.playerComponentId, "touches-" + n.id);
+      }
+    });
+    sceneState.touching = still;
+  }
+  requestAnimationFrame(sceneTick);
+
   // ---- rendering ---------------------------------------------------------------
   function renderNode(node) {
     var props = componentProps[node.id] || {};
@@ -272,6 +619,87 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       case "container":
       case "card": return container("column");
       case "row": return container("row");
+      case "h-scroll": {
+        var hs = container("row");
+        hs.style.overflowX = "auto"; hs.style.overflowY = "hidden";
+        return hs;
+      }
+      case "v-scroll": {
+        var vs = container("column");
+        vs.style.overflowY = "auto"; vs.style.overflowX = "hidden";
+        return vs;
+      }
+      case "table": {
+        var tb = document.createElement("div");
+        applyCSS(tb, styles);
+        var cols = typeof props.columns === "number" && props.columns > 0 ? props.columns : 2;
+        tb.style.display = "grid";
+        tb.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+        (node.children || []).forEach(function (child) { tb.appendChild(renderNode(child)); });
+        return tb;
+      }
+      case "listview": {
+        var lv = document.createElement("div");
+        applyCSS(lv, styles);
+        lv.style.alignSelf = "stretch"; lv.style.overflowY = "auto";
+        var items = String(props.items || "").split("\n").map(function (x) { return x.trim(); }).filter(function (x) { return x !== ""; });
+        if (items.length === 0) {
+          lv.style.padding = "12px"; lv.style.color = "#9aa1b2"; lv.style.fontSize = "13px";
+          lv.textContent = "ListView \u2014 no items";
+          return lv;
+        }
+        items.forEach(function (item, i) {
+          var rowBtn = document.createElement("button");
+          rowBtn.type = "button";
+          rowBtn.textContent = item;
+          rowBtn.style.cssText = "display:block;width:100%%;text-align:left;padding:10px 12px;cursor:pointer;color:#0b0e16;font-size:inherit;background:" + (item === props.selection ? "#efecff" : "transparent") + ";border:none;" + (i === 0 ? "" : "border-top:1px solid #eef0f4;");
+          rowBtn.addEventListener("click", function () {
+            componentProps[node.id].selection = item;
+            emit(node.id, "itemClick");
+          });
+          lv.appendChild(rowBtn);
+        });
+        return lv;
+      }
+      case "canvas": {
+        var cv = document.createElement("canvas");
+        cv.setAttribute("data-canvas", "1");
+        cv.width = 390; cv.height = typeof styles.height === "number" ? styles.height : 220;
+        applyCSS(cv, styles);
+        cv.style.width = "100%%"; cv.style.display = "block"; cv.style.touchAction = "none";
+        var cctx = cv.getContext("2d");
+        cctx.fillStyle = typeof props.background === "string" ? props.background : "#ffffff";
+        cctx.fillRect(0, 0, cv.width, cv.height);
+        cv.addEventListener("pointerdown", function (ev) {
+          var r = cv.getBoundingClientRect();
+          var x = Math.round(((ev.clientX - r.left) / r.width) * 390);
+          var y = Math.round(((ev.clientY - r.top) / r.height) * cv.height);
+          componentProps[node.id].lastX = x; componentProps[node.id].lastY = y;
+          emit(node.id, "touch");
+        });
+        return cv;
+      }
+      case "tinydb":
+      case "clock":
+      case "location-sensor":
+      case "accelerometer-sensor":
+      case "text-to-speech":
+      case "sound":
+      case "notifier":
+      case "web":
+      case "clouddb":
+      case "file":
+      case "webdb":
+      case "activity-starter":
+      case "bluetooth-client":
+      case "bluetooth-server":
+      case "player":
+      case "image-sprite": {
+        var chip = document.createElement("div");
+        chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;align-self:flex-start;padding:4px 10px;border-radius:8px;border:1px dashed #b8bfd0;background:#f6f7fa;color:#5b6478;font-size:11.5px";
+        chip.textContent = "\u25C8 " + node.type;
+        return chip;
+      }
       case "text": {
         el = document.createElement("div");
         applyCSS(el, styles);
@@ -440,10 +868,13 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
     root.innerHTML = "";
     var bg = screen && screen.styles && typeof screen.styles.background === "string" ? screen.styles.background : "#ffffff";
     root.style.background = bg;
+    root.style.overflowY = screen && screen.styles && screen.styles.scrollable === true ? "auto" : "hidden";
+    if (screen && isSceneScreen(screen)) { buildScene(screen); return; }
     (screen ? screen.components : []).forEach(function (c) { root.appendChild(renderNode(c)); });
   }
 
   rerender();
+  wireSensors();
 })();
 </script>
 </body>

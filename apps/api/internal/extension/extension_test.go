@@ -75,7 +75,8 @@ func newHarness(t *testing.T) *harness {
 	authService := auth.NewService(db, cfg, silentMailer{}, logger)
 	authHandler := auth.NewHandler(authService, cfg.Cookie)
 	extensionService := extension.NewService(db, "")
-	extensionHandler := extension.NewHandler(extensionService, authService.Authenticate, cfg.Cookie)
+	extensionHandler := extension.NewHandler(extensionService, authService.Authenticate, cfg.Cookie,
+		extension.WithFixProvider(stubFixProvider{}))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/register", authHandler.Register)
@@ -88,6 +89,9 @@ func newHarness(t *testing.T) *harness {
 	mux.HandleFunc("GET /api/extensions/{id}/versions", extensionHandler.ListVersions)
 	mux.HandleFunc("POST /api/extensions/{id}/publish", extensionHandler.Publish)
 	mux.HandleFunc("POST /api/extensions/{id}/build", extensionHandler.Build)
+	mux.HandleFunc("POST /api/extensions/{id}/build/stream", extensionHandler.BuildStream)
+	mux.HandleFunc("GET /api/extensions/{id}/builds", extensionHandler.ListBuilds)
+	mux.HandleFunc("POST /api/extensions/{id}/fix", extensionHandler.Fix)
 	mux.HandleFunc("GET /api/extensions/{id}/aix", extensionHandler.AIX)
 	mux.HandleFunc("POST /api/extensions/{id}/install", extensionHandler.Install)
 	mux.HandleFunc("DELETE /api/extensions/{id}/install", extensionHandler.Uninstall)
@@ -96,6 +100,18 @@ func newHarness(t *testing.T) *harness {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return &harness{server: server}
+}
+
+// stubFixProvider stands in for a real AI provider in integration tests: it
+// answers every fix request with a valid, balanced source proposal.
+type stubFixProvider struct{}
+
+func (stubFixProvider) Name() string  { return "stub" }
+func (stubFixProvider) Model() string { return "stub-1" }
+
+func (stubFixProvider) Complete(ctx context.Context, system, user string) (string, error) {
+	return `{"explanation":"Closed the unbalanced brace.","target":"source",` +
+		`"newContent":"package com.example.fixed;\n\npublic class Fixed {\n  void run() {\n  }\n}\n"}`, nil
 }
 
 func call(t *testing.T, h *harness, method, path string, body any, cookie *http.Cookie) (*http.Response, map[string]any) {
@@ -382,6 +398,9 @@ func TestExtensionBuildPipelineAndInstall(t *testing.T) {
 	if aixRes.StatusCode != http.StatusOK || len(aixRaw) == 0 {
 		t.Fatalf("aix download = %d (%d bytes)", aixRes.StatusCode, len(aixRaw))
 	}
+	if !strings.Contains(aixRes.Header.Get("Content-Disposition"), consumer["slug"].(string)+"-0.1.1.aix") {
+		t.Fatalf("default AIX download needs the resolved version in its filename: %q", aixRes.Header.Get("Content-Disposition"))
+	}
 
 	// Foreign users cannot download someone's package.
 	aixReq2, _ := http.NewRequest(http.MethodGet, h.server.URL+"/api/extensions/"+consumerID+"/aix", nil)
@@ -417,5 +436,34 @@ func TestExtensionBuildPipelineAndInstall(t *testing.T) {
 	res, installed = call(t, h, http.MethodGet, "/api/me/extensions", nil, fan)
 	if total, _ := installed["total"].(float64); total != 0 {
 		t.Fatalf("installed after uninstall = %v", installed)
+	}
+}
+
+func TestAIXRejectsUntrustedVersionMetadataPath(t *testing.T) {
+	h := newHarness(t)
+	author := register(t, h, "artifact-path@example.com", "artifact-path")
+	ext := createExtension(t, h, author, "Artifact Path Guard")
+	id, _ := ext["id"].(string)
+
+	// Manual version snapshots are a legacy authoring feature. Their source
+	// metadata must never be used as a server filesystem path by downloads.
+	res, body := call(t, h, http.MethodPost, "/api/extensions/"+id+"/versions", map[string]any{
+		"version": "0.1.1",
+		"source":  map[string]string{"package": "../go.mod"},
+	}, author)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("save version = %d (%v)", res.StatusCode, body)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, h.server.URL+"/api/extensions/"+id+"/aix?version=0.1.1", nil)
+	req.AddCookie(author)
+	download, err := h.server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, download.Body)
+	download.Body.Close()
+	if download.StatusCode == http.StatusOK {
+		t.Fatal("AIX download must reject a path supplied through version metadata")
 	}
 }

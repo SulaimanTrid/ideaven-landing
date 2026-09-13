@@ -19,6 +19,7 @@ import (
 	"ideaven/apps/api/internal/asset"
 	"ideaven/apps/api/internal/auth"
 	"ideaven/apps/api/internal/config"
+	"ideaven/apps/api/internal/community"
 	"ideaven/apps/api/internal/extension"
 	"ideaven/apps/api/internal/handler"
 	"ideaven/apps/api/internal/httpx"
@@ -103,6 +104,9 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	route(mux, http.MethodPost, "/api/projects/{id}/publish", http.HandlerFunc(projectHandler.Publish))
 	route(mux, http.MethodPost, "/api/projects/{id}/unpublish", http.HandlerFunc(projectHandler.Unpublish))
 	route(mux, http.MethodGet, "/api/public/projects/{slug}", http.HandlerFunc(projectHandler.PublicProject))
+	// TASK 07: deterministic preview thumbnail rendered from the published
+	// model itself (no stock imagery).
+	route(mux, http.MethodGet, "/api/public/projects/{slug}/thumbnail.svg", http.HandlerFunc(projectHandler.PublicThumbnail))
 	route(mux, http.MethodGet, "/api/public/projects", http.HandlerFunc(projectHandler.PublicList))
 	// Phase 20/33–35: community loop — public creator pages, remix into the
 	// caller's account, and honest platform counters. Phase 4/32: templates.
@@ -110,10 +114,42 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	route(mux, http.MethodPost, "/api/public/projects/{slug}/remix", http.HandlerFunc(projectHandler.Remix))
 	route(mux, http.MethodGet, "/api/public/stats", http.HandlerFunc(projectHandler.PublicStats))
 	route(mux, http.MethodGet, "/api/templates", http.HandlerFunc(projectHandler.ListTemplates))
+	// TASK 07: creator community — questions/discussions in channels with
+	// upvoted, acceptable answers. Reads are public; writes need a session.
+	communityService := community.NewService(db, slog.Default())
+	communityHandler := community.NewHandler(communityService, authService, cfg.Cookie)
+	communityLimiter := middleware.NewRateLimiter(30, time.Minute)
+	route(mux, http.MethodGet, "/api/community/feed", http.HandlerFunc(communityHandler.Feed))
+	route(mux, http.MethodGet, "/api/community/summary", http.HandlerFunc(communityHandler.Summary))
+	route(mux, http.MethodPost, "/api/community/posts", middleware.Chain(http.HandlerFunc(communityHandler.CreatePost), communityLimiter.Middleware))
+	// One routeMethods call for the shared path — two route() calls would
+	// register duplicate 405 fallbacks and panic the mux.
+	routeMethods(mux, "/api/community/posts/{id}", map[string]http.Handler{
+		http.MethodGet:    http.HandlerFunc(communityHandler.Post),
+		http.MethodDelete: http.HandlerFunc(communityHandler.DeletePost),
+	})
+	route(mux, http.MethodPost, "/api/community/posts/{id}/replies", middleware.Chain(http.HandlerFunc(communityHandler.CreateReply), communityLimiter.Middleware))
+	route(mux, http.MethodPost, "/api/community/posts/{id}/vote", http.HandlerFunc(communityHandler.VotePost))
+	route(mux, http.MethodPost, "/api/community/posts/{id}/accept", http.HandlerFunc(communityHandler.AcceptReply))
+	route(mux, http.MethodDelete, "/api/community/replies/{id}", http.HandlerFunc(communityHandler.DeleteReply))
+	route(mux, http.MethodPost, "/api/community/replies/{id}/vote", http.HandlerFunc(communityHandler.VoteReply))
+	route(mux, http.MethodPost, "/api/community/report", http.HandlerFunc(communityHandler.Report))
 	// Roadmap 2.0-B: extension registry — authored extensions and their
 	// immutable versions, owner-scoped like projects.
 	extensionService := extension.NewService(db, "") // built AIX packages live under .data/extensions
-	extensionHandler := extension.NewHandler(extensionService, authService.Authenticate, config.CookieConfig{Name: cfg.Cookie.Name})
+	// The AI provider (when configured) also powers the extension build
+	// fixer, sharing one credit allowance and one usage ledger.
+	aiProvider := ai.LoadProvider(os.Getenv, nil)
+	extensionHandler := extension.NewHandler(extensionService, authService.Authenticate,
+		config.CookieConfig{Name: cfg.Cookie.Name},
+		extension.WithFixProvider(aiProvider),
+		extension.WithFixGate(func(ctx context.Context, userID string) bool {
+			return ai.Exhausted(db, userID)
+		}),
+		extension.WithUsageRecorder(func(userID, provider, model string, promptChars, outputChars int, ok bool) {
+			ai.RecordUsage(db, userID, provider, model, promptChars, outputChars, ok)
+		}),
+	)
 	// Launch feedback: everyone can browse published extensions.
 	route(mux, http.MethodGet, "/api/public/extensions", http.HandlerFunc(extensionHandler.PublicList))
 	routeMethods(mux, "/api/extensions", map[string]http.Handler{
@@ -134,6 +170,11 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	})
 	route(mux, http.MethodPost, "/api/extensions/{id}/publish", http.HandlerFunc(extensionHandler.Publish))
 	route(mux, http.MethodPost, "/api/extensions/{id}/build", http.HandlerFunc(extensionHandler.Build))
+	// Task 06: the same pipeline over SSE — real states and logs stream as
+	// they happen; builds history; AI fix proposals (diff-based).
+	route(mux, http.MethodPost, "/api/extensions/{id}/build/stream", http.HandlerFunc(extensionHandler.BuildStream))
+	route(mux, http.MethodGet, "/api/extensions/{id}/builds", http.HandlerFunc(extensionHandler.ListBuilds))
+	route(mux, http.MethodPost, "/api/extensions/{id}/fix", http.HandlerFunc(extensionHandler.Fix))
 	route(mux, http.MethodGet, "/api/extensions/{id}/aix", http.HandlerFunc(extensionHandler.AIX))
 	routeMethods(mux, "/api/extensions/{id}/install", map[string]http.Handler{
 		http.MethodPost:   http.HandlerFunc(extensionHandler.Install),
@@ -148,7 +189,6 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 
 	// Phase 3: Ask AI. Provider comes from AI_* env vars; without them the
 	// endpoint reports AI_NOT_CONFIGURED honestly. Keys never leave the server.
-	aiProvider := ai.LoadProvider(os.Getenv, nil)
 	aiHandler := ai.NewHandler(aiProvider, authService.Authenticate, db, ai.CookieConfig{Name: cfg.Cookie.Name})
 	aiLimiter := middleware.NewRateLimiter(10, time.Minute)
 	route(mux, http.MethodPost, "/api/ai/command", middleware.Chain(http.HandlerFunc(aiHandler.Command), aiLimiter.Middleware))

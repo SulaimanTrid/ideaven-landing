@@ -1,9 +1,14 @@
+"use client";
+
 import { ButtonLink, Chip, Container } from "@ideaven/ui";
 import { Reveal } from "@/components/reveal";
 import { IconArrowRight } from "@/components/visuals/icons";
+import { useI18n } from "@/lib/i18n/i18n";
 import { EditorVisual } from "./editor-visual";
 
 export function Hero() {
+  const { t } = useI18n();
+  const [lead = "", trail = ""] = t("landing.heroTitle").split(/your way\.\s*|caramu\.\s*/);
   return (
     <section
       aria-labelledby="hero-title"
@@ -30,21 +35,21 @@ export function Hero() {
               id="hero-title"
               className="mx-auto mt-6 max-w-3xl text-balance text-[2.75rem] leading-[1.05] font-semibold tracking-tight sm:text-6xl lg:text-7xl"
             >
-              Build it <span className="text-violet">your way.</span>
+              {lead}
+              <span className="text-violet">{trail || t("landing.heroTitle").slice(lead.length)}</span>
             </h1>
           </Reveal>
 
           <Reveal delay={160}>
             <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-8 text-fog sm:text-xl sm:leading-9">
-              Create games and apps visually with blocks, or write real
-              TypeScript code when you&rsquo;re ready.
+              {t("landing.heroSub")}
             </p>
           </Reveal>
 
           <Reveal delay={240}>
             <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <ButtonLink href="/start" size="lg">
-                Start Building
+                {t("landing.startBuilding")}
                 <IconArrowRight size={16} />
               </ButtonLink>
               <ButtonLink href="#explore" variant="secondary" size="lg">
@@ -52,7 +57,7 @@ export function Hero() {
               </ButtonLink>
             </div>
             <p className="mt-5 text-sm text-mist">
-              From your first block to your first real creation.
+              {t("landing.finalSub").split(".")[0]}. (2.0 beta)
             </p>
           </Reveal>
         </Container>

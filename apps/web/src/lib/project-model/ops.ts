@@ -206,6 +206,17 @@ export function updateComponent(model: ProjectModel, id: string, update: Compone
   return next;
 }
 
+/** Merges a partial preview-settings patch into one undoable model step. */
+export function updatePreviewSettings(
+  model: ProjectModel,
+  patch: NonNullable<ProjectModel["settings"]["preview"]>,
+): ProjectModel {
+  const next = clone(model);
+  const current = next.settings.preview ?? {};
+  next.settings.preview = { ...current, ...patch };
+  return next;
+}
+
 // ---- screens ------------------------------------------------------------------
 
 export function addScreen(model: ProjectModel, name: string): ProjectModel {

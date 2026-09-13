@@ -21,6 +21,8 @@ import type { AuthStatus, LoginRequest, RegisterRequest, User } from "@/types/au
 interface AuthContextValue {
   status: AuthStatus;
   user: User | null;
+  /** Internal: updates the cached user after in-place profile changes. */
+  setUser: (user: User) => void;
   /** Re-runs GET /auth/me — used after out-of-band changes (verify page). */
   refresh: () => Promise<void>;
   login: (input: LoginRequest) => Promise<User>;
@@ -91,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, user, refresh, login, register, logout }),
+    () => ({ status, user, setUser, refresh, login, register, logout }),
     [status, user, refresh, login, register, logout],
   );
 

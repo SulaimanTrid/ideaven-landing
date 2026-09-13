@@ -10,6 +10,8 @@ export interface User {
   displayName: string;
   bio: string;
   avatarUrl: string;
+  /** Account-level UI language (TASK 10): "" = not set. */
+  locale: string;
   emailVerified: boolean;
   createdAt: string;
   updatedAt: string;
@@ -37,6 +39,8 @@ export interface UpdateProfileRequest {
   displayName: string;
   bio: string;
   avatarUrl: string;
+  /** Account-level UI language (TASK 10): "" (unset), "en", or "id". */
+  locale?: string;
 }
 
 export interface ChangePasswordRequest {

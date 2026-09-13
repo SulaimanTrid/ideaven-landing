@@ -7,10 +7,12 @@ import { authApi } from "@/lib/api";
 import { FormAlert, SubmitButton } from "@/components/auth/form-alert";
 import { FormField, PasswordInput } from "@/components/auth/form-field";
 import { ApiError } from "@/types/auth";
+import { useI18n, type TranslationKey } from "@/lib/i18n/i18n";
 
 type TokenState = { phase: "checking" } | { phase: "valid" } | { phase: "invalid"; code: string };
 
 export function ResetPasswordForm({ token }: { token: string }) {
+  const { t } = useI18n();
   const [tokenState, setTokenState] = useState<TokenState>(
     token ? { phase: "checking" } : { phase: "invalid", code: "TOKEN_INVALID" },
   );
@@ -112,7 +114,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
           href="/login"
           className="text-center text-sm font-medium text-violet underline-offset-4 hover:underline"
         >
-          Sign in with your new password
+          {t("auth.signIn")}
         </Link>
       </div>
     );
@@ -122,7 +124,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
     <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
       {formError ? <FormAlert tone="error">{formError}</FormAlert> : null}
 
-      <FormField label="New password" error={fieldErrors.password} hint="At least 8 characters.">
+      <FormField label={t("auth.newPassword")} error={fieldErrors.password} hint="At least 8 characters.">
         {({ id, describedBy, invalid }) => (
           <PasswordInput
             id={id}
@@ -139,7 +141,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         )}
       </FormField>
 
-      <FormField label="Confirm new password" error={fieldErrors.confirmPassword}>
+      <FormField label={t("auth.newPassword")} error={fieldErrors.confirmPassword}>
         {({ id, describedBy, invalid }) => (
           <PasswordInput
             id={id}
@@ -156,7 +158,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
       </FormField>
 
       <SubmitButton pending={pending} pendingLabel="Resetting password…">
-        Reset password
+        {t("auth.resetButton")}
       </SubmitButton>
     </form>
   );
@@ -164,6 +166,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
 
 /** Reads the reset token from the URL — useSearchParams requires a client component. */
 export function ResetPasswordTokenReader() {
+  const { t } = useI18n();
   const token = useSearchParams().get("token") ?? "";
   return <ResetPasswordForm token={token} />;
 }

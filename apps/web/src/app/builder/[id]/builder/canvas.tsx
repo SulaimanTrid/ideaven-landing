@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBuilder, type DropSpot } from "./builder-context";
 import { ComponentNode, DropLine } from "./renderer";
+import { DeviceFrame } from "@/components/builder/device-frame";
 import { findScreen } from "@/lib/project-model/ops";
+import { isSceneScreen } from "@/lib/project-model/scene";
+import { SceneEditor } from "./scene-canvas";
+import { viewportSize, ViewportFrame, type ViewportDevice, type ViewportOrientation } from "@/components/builder/viewport";
+import { useI18n } from "@/lib/i18n/i18n";
 
 /**
  * The canvas: a device-framed, zoomable surface that renders the active
@@ -20,16 +25,22 @@ const DEVICES = [
 type DeviceId = (typeof DEVICES)[number]["id"];
 
 export function BuilderCanvas() {
-  const { model, activeScreenId, select, setIndicator, draggingRef, applyDrop } = useBuilder();
+  const { model, activeScreenId, select, setIndicator, draggingRef, applyDrop, actions } = useBuilder();
+  const { t } = useI18n();
   /** Game projects design against a dark SCENE stage, not a white device. */
   const isGame = model.type === "game";
-  const [device, setDevice] = useState<DeviceId>("phone");
+  const [snap, setSnap] = useState(true);
+  const saved = model.settings.preview;
+  const [device, setDevice] = useState<ViewportDevice>(saved?.device ?? "phone");
+  const [orientation, setOrientation] = useState<ViewportOrientation>(saved?.orientation ?? "portrait");
+  const viewportSettings = { device, orientation };
   const [zoom, setZoom] = useState<number | "fit">("fit");
   const [fitScale, setFitScale] = useState(1);
   const surfaceRef = useRef<HTMLDivElement>(null);
 
-  const frame = DEVICES.find((d) => d.id === device) ?? DEVICES[0];
+  const frame = viewportSize({ device, orientation });
   const screen = findScreen(model, activeScreenId) ?? model.screens[0];
+  const isScene = isSceneScreen(screen);
 
   // Fit-to-width: measure the surface and scale the frame down when needed.
   useEffect(() => {
@@ -117,13 +128,16 @@ export function BuilderCanvas() {
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-canvas">
       {/* Canvas toolbar */}
-      <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-4">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-line px-4">
         <div className="flex items-center gap-1" role="group" aria-label="Device preset">
           {DEVICES.map((d) => (
             <button
               key={d.id}
               type="button"
-              onClick={() => setDevice(d.id)}
+              onClick={() => {
+                setDevice(d.id);
+                actions.updatePreviewSettings({ device: d.id as ViewportDevice });
+              }}
               aria-pressed={device === d.id}
               className={`rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
                 device === d.id ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
@@ -135,6 +149,34 @@ export function BuilderCanvas() {
         </div>
 
         <div className="flex items-center gap-1" role="group" aria-label="Zoom">
+          {isScene ? (
+            <button
+              type="button"
+              onClick={() => setSnap((value) => !value)}
+              aria-pressed={snap}
+              title="Snap entity positions to a 10px grid"
+              className={`mr-2 h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                snap ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
+              }`}
+            >
+              ⌗ {snap ? t("builder.snapOn") : t("builder.snapOff")}
+            </button>
+          ) : null}
+          {device !== "desktop" ? (
+            <button
+              type="button"
+              onClick={() => {
+                const next: ViewportOrientation = orientation === "portrait" ? "landscape" : "portrait";
+                setOrientation(next);
+                actions.updatePreviewSettings({ orientation: next });
+              }}
+              aria-pressed={orientation === "landscape"}
+              title={t("viewport.orientation")}
+              className="mr-2 h-7 rounded-md border border-line px-2 text-[12px] font-medium text-fog transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+            >
+              {orientation === "portrait" ? `▯ ${t("viewport.portrait")}` : `▭ ${t("viewport.landscape")}`}
+            </button>
+          ) : null}
           <button
             type="button"
             aria-label="Zoom out"
@@ -186,29 +228,9 @@ export function BuilderCanvas() {
             height: frame.height * scale,
           }}
         >
-          <div
-            data-screen-frame="1"
-            className={`relative overflow-hidden rounded-[24px] text-[#0b0e16] shadow-[0_24px_80px_-24px_rgb(0_0_0/0.8)] ${
-              isGame ? "border border-violet/40 bg-[#0c0f17] [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.06)_1px,transparent_0)] [background-size:22px_22px]" : "border border-line bg-white"
-            }`}
-            style={{
-              width: frame.width,
-              height: frame.height,
-              transform: `scale(${scale})`,
-              transformOrigin: "top left",
-            }}
-            onDragOver={onRootDragOver}
-            onDrop={onRootDrop}
-          >
-            {isGame ? (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute left-3 top-2 z-10 rounded-md border border-violet/40 bg-[#12151f]/90 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-violet"
-              >
-                scene · {screen.name}
-              </span>
-            ) : null}
-            {/* Screen root */}
+          {/* The screen root: shared by both branches. */}
+          {(() => {
+          const screenRoot = (
             <div
               data-node-id={screen.id}
               data-container="1"
@@ -221,7 +243,9 @@ export function BuilderCanvas() {
                 flexDirection: "column",
                 minHeight: "100%",
                 width: "100%",
+                height: "100%",
                 position: "relative",
+                overflowY: screen.styles?.scrollable === true ? "auto" : undefined,
                 background:
                   typeof screen.styles?.background === "string"
                     ? screen.styles.background
@@ -237,10 +261,10 @@ export function BuilderCanvas() {
                   className="flex flex-1 select-none items-center justify-center p-8 text-center text-[13px] leading-6"
                   style={{ color: "#9aa1b2" }}
                 >
-                  Drag components here
-                  <br />
-                  or pick one from the palette
+                  {t("builder.dragComponents")}
                 </div>
+              ) : isScene ? (
+                <SceneEditor screen={screen} scale={scale} snap={snap} />
               ) : (
                 screen.components.map((child) => (
                   <ComponentNode
@@ -254,7 +278,64 @@ export function BuilderCanvas() {
               )}
               <DropLine containerId={null} screenId={screen.id} />
             </div>
-          </div>
+          );
+
+          if (isGame) {
+            // The universal game viewport (TASK 11): dark shell + corner
+            // ticks, inside the hardware frame on phone/tablet targets.
+            return (
+              <ViewportFrame
+                kind="game"
+                settings={viewportSettings}
+                className="data-[screen-frame]"
+              >
+              <div
+                data-screen-frame="1"
+                className="relative overflow-hidden text-[#0b0e16] [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.06)_1px,transparent_0)] [background-size:22px_22px]"
+                style={{
+                  width: frame.width,
+                  height: frame.height,
+                  transform: `scale(${scale})`,
+                  transformOrigin: "top left",
+                }}
+                onDragOver={onRootDragOver}
+                onDrop={onRootDrop}
+              >
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-2 z-10 rounded-md border border-violet/40 bg-[#12151f]/90 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-violet"
+                >
+                  scene · {screen.name}
+                </span>
+                {screenRoot}
+              </div>
+              </ViewportFrame>
+            );
+          }
+
+          // App projects design inside a real device shell — never a plain
+          // white rectangle. The frame is presentation-only; drops land on
+          // the screen root inside it.
+          return (
+            <div
+              data-screen-frame="1"
+              style={{
+                width: frame.width,
+                height: frame.height,
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+              }}
+              onDragOver={onRootDragOver}
+              onDrop={onRootDrop}
+            >
+              <DeviceFrame kind={device === "custom" ? "desktop" : device}>
+                <div className="overflow-hidden rounded-[26px] bg-white text-[#0b0e16]" style={{ width: frame.width, height: frame.height }}>
+                  {screenRoot}
+                </div>
+              </DeviceFrame>
+            </div>
+          );
+          })()}
         </div>
       </div>
     </div>

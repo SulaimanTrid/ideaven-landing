@@ -22,6 +22,7 @@ export function EditorVisual() {
     <figure className="overflow-hidden rounded-2xl border border-line bg-card shadow-[0_40px_80px_-40px_rgb(0_0_0_/_0.8)]">
       <TopBar
         status={status}
+        score={score}
         onRun={() => setStatus("running")}
         onPause={() => setStatus("paused")}
         onStop={() => {

@@ -5,17 +5,9 @@ import Link from "next/link";
 import { extensionApi } from "@/lib/api";
 import type { Extension } from "@/types/extension";
 import { ApiError } from "@/types/auth";
+import { BuildPanel } from "@/components/extensions/build-panel";
 
 type Tab = "manifest" | "source" | "docs" | "versions" | "build";
-
-interface BuildResult {
-  ok: boolean;
-  version: string;
-  logs: Array<{ step: string; level: string; message: string }>;
-  checksum?: string;
-  size?: number;
-  error?: string;
-}
 
 
 // ---- manifest editor helpers (Task 02) -------------------------------------
@@ -65,11 +57,9 @@ export function ExtensionStudio({ id }: { id: string }) {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Build state.
-  const [buildVersion, setBuildVersion] = useState("");
-  const [changelog, setChangelog] = useState("");
-  const [building, setBuilding] = useState(false);
-  const [build, setBuild] = useState<BuildResult | null>(null);
+  // Build state lives in the Build panel; the studio keeps the sticky
+  // artifact bar so the download stays findable from every tab.
+  const [artifact, setArtifact] = useState<{ version: string; checksum: string; size: number } | null>(null);
 
   const load = useCallback(() => {
     extensionApi.get(id).then((res) => {
@@ -77,7 +67,6 @@ export function ExtensionStudio({ id }: { id: string }) {
       setManifestText(JSON.stringify(res.extension.manifest, null, 2));
       setSourceText(res.extension.source ?? "");
       setDocsText(res.extension.docs);
-      setBuildVersion(res.extension.currentVersion);
     }).catch((err) =>
       setError(err instanceof ApiError ? err.message : "Could not load the extension."),
     );
@@ -125,31 +114,6 @@ export function ExtensionStudio({ id }: { id: string }) {
     }
   };
 
-  const runBuild = async () => {
-    setBuilding(true);
-    setBuild(null);
-    try {
-      const res = await extensionApi.build(id, {
-        version: buildVersion.trim() || undefined,
-        changelog: changelog.trim(),
-      });
-      setBuild(res.build);
-      if (res.build.ok) {
-        const refreshed = await extensionApi.get(id);
-        setExtension(refreshed.extension);
-      }
-    } catch (err) {
-      setBuild({
-        ok: false,
-        version: buildVersion,
-        logs: [],
-        error: err instanceof ApiError ? err.message : "Could not run the build. Try again shortly.",
-      });
-    } finally {
-      setBuilding(false);
-    }
-  };
-
   const tabs: Array<[Tab, string]> = [
     ["manifest", "Manifest"],
     ["source", "Source"],
@@ -157,6 +121,21 @@ export function ExtensionStudio({ id }: { id: string }) {
     ["versions", "Versions"],
     ["build", "Build"],
   ];
+
+  // Apply an AI fix into the studio editor and persist it through the same
+  // validated PATCH path a manual save uses; returns the previous content so
+  // the panel can offer an exact undo.
+  const applyFix = async (target: "manifest" | "source", newContent: string): Promise<string> => {
+    const previous = target === "manifest" ? manifestText : sourceText;
+    if (target === "manifest") {
+      setManifestText(newContent);
+      await extensionApi.update(id, { manifest: JSON.parse(newContent) });
+    } else {
+      setSourceText(newContent);
+      await extensionApi.update(id, { source: newContent });
+    }
+    return previous;
+  };
 
   return (
     <div className="space-y-5">
@@ -198,6 +177,28 @@ export function ExtensionStudio({ id }: { id: string }) {
           </Link>
         </div>
       </div>
+
+      {/* Sticky artifact bar — the download stays one click away from every tab. */}
+      {artifact ? (
+        <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-mint/40 bg-canvas/95 px-4 py-2.5 backdrop-blur">
+          <p className="text-[12.5px] text-fog">
+            <span className="font-medium text-mint">v{artifact.version} built</span>
+            <span className="mx-1.5 text-mist">·</span>
+            {artifact.size < 1024 ? `${artifact.size} B` : `${(artifact.size / 1024).toFixed(1)} KB`}
+            <span className="mx-1.5 text-mist">·</span>
+            <span className="font-mono text-[11.5px]" title={artifact.checksum}>{artifact.checksum.slice(0, 12)}…</span>
+          </p>
+          <a
+            href={extensionApi.aixUrl(id, artifact.version)}
+            download
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-8 items-center rounded-lg bg-violet-deep px-3.5 text-[12px] font-semibold text-white transition-colors hover:bg-violet"
+          >
+            DOWNLOAD .AIX
+          </a>
+        </div>
+      ) : null}
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-xl border border-line bg-canvas p-1" role="tablist" aria-label="Studio sections">
@@ -402,70 +403,17 @@ export function ExtensionStudio({ id }: { id: string }) {
 
       {/* Build */}
       {tab === "build" ? (
-        <section className="rounded-2xl border border-line bg-card p-5">
-          <h3 className="text-[14px] font-semibold text-ink">Build</h3>
-          <p className="mt-1 text-[12.5px] leading-5 text-fog">
-            Runs the isolated build worker: manifest validation → source
-            validation → dependency resolution → AIX packaging → verification.
-          </p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <input
-              value={buildVersion}
-              onChange={(event) => setBuildVersion(event.target.value)}
-              placeholder={`Version (current v${extension.currentVersion})`}
-              aria-label="Build version"
-              className="h-9 flex-1 rounded-lg border border-line bg-panel px-3 font-mono text-[12.5px] text-ink placeholder:text-mist"
-            />
-            <input
-              value={changelog}
-              onChange={(event) => setChangelog(event.target.value)}
-              placeholder="Changelog note (optional)"
-              aria-label="Build changelog"
-              className="h-9 flex-[2] rounded-lg border border-line bg-panel px-3 text-[12.5px] text-ink placeholder:text-mist"
-            />
-            <button
-              type="button"
-              onClick={() => void runBuild()}
-              disabled={building}
-              className="h-9 shrink-0 rounded-lg bg-violet-deep px-4 text-[12.5px] font-medium text-white transition-colors hover:bg-violet disabled:opacity-40"
-            >
-              {building ? "Building…" : "Build AIX"}
-            </button>
-          </div>
-
-          {build ? (
-            <div className="mt-4 rounded-xl border border-line bg-panel p-4">
-              <p className={`text-[13px] font-medium ${build.ok ? "text-mint" : "text-rose"}`}>
-                {build.ok
-                  ? `Build OK — v${build.version} (${build.size} bytes)`
-                  : `Build failed — ${build.error ?? "unknown error"}`}
-              </p>
-              {build.logs && build.logs.length > 0 ? (
-                <ol className="mt-3 space-y-1 font-mono text-[11.5px] leading-5">
-                  {build.logs.map((entry, index) => (
-                    <li
-                      key={index}
-                      className={entry.level === "error" ? "text-rose" : "text-fog"}
-                    >
-                      <span className="text-mist">[{entry.step}]</span> {entry.message}
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-              {build.ok ? (
-                <a
-                  href={extensionApi.aixUrl(id, build.version)}
-                  download
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 inline-flex h-9 items-center rounded-lg bg-violet-deep px-4 text-[12.5px] font-medium text-white transition-colors hover:bg-violet"
-                >
-                  Download .AIX
-                </a>
-              ) : null}
-            </div>
-          ) : null}
-        </section>
+        <BuildPanel
+          id={id}
+          slug={extension.slug}
+          currentVersion={extension.currentVersion}
+          onOpenTab={(target) => setTab(target)}
+          onApplyFix={applyFix}
+          onBuildSuccess={(info) => {
+            setArtifact(info);
+            load();
+          }}
+        />
       ) : null}
     </div>
   );

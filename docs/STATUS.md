@@ -1469,3 +1469,855 @@ hardening items.
   errors. Known limitation: no full syntax highlighting/IntelliSense yet —
   snippets + gutter are real and honest; highlighting overlay listed for
   the next polish pass.
+
+## 32. Work in session 26 (TASK 03 — Block editor: from rigid stack to real visual programming)
+
+Directive: rebuild the block editor's interaction quality without touching the
+canonical model. The editor felt like a rigid top-to-bottom stack (one handler
+at a time, HTML5 drag between fixed strips); it now behaves like a genuine
+Scratch-style visual programming environment over the same IR.
+
+### Model (canonical, backward-compatible)
+
+- `ProjectModelLogic` gains optional `parked: Block[][]` (runs detached on the
+  canvas — visible drafts, never code-generated or executed) and `positions:
+  Record<id, {x,y}>` (canvas px per handler script / parked run). Mirrored into
+  the Go API (`Logic.Parked [][]Block`, `Logic.Positions map[string]Position`)
+  so layouts survive save/reload/other devices; validator now checks ID
+  uniqueness across handler bodies AND parked runs, non-empty parked runs, and
+  finite/ranged position coordinates (NaN/Inf cannot round-trip through JSON).
+  Old models stay valid (both fields optional; schema version unchanged).
+- New pure ops in `blocks.ts`: `locateRun`, `moveRun` (grabbed statement +
+  the run below it — Scratch semantics; cross-handler, cycle-guarded,
+  same-array index adjustment), `parkRun`, `splitParkedRun`, `moveParked`,
+  `attachParked`, `addParked`, `removeParked`, `duplicateAttached`,
+  `duplicateParked`, `setScriptPosition`; `createBlock`/`createRegistryBlock`
+  accept preset inputs (context palette pre-wires componentId/variable name).
+- `commitModel` no longer clears the handler selection on every commit (only
+  for `origin:"ai"` changesets) — palette context survives canvas gestures.
+
+### Vocabulary (real, end to end)
+
+- New statement blocks: `change-variable` ("change variable N by E"),
+  `play-sound` ("play sound S"), `stop-sound` ("stop all sounds"); new
+  category `audio` (fuchsia #e879f9) + readable `CATEGORY_LABELS` for the
+  palette. Each block has deterministic codegen
+  (`api.changeVariable("score", 1)`, `api.playSound("coin.wav")`,
+  `api.stopSound()`), code→blocks parse-back (code-sync), preview-runtime
+  execution, AND execution in the Go export runtime (web/apk/windows HTML).
+  play-sound resolves real media: `asset:` refs, project asset library by
+  name, or external URLs; unresolvable sounds warn once per run — never a
+  fake playback. Honesty note: the directive's "when player touches coin"
+  is represented as the real coin-click event until the game scene/sprite IR
+  milestone lands (a touch event with no collision runtime would be fake).
+
+### Canvas (rewritten `blocks-canvas.tsx`)
+
+- Free multi-script workspace: every handler renders as a placeable script;
+  parked runs render at their positions; both persist. Auto-layout (measured,
+  flowing) only for scripts with no stored position — first open never writes
+  the model.
+- Pointer-based drag controller (`blocks-dnd.tsx`): press → 5px threshold →
+  ghost (rendered inside the plane, zoom-correct) → drop resolved against
+  `[data-dz]` zones (strips, container arms, value sockets, free canvas =
+  park). Dragging an attached statement carries the run below it; grabbing a
+  mid-run parked block splits the run; Escape or a missed pointer cancels
+  with everything put back. Every gesture is exactly one undoable commit.
+- Live connection feedback: all insertion strips reveal mint guide lines
+  during statement drags, the active insertion point brightens and grows,
+  container arms highlight, value sockets highlight during reporter drags
+  (filled sockets accept drops too — the displaced expression parks under
+  the pointer). Dropping on free canvas parks; dropping outside the canvas
+  or on chrome cancels gracefully.
+- Block design: stroke icons per block type (`blocks-visual.tsx`), semantic
+  category colors, hover/selected/connection states, hats draggable to move
+  whole scripts (live echo), duplicate (⧉ button / Ctrl+D), delete, move
+  up/down, zoom/pan, minimap now drawn from real script/parked rects,
+  Ctrl+F focuses palette search, Del deletes, arrows reorder.
+- Palette (`blocks-side.tsx`): context-aware "For <component>" group with
+  pre-wired blocks when a component handler is selected, per-extension
+  groups, searchable category labels, variable-name search boost ("score"
+  surfaces set/change/get-variable pre-wired), icons on every item.
+- Fixed en route (all real bugs found by browser E2E): (1) hidden hover
+  action buttons (opacity-0) still hit-tested and intercepted drags through
+  overlapping content — now `pointer-events-none` until visible; (2) idle
+  insertion strips (z-10) intercepted grabs over parked runs — now
+  pointer-events only during statement drags; (3) parked runs now render
+  above scripts (z-20); (4) the canvas viewport was a programmatic scroll
+  container (`overflow-hidden`), so focus/scrollIntoView silently shifted
+  every overlay — now `overflow-clip` (pan stays transform-based).
+
+### Verified (browser E2E, dev server, real pointer gestures)
+
+- Acceptance example built live on the Coin Runner Play screen: drag "change
+  variable score by 1" from palette into the coin handler, wire the number
+  reporter into the amount socket, drag "play sound" in underneath, type
+  coin.wav. Then: drag it out (whole tail run detaches, parks as one stack),
+  reconnect (reattaches in order), cross-script run move, undo/redo of the
+  move (atomic), Ctrl+D duplicate, Del delete, hat drag to a new position,
+  search "sound" → play/stop sound.
+- Persistence: autosave ("Saved") → hard reload → script position (348,172),
+  block structure, coin.wav, amount=1 all restored; parked-run positions
+  equally restored.
+- Code mode shows `api.changeVariable("score", 1)` + `api.playSound("coin.wav")`
+  with source map; Preview runtime executes them for real (score 0→4 across
+  two coin clicks — the new block runs beside the template's own +1 logic).
+- `tsc --noEmit` clean; production `next build` green; Go suite green
+  (project + auth packages; new model tests cover parked/positions validation
+  and JSON round-trip).
+
+### Known limitations (honest)
+
+- Drag from palette is pointer-based; the ghost only renders once the drag
+  crosses into the canvas viewport (it lives inside the plane).
+- No marquee multi-select; Scratch-style run-dragging covers the common case.
+- Extension container blocks cannot host nested statements yet (container
+  resolution is built-in-only, same as before this batch).
+- "When player touches coin" waits for the scene/sprite IR milestone (touch
+  without a collision runtime would be dishonest).
+
+## 33. Acceptance-audit round (session 26b — evidence-driven fixes)
+
+A full acceptance audit re-ran the complete user flow in the browser with
+console capture. Additional REAL defects found and fixed:
+
+1. **set-property / get-property component selector never rendered** — the
+   block label placeholder `{component}` did not match the input key
+   `componentId`, so the editor rendered a dead `{component}` placeholder
+   since the block vocabulary was introduced (visible in old snapshots).
+   Labels now use `{componentId}`; the dropdown renders (verified: HUD
+   component + Text property wired on a rebuilt coin handler).
+2. **Focus pan re-ran on every re-measure** — the pan-into-view effect
+   depended on `[selectedHandlerId, measured]`, so background size updates
+   yanked the viewport back to the selected handler and fought Reset view.
+   Now it pans only when the selection actually changes.
+3. **Empty handler bodies could not receive drops** — the single insertion
+   strip of an empty stack collapsed to ~0 width. Strips now have min-w-40.
+4. **Canvas viewport was programmatically scrollable** (`overflow-hidden`),
+   so focus()/scrollIntoView silently shifted every overlay while the pan
+   transform looked unchanged. Now `overflow-clip`.
+5. **Hidden hover buttons intercepted drags; idle strips covered parked
+   runs; parked runs rendered under scripts** — pointer-events gated to
+   visibility, strips only hit-testable during statement drags, parked runs
+   z-20.
+6. **Grabbing near a block's input/select panned the canvas** — the drag
+   guard returned without stopping propagation; now it swallows the event.
+7. **Audio assets were not uploadable** (asset allow-list was images-only),
+   making play-sound permanently warn. WAV/MP3/OGG now upload (kind
+   "audio"); verified end-to-end: upload coin.wav → click the coin in
+   Preview → `new Audio("/api/assets/{id}/raw").play()` is called and the
+   score increments.
+8. **React conflicting-style console warning** — `border` shorthand mixed
+   with `borderBottom` overrides on the hat block; shell styles now use
+   longhand only. The Next dev overlay "1 Issue" badge cleared; a fresh
+   session with interactions captures zero console errors/warnings.
+
+Incident recorded: running `next build` while `next dev` was serving
+corrupted `.next` (500s, MODULE_NOT_FOUND) — the known P3-3 pitfall; fixed
+by stopping dev, `rm -rf .next`, restart. Never build while dev serves.
+
+Test-state note: mid-audit, several template filler blocks on the Play
+screen were misplaced by harness drags aimed with stale coordinates under
+overlapping scripts (drop targets resolve against the topmost script —
+Scratch-like). All blocks were accounted for in the model at all times (no
+silent loss found in op re-review); the affected handlers were rebuilt and
+re-wired through the UI during this round.
+
+## 34. Work in session 27 (TASK 04 — Application Studio: real app creation workflow)
+
+Directive: make APP projects genuinely feel like app projects — structured,
+UI-first, component-driven, honest about every capability boundary.
+
+### Component registry (metadata-driven, `registry.tsx`)
+
+Categories are now the application palette the directive names: **User
+Interface** (ui), **Layout**, **Storage & Database**, **Connectivity**,
+**Sensors**, **Media & Animation** — every palette section renders from
+`CATEGORY_ORDER` + `COMPONENT_DEFS`; no capability is hardcoded into random
+UI files. New defs carry `designed?: reason` — the palette renders those
+tiles disabled with their reason as the tooltip: CloudDB, File, WebDB,
+Activity Starter, Bluetooth Client/Server, Player, ImageSprite. Real new
+components (registry + renderer + inspector + runtime):
+
+- **ListView** — items from a model prop (one per line), click sets
+  `selection` and fires `itemClick`; renders for real in design, preview,
+  published page, and the exported runtime.
+- **Notifier** — non-visible; `Notifier show alert` block drives the toast.
+- **Horizontal/Vertical Scroll, Table Arrangement** — real containers
+  (overflow-x/y, CSS grid columns prop) in all renderers.
+- **TinyDB** — blocks `TinyDB save {key} as {value}` / `TinyDB value {key}`;
+  runtime = real localStorage namespaced per project
+  (`ideaven-tinydb:<projectId>:<namespace>:<key>`); export runtime = the
+  same localStorage in the WebView/standalone page.
+- **Web** — block `Web get {url}` performs a real fetch in preview and in
+  the exported runtime; the response lands on the component (read via
+  get-property); non-https URLs are rejected with a message.
+- **Clock** — real `setInterval` timer per enabled Clock (interval prop,
+  dispose on run restart), `Timer` event; `current date & time` expression.
+- **Location Sensor** — `LocationSensor request location` uses real
+  geolocation (permission-gated); latitude/longitude expressions read live
+  props; failures surface honest messages.
+- **Accelerometer** — real DeviceMotion stream (x/y/z props, shake event at
+  magnitude threshold); absent sensors simply never fire — no simulated
+  readings.
+- **Text to Speech** — `TextToSpeech speak {message}` via real
+  speechSynthesis (preview + export runtime).
+- **Canvas** — a real interactive surface: preview/published/export render
+  actual `<canvas>` elements (touch sets lastX/lastY + fires `touch`);
+  `Canvas clear` / `Canvas draw circle x y r color` paint on it through the
+  runtime's canvas registry.
+- **Sound** — non-visible component over the verified play-sound/stop-sound
+  audio pipeline.
+
+All new blocks round-trip: codegen emits `api.storeValue/getValue/webGet/
+notify/speak/now/latitude/longitude/requestLocation/canvasClear/drawCircle`,
+code→blocks sync parses each back, and the Go export runtime executes every
+one (localStorage/fetch/speechSynthesis/geolocation/toast/canvas).
+
+### App Studio surface
+
+- **Device frame in Design mode**: app projects now design inside the real
+  phone shell (bezel, punch-hole camera, side buttons, rounded screen,
+  home indicator) — the game stage stays the dark scene canvas. Phone /
+  Tablet / Desktop presets unchanged.
+- **Screen setting: Scrollable** (screen inspector checkbox) — honored in
+  design canvas, preview, published page, and the exported runtime.
+- **Import Extension (builder entry)** — palette → Extensions → Import
+  Extension: file/paste manifest → client validation (format 1, name,
+  block kinds, duplicates, nothing-to-import) → metadata inspection (name,
+  blocks/methods/events/components/dependencies counts) → install runs the
+  real lifecycle: register → build .AIX (isolated worker; honest log line
+  on failure) → publish → install. Errors surface verbatim (e.g. the
+  server's "only published extensions can be installed", unresolvable
+  dependency build failures). Verified: install succeeded and the
+  extension's blocks appeared in Blocks mode under ⬡ TetrisBoard Tools.
+  Fixed en route: the palette's vocabulary memo was computed once at mount,
+  so freshly registered extension blocks never appeared (now keyed on an
+  extension tick from the workspace level).
+- **Export pipeline** — the Export menu now runs a real per-target
+  pipeline: Preparing project (saves dirty state first, validates the
+  model — start screen, screen count, unsupported block warnings) →
+  Preparing dependencies (real asset inventory) → Compiling (indeterminate
+  bar — the server does not report percentages, so none are faked) →
+  Packaging (real streamed bytes; `x KB / y KB` when Content-Length is
+  known) → Build complete + Download with the actual size. Failures stop
+  the pipeline, list issues, and open Diagnostics. Targets unchanged and
+  honest: Web .html (runs anywhere), APK/AAB (gradle project + CI workflow
+  builds the binary), Windows (electron project + electron-builder).
+- **Publish flow** — Draft → validate → confirm: the dialog runs the same
+  model validation and shows the checklist; Publish is disabled while
+  validation errors exist. Snapshot + public page + QR + unpublish were
+  already real and unchanged.
+
+### Fixed en route (audit of this round)
+
+- `set-property`/`get-property` component dropdown never rendered (label
+  placeholder `{component}` ≠ input key `componentId`) — labels fixed;
+  verified by wiring the HUD text property through the UI.
+- Focus pan re-ran on background re-measures and fought Reset view — now
+  selection-change only.
+- Empty handler bodies had a ~0-width drop strip — min-width added.
+- Canvas viewport was programmatically scrollable (overlay drift) —
+  overflow-clip.
+- Grabbing near a block input/select panned the canvas — event swallowed.
+- Hidden hover buttons intercepted drags; idle strips covered parked runs
+  (from the Task 03 round, re-verified here).
+- React conflicting-style warning (border shorthand + borderBottom mix) —
+  longhand only; the Next dev overlay "1 Issue" badge cleared.
+- Audio asset uploads (WAV/MP3/OGG) accepted by the API so play-sound is
+  usable end to end (verified: `new Audio(.../assets/{id}/raw).play()` on
+  coin click, score increment in the Coin Runner).
+
+### Verification (browser, production build on :3001, API :8081)
+
+- Fresh Tasks App project: palette sections + designed tiles confirmed in
+  the DOM; TinyDB/Notifier/Clock added and wired through the UI (drag,
+  click-add, socket wiring, inspector toggles); Preview executed TinyDB
+  (localStorage `lastTask` writes), Clock timer (interval fires, handler
+  dispatch confirmed, "tick" toast), Notifier toast.
+- Exported-artifact test (the same runtime users ship): the exported HTML
+  loaded in an iframe — clicking "+ Add to list" executed TinyDB
+  (`ideaven-tinydb:Tasks App…:lastTask = "Call the bank"` in localStorage),
+  the exported runtime contains every new block case, and the exported
+  model carries the audio asset reference.
+- Export pipeline on the Web target: Build complete ✓, all stages, real
+  size in the download link. Publish: validation checklist + enabled
+  Publish. Import Extension: full lifecycle green.
+- `tsc --noEmit` clean; production build green; Go project + asset suites
+  green.
+
+### Known limitations (honest, by design this round)
+
+- CloudDB/File/WebDB/ActivityStarter/Bluetooth/Player/ImageSprite are
+  designed-disabled with reasons (see registry) — no fake previews.
+- TTS/Web/Canvas preview spot-checks were exercised through the exported
+  artifact and code paths; the in-editor synthetic-input harness proved
+  flaky for controlled inputs (an unrelated interaction-race investigation
+  is open) — manual browser verification recommended as follow-up.
+- Extension components (manifest `components`) render as designed state in
+  the canvas until the extension runtime providers milestone.
+- Concurrent-edit clobbering: two writers (API + open editor) last-write-
+  wins; flagged for the versioning phase.
+
+### Verification addendum (session 27 close-out)
+
+The full runtime chain was re-verified live in Preview on the Tasks App with
+every hook armed (speechSynthesis.speak, fetch, canvas 2d fill):
+
+- Typing a task and clicking "+ Add to list" executed the whole handler:
+  TinyDB wrote `lastTask = "final run value"` to localStorage, the Notifier
+  raised the "Task saved ✓" toast, TextToSpeech called
+  `speechSynthesis.speak("hello from ideaven")` (3/3 clicks), Web.get
+  performed a real network fetch to `https://example.com`, and Canvas drew a
+  red circle (pixel at 0,0 = rgb(255,117,117) via getImageData).
+- A Web.get without a Web component now warns ("Add a Web component to the
+  screen first") instead of silently no-oping.
+- Console sweep across Blocks/Code/Preview/Design switches: 0 errors, 0
+  warnings, 0 rejections. Model persistence re-verified after reload (all
+  components + 6-block handler + URL intact).
+
+## 35. Work in session 28 (verification pass of the in-flight extension build pipeline)
+
+The working tree carried an undocumented batch: the extension build pipeline
+v2 — `POST /api/extensions/{id}/build/stream` (SSE: every real worker state
+and log line flushed live), `GET /api/extensions/{id}/builds` history over
+migration `019_extension_builds`, `internal/extsrc` (extension source
+builder), `internal/extension/fix.go` (repair service), and the web Build
+panel + extension templates (`extension-templates.ts`). This session audited
+and gated it rather than rewriting anything.
+
+### Bug found by the suite and fixed
+
+1. **BuildStream sent no `text/event-stream` header** — `controller.Flush()`
+   was called before the SSE headers were set, so the flush committed a bare
+   200 and the subsequent `w.WriteHeader(200)` was superfluous (clients saw
+   an empty Content-Type; `TestBuildStreamSuccessConflictFailureRetry`
+   failed). Headers are now set before the flush, which commits the status;
+   the not-streamable JSON error path is preserved because a failed Flush
+   writes nothing.
+
+### Verification (session 28)
+
+- `go vet ./...` clean; full `go test -count=1 ./...` green 9/9 packages
+  (incl. `extsrc`, the build-stream suite, and the fix-service tests) on
+  live PostgreSQL; `tsc --noEmit` clean; production `next build` green
+  (dev servers were stopped — the P3-3 rule).
+- PostgreSQL restarted via `~/.local/opt/pg/bin/pg_ctl` (it was down).
+
+**Next**: browser E2E of the streamed Build panel UX, then commit this
+batch; after that the roadmap backlog (game scene/sprite IR, extension
+runtime providers, i18n coverage, a11y audit).
+
+## 36. Work in session 29 (TASK 07 — Community becomes a real creator ecosystem)
+
+Directive: turn the gallery-style community page into a creator ecosystem
+(questions, answers, showcase, channels) with original IDEAVEN UI, real
+thumbnails, and zero fake activity.
+
+### Backend (apps/api)
+
+- `migrations/020_community.sql` — `community_posts` (question/discussion in
+  a closed 7-channel vocabulary, tags TEXT[] with GIN index, optional
+  published-project attachment, soft delete), `community_replies` (soft
+  delete), `community_votes` (one vote per user per target, CHECK keeps
+  every row aimed at exactly one target), `community_reports` (closed
+  reasons; stored for moderation — no fake public moderation surface).
+- New `internal/community` package in the house style: Feed/Get/Replies with
+  **every count derived at query time** (reply_count, upvote_count,
+  viewer_voted) so numbers can never drift from the rows; filters for
+  channel/kind/tag/query/sort (latest, popular, unanswered, trending — all
+  server-side)/projectSlug/hasProject; anonymous reads, session-gated
+  writes; only the asker can accept an answer (or clear it); authors
+  soft-delete their own posts/replies; tags normalized (lowercase, deduped,
+  2–24 chars `[a-z0-9-]`, max 5); attachment validated against
+  published projects server-side. `GET /api/community/summary` aggregates
+  trending tags, helpful creators (by real accepted answers), per-channel
+  counts, and platform totals — nothing invented, empty lists stay empty.
+- **Deterministic project thumbnails**: `GET /api/public/projects/{slug}/
+  thumbnail.svg` renders a wireframe of the published snapshot's actual
+  start screen (component-typed shapes, layout flow, brand palette chosen
+  by slug hash). No stock imagery, no user text in SVG (injection-proof),
+  ETag + immutable-style caching; republish changes the snapshot and the
+  image. `PublicationSummary` now carries the (optional) custom thumbnail.
+- Routes: `/api/community/feed|summary|posts|report`, posts/{id} (GET+DELETE
+  via one `routeMethods` — two `route()` calls panicked the mux, the code's
+  own documented rule, caught at live startup), replies, votes, accept.
+- Tests: 4 new integration suites (question lifecycle incl. accept
+  permissioning + toggle semantics + summary aggregation, ownership/soft
+  delete, published-project attachment + thumbnail determinism/404,
+  reports + tag normalization).
+
+### Frontend (apps/web)
+
+- `lib/api.ts` — `communityApi` (feed/post/createPost/deletePost/replies/
+  votes/accept/report/summary), types, `publicationThumbnailUrl()`,
+  `API_BASE_URL` exported; `PublicationSummary.thumbnail`.
+- `/community` rebuilt as the three-column ecosystem: left sidebar (Home,
+  Questions, Unanswered, Projects, the 7 channels with real counts,
+  Extensions link, Challenges — honestly labelled "coming soon" with an
+  explanation, no fake list), center feed with search + Latest/Popular/
+  Trending sorts, post cards (kind chip, Answered badge, tags, author, real
+  upvote toggle, answer count), showcase posts embed the attached project
+  with its deterministic thumbnail + Open + Remix; right sidebar (trending
+  tags, fresh projects with thumbnails, helpful creators, all real or
+  honestly empty). Mobile is feed-first: horizontal channel chips, sidebars
+  stack, verified zero horizontal overflow at 390px.
+- `/community/ask` — question/discussion form with channel picker, tags,
+  and a real "attach one of your published projects" select (server
+  verifies ownership+published); anonymous visitors get a sign-in prompt.
+- `/community/post/[id]` — answers with upvotes, accept/unaccept (asker
+  only), delete-own (post + answer), report dialog (closed reasons),
+  sign-in-aware answer composer. Server render is anonymous by design; the
+  client refetches viewer state on mount so author controls appear without
+  faking anything to anonymous visitors.
+- `/p/[slug]` gained a **Discussions** section: real posts attached to the
+  project plus a "Start a discussion" CTA; `/explore` cards now render the
+  deterministic thumbnails (previously gradient placeholders).
+- `ProjectThumb` degrades to an honest "No preview" panel if the SVG ever
+  fails — never a fake screenshot.
+
+### Bugs found by testing and fixed (session 29)
+
+1. **BuildStream SSE headers** (carried from session 28's suite run):
+   headers set after first Flush → clients never saw `text/event-stream`.
+2. **Duplicate mux fallbacks** on `/api/community/posts/{id}` panicked the
+   server at startup (live catch; tests bypassed the route helper).
+3. **pgx TEXT[] scan** — database/sql returns arrays as strings; fixed with
+   a constrained-format `tagList` scanner (tags can never contain commas).
+4. **NULL project_slug scan** and **uuid/text NULLIF** casts in reports.
+5. **Vote toggle logic** — delete-then-reinsert never removed a vote;
+   now delete-if-exists else insert (verified by test + E2E toggle).
+6. **Derived-table WHERE** referenced outer aliases (`p.`) that don't exist
+   outside the subquery → 500 on every feed call; rewritten against the
+   projection columns, visibility (deleted_at) moved into the base query.
+7. **Viewer state on SSR post pages** — server render is anonymous by
+   design, so author/upvote state was stale; client refetch on mount.
+
+### Verification (session 29)
+
+- `go vet` clean; full `go test -count=1 ./...` green 10/10 packages on
+  live PostgreSQL; `tsc --noEmit` clean; production `next build` green
+  (dev stopped first, `.next` cleaned, dev restarted after).
+- New permanent harness `scripts/e2e-community.mjs` (Playwright, points at
+  PLAYWRIGHT_MODULE like the launch-audit harness): **30 checks, all
+  passing, 0 console errors** — anonymous home (3 columns, honest empty
+  state, real thumbnails), ask → post → answer → upvote (both targets) →
+  accept flow across two sessions, delete/report controls, search, sorts,
+  unanswered filter, channel filters, Answered badge, helpful creators,
+  trending tags, remix from community into the builder, public-page
+  Discussions section, and mobile 390px usability.
+- Servers left running for the user: web :3000, API :8090.
+
+**Next**: extension runtime providers (extension components still render as
+designed placeholders in preview), game scene/sprite IR, i18n coverage for
+the new community surfaces, then the accessibility audit.
+
+## 37. Work in session 30 (TASK 08 — 2D Game Studio: real gameplay loop + scene creation)
+
+Directive: fix "player touches coin → coin remains, score stays 0" by
+root-cause, and make the 2D Game Studio a real scene-creation experience.
+
+### Root cause (verified in code, not guessed)
+
+The platform had **no gameplay runtime for model-driven games at all**: the
+canonical model had no scene/entity layer, the block vocabulary had no
+touch/collision event, the runtime interpreted only UI events (click/change/
+enter/timer…), and the Coin Runner template simulated gameplay with
+**buttons caught by click**. "Player touches coin" could never fire by
+construction — the pipeline INPUT → MOVEMENT → COLLISION → EVENT → LOGIC →
+SCORE → UI → RENDER did not exist beyond the hardcoded landing demo. (The
+landing demo's own collision was real; its hero top-bar simply never
+rendered the orphan `score` state it received.)
+
+### Canonical model (zero schema migration — fully backward compatible)
+
+- Game entities are **real components** (registry category `game`, game
+  projects only): `player`, `platform`, `coin`, `enemy`, `trigger`, `sprite`
+  — transform props (x/y/width/height/rotation), color, visible, plus
+  first-class collider fields (collider on/off, trigger-only, collision
+  layer). A screen containing any entity **is a scene**; old screens
+  (button-based Coin Runner) keep rendering as flow — nothing breaks.
+- New expression block `boolean` (true/false literal) across the whole
+  pipeline: vocabulary, slot editor, runtime, codegen, code→blocks
+  parse-back, and the Go export runtime. (Previously `true`/`false`
+  round-tripped as text — a latent honesty bug this task surfaced.)
+
+### Runtime — the real loop (`components/runtime/scene-stage.tsx`)
+
+INPUT (←/→/↑ WASD/space + on-screen touch buttons) → MOVEMENT (velocity,
+gravity, stage clamping) → COLLISION (AABB vs solids: landing resolution;
+edge-triggered overlap vs trigger entities) → EVENT (dynamic
+`touches-<targetId>` dispatched into the existing block runtime) → LOGIC
+(the user's own blocks: score += 1, hide coin via set-property visible,
+win-condition navigate) → UI UPDATE (runtime props) → RENDER (per-frame).
+Restart re-seeds everything from the model (fresh runtime + stage remount).
+Diagnostics: new `onTrace` runtime hook + a collapsible **Runtime trace**
+strip in Preview logging every event dispatch and every collision →
+"collision detected → event fired → handlers executed" is visible in the UI.
+
+### Editor — scene creation (Design mode)
+
+- `scene-canvas.tsx`: entities on the stage with select, drag-move, corner
+  resize (scale), rotation rendering, duplicate ⧉ / delete ✕ buttons, grid
+  dots, and a Snap toggle (10px). Every gesture commits once through the
+  shared model path (undo/redo + autosave inherit).
+- Inspector edits entities generically from registry propFields (X/Y/W/H/
+  rotation/color/visible/collider/layer/trigger).
+- Blocks mode: handler creation offers **"when <entity> touches <other>"**
+  for scene entities (dynamic event names, labeled with target names on the
+  hat blocks and in the handler list).
+- Diagnostics fix found en route: set/get-property references now resolve
+  across the whole model (the runtime always allowed cross-screen
+  set-property — the old screen-scoped check false-positived on the
+  template's score→results wiring).
+
+### Everywhere the model runs
+
+- Published pages (`live-app.tsx`) play scene screens with the same loop.
+- **Exported HTML/APK/Windows**: the Go export runtime gained the scene
+  engine (input, gravity, AABB, edge-triggered touches, boolean eval) —
+  verified by actually playing the exported HTML in a browser: walk → touch
+  → coin hides → score 1, zero console errors. Fixed en route: stage sized
+  from clientWidth/Height (percentage height inside a min-height parent
+  collapsed to 0 and clipped everything), and duplicated HUD rendering.
+
+### Template + landing
+
+- Coin Runner rebuilt: Play is now a real 390×844 scene — player, floor,
+  four platforms, six coins, HUD — with per-coin `touches` handlers (hide →
+  score+1 → HUD update → win at 6 → fill the results score → navigate).
+- Landing hero: TopBar now renders the live SCORE chip (the previously
+  orphaned state), matching the in-canvas HUD.
+
+### Bugs found by testing and fixed (session 30)
+
+1. Stale API process served old templates after rebuild — kill by port PID
+   (pkill patterns also matched the calling shell; documented pitfall again).
+2. Web rebuilt under a live `next start` broke chunk hashes (P3-3 rule) and
+   a build without `NEXT_PUBLIC_API_URL` broke all client API calls — both
+   re-learned the hard way, both gated after.
+3. Scene entity click deselected (pointerdown selected; the bubbling click
+   hit the canvas-root deselect) — stopPropagation on entity clicks.
+4. Export scene stage collapsed to 0 height (percentage inside min-height
+   parent) and HUD text rendered twice — both fixed and re-verified.
+
+### Verification (session 30)
+
+- `go vet` clean; full `go test -count=1 ./...` green 10/10 on live
+  PostgreSQL; `tsc --noEmit` clean; production `next build` green.
+- New permanent harness `scripts/e2e-scene-gameplay.mjs`: **21/21 checks**
+  — scene design canvas + entities, inspector transform fields, drag-move
+  persisted to the canonical model (verified via API round-trip), touch
+  handlers in Blocks, real preview gameplay (walk → collision → coin hides
+  → score 2 on the two-coin walk path → jump → restart resets score/coins/
+  position), published page gameplay, export engine content, landing score
+  chip. Screenshots verified visually (preview + exported HTML).
+- Servers left running for the user: web :3000, API :8090.
+
+**Next**: enemy behaviors/patrol AI on the scene IR, sprite textures
+(ImageSprite honesty note updated), camera/parallax for larger stages, then
+the deferred i18n/a11y backlog.
+
+### Session 30 acceptance-audit addendum (evidence-driven fixes)
+
+The final audit re-ran the complete flow as a USER building a game from
+scratch (not just the template), and fixed two real defects it surfaced:
+
+1. **Scene-entity drag silently dropped** — the container's conditional
+   React pointer props raced the pointerdown re-render (selection commit vs
+   first pointermove), so drags occasionally never committed. Drags now use
+   window-level pointer listeners for the gesture's lifetime; commit is
+   exactly one updateProps per gesture. Verified: added coin moved
+   (120,520) → (230,750), snapped to the 10px grid, persisted.
+2. **Unnamed entities made handlers indistinguishable** ("Touches coin"
+   × 7). Entities gained a Name prop (registry field + defaultProps +
+   `componentLabel` precedence), and the Coin Runner template names every
+   entity (Player 1, Platform 1–5, Coin 1–6). Handler UI now reads
+   "Touches Coin 3" / "Touches Bonus" after a user rename.
+
+Audit flow verified end to end with fresh evidence: palette-add a coin →
+rename it in the inspector → drag it onto the walk path → duplicate (8 in
+model) → delete (7) → create a touch handler through the Blocks UI
+("Player 1 · Touches Bonus") → **hard reload** → all edits persist →
+preview walks the path → **the UI-created handler fires on the real
+collision** (trace: `event p-player:touches-c-coin-… → 1 handler`) →
+score increments → restart resets. Console audit unfiltered: the only
+error on any surface is the pre-existing anonymous /api/auth/me 401 probe
+(identical on /pricing). `scripts/e2e-scene-gameplay.mjs`: 21/21 on the
+final build.
+
+## 38. Work in session 31 (TASK 09 — 2D Asset Canvas: the Asset Studio)
+
+Directive: a dedicated 2D asset creation workspace — sprites, tiles,
+animation frames — clean and focused, with the results flowing into the
+project's real asset library and the 2D Game Studio.
+
+### New workspace
+
+- Route `/builder/[id]/asset-studio` (inherits the builder's auth layout),
+  reachable from the Assets panel's "🎨 Asset Studio" button and directly
+  by URL. Doc id rides the query string via history.replaceState so reloads
+  and bookmarks return to the work (router.replace proved unreliable for
+  same-route query updates — found by E2E, fixed with a pure URL update).
+- `lib/sprite-doc.ts` — the sprite document model: frames of pixel layers,
+  each layer a PNG data URL (compact, lossless); localStorage persistence
+  per project; canvas helpers for compositing, flip (layer or selection),
+  90° rotation, nearest-neighbour scale, flood fill, eyedropper, Bresenham
+  lines, and horizontal sprite-sheet composition.
+
+### Editor (`components/asset-studio/sprite-editor.tsx`)
+
+- Tools: Select (marquee), Pencil (brush 1–4), Eraser, Line, Rectangle,
+  Circle (drag-preview overlay), Fill (exact-match flood), Color picker
+  (eyedropper over the composite), Text (rasterized monospace).
+- Transform: Flip H/V (whole layer or selection), Rotate 90° steps, Scale
+  ×2/÷2 (whole active layer, nearest-neighbour), Duplicate selection,
+  Delete selection, Crop document to selection (all frames).
+- Zoom 25%–800% + Fit; pixel grid with 8/16/32/64 presets; layers with
+  visibility/lock/rename inline/reorder/delete; frames with add-empty/
+  duplicate/delete, thumbnails, FPS (1–24), play/pause/loop and a live
+  64px preview; undo/redo (25 steps, Ctrl+Z/Y); 16-swatch palette +
+  color input; keyboard shortcuts per tool.
+- **Export (real formats only)**: PNG per frame, every frame as separate
+  PNGs, horizontal sprite-sheet PNG — saved into the project's real asset
+  library through the existing multipart asset API (server MIME sniffing
+  applies), plus direct PNG downloads. No GIF: none implemented, none
+  claimed.
+- Mobile: the tool rail becomes a horizontally scrollable tray, the
+  inspector becomes a collapsible full-height sheet (default collapsed),
+  header wraps — verified 0 horizontal overflow at 390px.
+
+### 2D Game Studio integration
+
+- Scene entities gained a **Texture** prop (`src`: `asset:<id>` or URL).
+  A textured entity renders its image (pixelated, object-fit fill) in the
+  design canvas, the preview runtime, published pages, and the exported
+  HTML/APK/Windows scene engine — drawn sprites become real game graphics
+  end to end.
+
+### Bugs found by testing and fixed (session 31)
+
+1. Two silent no-op source patches (search/replace template mismatch) made
+   it look like the doc-URL sync was implemented when it never was — caught
+   by the E2E, fixed with an exact-text edit, and the lesson recorded:
+   always verify patch effects, never trust the print statement.
+2. Router URL updates: `router.replace` proved unreliable for same-route
+   query changes; replaced with `history.replaceState` (no remount, no
+   state loss — verified the URL survives reload).
+3. Mobile header overflow (88px) — header now wraps.
+
+### Verification (session 31)
+
+- `go vet` clean; full `go test -count=1 ./...` green 10/10 on live
+  PostgreSQL; `tsc --noEmit` clean; production `next build` green.
+- New permanent harness `scripts/e2e-asset-studio.mjs`: **25/25 checks** —
+  create sprite, draw (pencil/fill/circle), layers (3 defaults, visibility,
+  add), frames (add/copy, 3 frames, play), save frame + sprite sheet into
+  the asset library (verified via API: real PNG rows, raw bytes are PNG),
+  doc persists after hard reload (name, frames, URL), entity texture
+  accepted by the model API, rendered on the design canvas and in Preview,
+  mobile usability. Editor screenshot verified visually.
+- Servers left running for the user: web :3000, API :8090.
+
+**Next**: onion-skin/ghost frames, tile-map placement of drawn tiles onto
+scene stages, then the deferred i18n/a11y backlog.
+
+### Session 31 acceptance-audit addendum (evidence-driven fixes)
+
+The final audit re-ran the complete flow as a user (builder → Assets panel →
+Asset Studio → draw → rename layer → 3 frames → save → texture a scene
+entity → preview → mobile), and fixed one real defect it surfaced:
+
+1. **Game-builder toolbar overflowed 26px at 390px** — the canvas toolbar
+   (device presets + Snap + zoom, `shrink-0`) could not shrink. Both the
+   design-canvas and Preview toolbars now scroll internally
+   (`overflow-x-auto`); verified 0 document overflow afterwards.
+
+Audit evidence (all fresh): console audit unfiltered — the only error on
+/pricing (pre-existing) and the new studio route is the identical anonymous
+`/api/auth/me` 401 probe; layer rename "Details"→"Aura" persisted into the
+stored doc; frames "frame 3/3 · 8 fps" with play state; saved frame +
+sprite sheet appear as real PNG rows (raw bytes verified PNG magic); HARD
+RELOAD returned to the same doc (name, 3 frames, ?doc= intact); the saved
+sheet textured Coin 1 via the model API and rendered on the design canvas
+and in Preview; mobile: tool tray visible, inspector sheet opens, 0
+overflow. `scripts/e2e-asset-studio.mjs`: 25/25 on the final build.
+
+## 39. Work in session 32 (TASK 10 — real internationalization EN ↔ ID)
+
+Directive: the language switch must be real — ONE setting drives ONE global
+UI language, with account-level preference that follows the user across
+devices.
+
+### Account-level preference (server)
+
+- `migrations/021_user_locale.sql` — `users.locale` ("" = unset).
+- `PATCH /api/profile` accepts `locale` (closed vocabulary ""/en/id, field
+  error otherwise) alongside the existing profile fields; `/api/auth/me`
+  returns it; the session-store JOIN now carries `u.locale` (found by the
+  new test — the old JOIN silently dropped the column).
+- Test: `TestAccountLocalePersists` (patch → me → unknown-locale 400).
+
+### Client resolution (web)
+
+- `I18nProvider` (now inside AuthProvider): **account → local
+  (localStorage) → browser → English**, gated on the auth status so the
+  /me round-trip doesn't flash English. `setLocale` applies immediately
+  (context re-render, no reload), writes localStorage, and — when signed
+  in — PATCHes the account and updates the cached user.
+- Provider order fixed: AuthProvider wraps I18nProvider so the account can
+  be read.
+
+### Coverage expansion (~190 new keys × 2 locales)
+
+- **Landing**: hero (title/sub/CTAs, split-aware accent styling), final CTA.
+- **Auth**: all five pages via a new `LocalizedAuthShell` client wrapper
+  (server pages pass dictionary keys), plus the login/register/forgot/
+  reset forms (field labels, placeholders, buttons).
+- **Community** (TASK 07 surfaces, previously English-only): full
+  conversion of the three-column home, post detail, ask form, and the
+  public project page's Discussions section (extracted into a client
+  `ProjectDiscussions` component so a server page can render translated).
+- **Dashboard**: the welcome heading (missed by the session-25 pass),
+  create button, empty state, verify-email banner, resend link.
+- **Builder**: design canvas empty state, Snap toggle, preview toolbar
+  (Restart run, Runtime trace, no-events state), Diagnostics header +
+  healthy state, Assets panel (title, Asset Studio entry).
+- **Errors**: `lib/i18n/errors.ts` maps the httpx error CODES to
+  `errors.<CODE>` keys with verbatim fallback — server errors translate
+  without the server knowing any language; applied to the community
+  surfaces.
+- **Block language**: new `block.*` keys — the word "when", event labels
+  (Click → Diklik, Timer → Pengatur waktu, …), category labels, and core
+  statement templates with identical {placeholder} tokens (the canvas
+  parser is unchanged). `translatedBlockLabel/EventLabel/CategoryLabel`
+  helpers fall back to English per label, so partial coverage is safe.
+
+### Bugs found by testing and fixed (session 32)
+
+1. Three silent no-op source patches (the recurring trap) — including the
+   handler body struct, caught by the new test; all verified after.
+2. The session JOIN dropped `users.locale` (found by the round-trip test).
+3. The dashboard welcome heading was hardcoded (missed in session 25).
+4. The language switcher existed only in the mobile drawer — and was
+   rendered TWICE there. Now on the desktop header + drawer (single).
+5. Game-builder toolbar overflowed 26px at 390px (from TASK 08's Snap
+   chip) — toolbars now scroll internally.
+
+### QA harness (acceptance requirement)
+
+`scripts/e2e-i18n-audit.mjs` — the language audit: for each of 8 pages
+(/, /login, /register, /dashboard, /community, /explore, /extensions,
+/pricing) it captures **EN and ID screenshots**, checks horizontal
+overflow in BOTH languages (Indonesian runs longer), asserts the content
+actually differs, then toggles the switcher live (community heading
+changes without reload) and verifies the ID preference survives a reload.
+**26/26 green.** Plus `scripts/../tmp` account flow: switch → API shows
+`locale: "id"` → a FRESH browser context (no localStorage) renders the
+dashboard in Indonesian — cross-device proof.
+
+### Verification (session 32)
+
+- `go vet` clean; full `go test -count=1 ./...` green 10/10; `tsc --noEmit`
+  clean; production `next build` green; i18n harness 26/26; account-locale
+  cross-device flow green; ID dashboard screenshot verified visually.
+- Known honest gaps: deep editor panels (Ask AI, History, Insights tabs),
+  settings pages, and the decorative landing sections remain English — the
+  dictionary architecture and QA harness make them incremental additions.
+- Servers left running for the user: web :3000, API :8090.
+
+### Session 32 acceptance-audit addendum (evidence-driven fixes)
+
+The final audit walked the whole flow in ID and fixed four mixed-language
+residues it surfaced:
+
+1. The community subtitle replace had silently no-op'd (now keyed).
+2. Channel labels (General/Help/…) — now dictionary-driven with fallback.
+3. The community left-nav linked to a nonexistent `/extensions` route — the
+   RSC prefetch 404'd on every community visit (caught in the console
+   audit); now `/dashboard/extensions`.
+4. Palette category headings + the scene-touch hat word — now translated
+   ("menyentuh Coin 1").
+
+Fresh audit evidence: dashboard live switch ("Welcome back." → "Selamat
+datang kembali."), builder modes Desain/Blok/Kode/Pratinjau, "⌗ Snap
+aktif", blocks canvas showing "ketika Player1 (Player) menyentuh Coin 1" +
+"setel variabel score menjadi" + "jika … pindah ke layar Results" +
+"Tidak ada error 🎉" (screenshot verified), community fully ID including
+"Tanya atau bagikan", reload keeps ID, account locale syncs both
+directions (`en` after switching back), dynamic project names untouched.
+Console audit unfiltered on /pricing, /login, /explore, /community: only
+the pre-existing anonymous `/api/auth/me` 401 probe — the /extensions 404
+is gone. i18n harness: 26/26 on the final build.
+
+## 40. Work in session 33 (TASK 11 — universal device/viewport frame system)
+
+Directive: one coherent device/viewport presentation across every creation
+surface — DEVICE FRAME for applications, VIEWPORT FRAME for games — with
+orientation, safe areas, fit/zoom, and persistence. No duplicated shells.
+
+### The universal system
+
+- `components/builder/viewport.tsx` — **ViewportFrame**, the single frame
+  implementation: `kind: "app"` renders the polished hardware frame
+  (the existing DeviceFrame — reused, not forked); `kind: "game"` renders
+  the dark viewport shell with corner instrumentation ticks, and on
+  phone/tablet targets that shell rides inside the same hardware frame so a
+  mobile game reads as a phone running the game. `viewportSize()` resolves
+  Phone 390×844 / Tablet 834×1112 / Desktop 1280×800 / Custom 200–2000px,
+  swapping width/height for landscape. `safeAreaInset()` + a hatched
+  SafeAreaOverlay (labeled px bands) mark notch/status/gesture zones for
+  app previews.
+
+### Persistence
+
+- Go: `ModelSettings.Preview *PreviewSettings` (device/orientation/safeArea/
+  width/height) with closed-vocabulary + bounds validation
+  (`validatePreviewSettings`) — optional, backward compatible, no migration.
+  Test: `TestValidatePreviewSettings` (6 cases).
+- Web: `ProjectModel.settings.preview` type, `ops.updatePreviewSettings`
+  (one undoable commit), `actions.updatePreviewSettings`; Preview mode and
+  the design canvas persist device/orientation/safe-area per project and
+  restore them on open.
+
+### Surfaces unified
+
+- **Preview mode**: device chips (Phone/Tablet/Desktop/Custom) with i18n
+  labels, orientation toggle (portrait/landscape, hidden for desktop),
+  safe-area toggle (app screens), custom W×H inputs, a quiet zoom row
+  (Fit/25/50/75/100% with a ResizeObserver-driven Fit), everything rendered
+  through ViewportFrame.
+- **Design canvas**: the same viewport settings; the TASK 08 ad-hoc scene
+  frame is gone — game screens render through the unified ViewportFrame
+  (corner ticks + hardware shell), orientation toggle in the toolbar.
+- **Published page**: live-app renders through ViewportFrame (app hardware
+  or game shell; safe-area overlay respects the project setting).
+- **3D path** (honest): no 3D editor exists yet; the viewport system is the
+  component it will consume — 3D preview defaults to the desktop viewport
+  with switchable device previews when that milestone lands.
+
+### Bugs found by testing and fixed (session 33)
+
+1. Two more silent no-op patches (E2E sequencing + Go test anchor) — both
+   caught by their own suites; fixed with verified edits.
+2. Stale API binary rejected models carrying `settings.preview`
+   (DisallowUnknownFields) — caught by the E2E persistence check; the API
+   binary now restarts with every Go model change.
+
+### Verification (session 33)
+
+- `go vet` clean; full `go test -count=1 ./...` green 10/10; `tsc --noEmit`
+  clean; production `next build` green.
+- New permanent harness `scripts/e2e-viewport-system.mjs`: **14/14** — app
+  hardware frame, safe-area overlay (47px) + model persistence, landscape
+  844×390, desktop 1280×800, custom 900×700, zoom 50% scaling, custom
+  viewport persistence across reload, game corner ticks (preview + design +
+  published), game landscape, design-canvas unification.
+- Regression: scene-gameplay 21/21 and asset-studio 25/25 still green.
+- Screenshots verified visually: app safe-area bands, game landscape
+  hardware shell.
+- Known honest gaps: the landing demo keeps its own static phone shell
+  (presentation-only, deliberately untouched); 3D consumes the system when
+  the 3D milestone lands; zoom persistence is session-local (device/
+  orientation/safe-area are project-persisted).
+- Servers left running for the user: web :3000, API :8090.

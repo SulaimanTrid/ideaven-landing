@@ -14,11 +14,15 @@ import type { PublicExtension } from "@/types/extension";
 import type { MemoryItem, MemoryCategory } from "@/types/memory";
 import type { ProjectIntent, IntentInput } from "@/types/intent";
 import type {
+  BuildEvent,
+  BuildRecord,
   CreateExtensionRequest,
   Extension,
   ExtensionManifest,
   ExtensionVersion,
+  FixProposal,
   UpdateExtensionRequest,
+  VersionConflict,
 } from "@/types/extension";
 import type {
   AIOperation,
@@ -41,7 +45,7 @@ import type {
 // Empty = same-origin: in production the API service lives behind /api/* on
 // the same domain (Vercel services), so no host is prepended. Local dev sets
 // NEXT_PUBLIC_API_URL in .env.local (e.g. http://localhost:8081).
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -324,11 +328,99 @@ export const extensionApi = {
     return request<{ ok: true }>(`/api/extensions/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
 
-  build(id: string, body: { version?: string; changelog?: string }): Promise<{ build: { ok: boolean; version: string; logs: Array<{ step: string; level: string; message: string }>; checksum?: string; size?: number; error?: string } }> {
-    return request<{ build: { ok: boolean; version: string; logs: Array<{ step: string; level: string; message: string }>; checksum?: string; size?: number; error?: string } }>(
+  build(id: string, body: { version?: string; changelog?: string }): Promise<{ build: { ok: boolean; version: string; logs: Array<{ step: string; level: string; message: string }>; checksum?: string; size?: number; error?: string; failedStep?: string; conflict?: VersionConflict } }> {
+    return request<{ build: { ok: boolean; version: string; logs: Array<{ step: string; level: string; message: string }>; checksum?: string; size?: number; error?: string; failedStep?: string; conflict?: VersionConflict } }>(
       `/api/extensions/${encodeURIComponent(id)}/build`,
       { method: "POST", body },
     );
+  },
+
+  /**
+   * The same pipeline over Server-Sent Events: every real worker state and
+   * log line arrives onEvent the moment it happens, ending with one
+   * terminal result or conflict event. The returned promise settles when
+   * the stream ends (or errors). Aborting the signal cancels the build —
+   * the server kills the worker and records the run as cancelled.
+   */
+  async buildStream(
+    id: string,
+    body: { version?: string; changelog?: string },
+    onEvent: (event: BuildEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${API_BASE_URL}/api/extensions/${encodeURIComponent(id)}/build/stream`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+          body: JSON.stringify(body),
+          credentials: "include",
+          signal,
+        },
+      );
+    } catch (err) {
+      if (signal?.aborted) return; // client-side cancel — expected
+      throw err instanceof ApiError
+        ? err
+        : new ApiError("NETWORK_ERROR", "Cannot reach the Ideaven service. Check your connection and try again.");
+    }
+    if (!response.ok || !response.body) {
+      // Errors before the stream starts arrive as the normal JSON envelope.
+      const text = await response.text();
+      let payload: unknown = null;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = null;
+      }
+      const err = (payload as { error?: { code?: string; message?: string } } | null)?.error;
+      throw new ApiError(
+        err?.code ?? "INTERNAL_ERROR",
+        err?.message ?? "Could not run the build. Try again shortly.",
+        response.status,
+      );
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE frames are separated by a blank line.
+      let separator = buffer.indexOf("\n\n");
+      while (separator >= 0) {
+        const frame = buffer.slice(0, separator);
+        buffer = buffer.slice(separator + 2);
+        for (const line of frame.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            onEvent(JSON.parse(line.slice(6)) as BuildEvent);
+          } catch {
+            // A malformed frame never fakes progress — skip it.
+          }
+        }
+        separator = buffer.indexOf("\n\n");
+      }
+    }
+  },
+
+  /** Real build history: every run with its outcome. */
+  builds(id: string): Promise<{ builds: BuildRecord[] }> {
+    return request<{ builds: BuildRecord[] }>(
+      `/api/extensions/${encodeURIComponent(id)}/builds`,
+    );
+  },
+
+  /** Diff-based AI fix proposal for one failed build. */
+  fix(id: string, buildId: string): Promise<{ fix: FixProposal }> {
+    return request<{ fix: FixProposal }>(`/api/extensions/${encodeURIComponent(id)}/fix`, {
+      method: "POST",
+      body: { buildId },
+    });
   },
 
   publish(id: string): Promise<{ extension: Extension }> {
@@ -430,6 +522,7 @@ export interface PublicationSummary {
   type: string;
   author: string;
   authorName?: string;
+  thumbnail?: string;
   publishedAt: string;
 }
 
@@ -510,6 +603,187 @@ export const publicApi = {
     }
   },
 };
+
+// ---- Community (TASK 07) ------------------------------------------------------
+
+export const COMMUNITY_CHANNELS = [
+  "general",
+  "help",
+  "showcase",
+  "game-dev",
+  "app-dev",
+  "extensions",
+  "beginner-zone",
+] as const;
+
+export type CommunityChannel = (typeof COMMUNITY_CHANNELS)[number];
+
+export const CHANNEL_LABELS: Record<CommunityChannel, string> = {
+  general: "General",
+  help: "Help",
+  showcase: "Showcase",
+  "game-dev": "Game Dev",
+  "app-dev": "App Dev",
+  extensions: "Extensions",
+  "beginner-zone": "Beginner Zone",
+};
+
+export interface CommunityPost {
+  id: string;
+  kind: "question" | "discussion";
+  channel: CommunityChannel;
+  title: string;
+  body: string;
+  tags: string[];
+  author: string;
+  authorName?: string;
+  projectSlug?: string;
+  projectName?: string;
+  projectType?: string;
+  acceptedReplyId?: string;
+  createdAt: string;
+  replyCount: number;
+  upvotes: number;
+  viewerVoted: boolean;
+  viewerIsAuthor: boolean;
+}
+
+export interface CommunityReply {
+  id: string;
+  postId: string;
+  body: string;
+  author: string;
+  authorName?: string;
+  createdAt: string;
+  upvotes: number;
+  viewerVoted: boolean;
+  viewerIsAuthor: boolean;
+  accepted: boolean;
+}
+
+export interface CommunitySummary {
+  trendingTags: { tag: string; count: number }[];
+  helpfulCreators: { username: string; displayName?: string; acceptedAnswers: number }[];
+  channels: { channel: CommunityChannel; count: number }[];
+  questionCount: number;
+  answerCount: number;
+}
+
+export interface CommunityFeedFilter {
+  channel?: string;
+  kind?: string;
+  tag?: string;
+  q?: string;
+  sort?: string;
+  projectSlug?: string;
+  hasProject?: boolean;
+  limit?: number;
+}
+
+/**
+ * The creator community surface. Reads are public; writes ride the session
+ * cookie through the standard request() path.
+ */
+export const communityApi = {
+  async feed(filter: CommunityFeedFilter = {}): Promise<CommunityPost[]> {
+    const params = new URLSearchParams();
+    if (filter.channel) params.set("channel", filter.channel);
+    if (filter.kind) params.set("kind", filter.kind);
+    if (filter.tag) params.set("tag", filter.tag);
+    if (filter.q) params.set("q", filter.q);
+    if (filter.sort) params.set("sort", filter.sort);
+    if (filter.projectSlug) params.set("projectSlug", filter.projectSlug);
+    if (filter.hasProject) params.set("hasProject", "1");
+    if (filter.limit) params.set("limit", String(filter.limit));
+    const query = params.toString();
+    try {
+      const data = await request<{ posts: CommunityPost[] }>(
+        `/api/community/feed${query ? `?${query}` : ""}`,
+      );
+      return data.posts ?? [];
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) return [];
+      throw error;
+    }
+  },
+
+  async post(id: string): Promise<{ post: CommunityPost; replies: CommunityReply[] }> {
+    return request(`/api/community/posts/${encodeURIComponent(id)}`);
+  },
+
+  async createPost(input: {
+    kind: string;
+    channel: string;
+    title: string;
+    body: string;
+    tags?: string[];
+    projectSlug?: string;
+  }): Promise<CommunityPost> {
+    const data = await request<{ post: CommunityPost }>("/api/community/posts", {
+      method: "POST",
+      body: input,
+    });
+    return data.post;
+  },
+
+  async deletePost(id: string): Promise<void> {
+    await request(`/api/community/posts/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+
+  async createReply(postId: string, body: string): Promise<CommunityReply> {
+    const data = await request<{ reply: CommunityReply }>(
+      `/api/community/posts/${encodeURIComponent(postId)}/replies`,
+      { method: "POST", body: { body } },
+    );
+    return data.reply;
+  },
+
+  async deleteReply(id: string): Promise<void> {
+    await request(`/api/community/replies/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+
+  async votePost(id: string): Promise<CommunityPost> {
+    const data = await request<{ post: CommunityPost }>(
+      `/api/community/posts/${encodeURIComponent(id)}/vote`,
+      { method: "POST", body: {} },
+    );
+    return data.post;
+  },
+
+  async voteReply(id: string): Promise<CommunityReply> {
+    const data = await request<{ reply: CommunityReply }>(
+      `/api/community/replies/${encodeURIComponent(id)}/vote`,
+      { method: "POST", body: {} },
+    );
+    return data.reply;
+  },
+
+  async acceptReply(postId: string, replyId: string): Promise<CommunityPost> {
+    const data = await request<{ post: CommunityPost }>(
+      `/api/community/posts/${encodeURIComponent(postId)}/accept`,
+      { method: "POST", body: { replyId } },
+    );
+    return data.post;
+  },
+
+  async report(input: { postId?: string; replyId?: string; reason: string; note?: string }): Promise<void> {
+    await request("/api/community/report", { method: "POST", body: input });
+  },
+
+  async summary(): Promise<CommunitySummary | null> {
+    try {
+      const data = await request<{ summary: CommunitySummary }>("/api/community/summary");
+      return data.summary;
+    } catch {
+      return null;
+    }
+  },
+};
+
+/** The deterministic preview thumbnail rendered from a published project's own model. */
+export function publicationThumbnailUrl(slug: string): string {
+  return `${API_BASE_URL}/api/public/projects/${encodeURIComponent(slug)}/thumbnail.svg`;
+}
 
 /** Built-in starting points (roadmap 4/32). */
 export const templateApi = {

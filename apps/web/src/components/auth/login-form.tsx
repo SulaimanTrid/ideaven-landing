@@ -7,6 +7,7 @@ import { useAuth } from "@/auth/auth-provider";
 import { FormAlert, SubmitButton } from "@/components/auth/form-alert";
 import { FormField, PasswordInput, TextInput } from "@/components/auth/form-field";
 import { ApiError } from "@/types/auth";
+import { useI18n, type TranslationKey } from "@/lib/i18n/i18n";
 
 /** Returns a path that is safe to redirect to (same-site, no protocol tricks). */
 export function safeNextPath(raw: string | null): string {
@@ -15,6 +16,7 @@ export function safeNextPath(raw: string | null): string {
 }
 
 export function LoginForm() {
+  const { t } = useI18n();
   const { login } = useAuth();
   const router = useRouter();
 
@@ -49,7 +51,7 @@ export function LoginForm() {
     <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
       {formError ? <FormAlert tone="error">{formError}</FormAlert> : null}
 
-      <FormField label="Email or username" error={fieldErrors.identifier}>
+      <FormField label={t("auth.identifier")} error={fieldErrors.identifier}>
         {({ id, describedBy, invalid }) => (
           <TextInput
             id={id}
@@ -61,12 +63,12 @@ export function LoginForm() {
             onChange={(e) => setIdentifier(e.target.value)}
             describedBy={describedBy}
             invalid={invalid}
-            placeholder="ada@example.com"
+            placeholder={t("auth.identifierPlaceholder")}
           />
         )}
       </FormField>
 
-      <FormField label="Password" error={fieldErrors.password}>
+      <FormField label={t("auth.password")} error={fieldErrors.password}>
         {({ id, describedBy, invalid }) => (
           <PasswordInput
             id={id}
@@ -77,7 +79,7 @@ export function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             describedBy={describedBy}
             invalid={invalid}
-            placeholder="Your password"
+            placeholder={t("auth.passwordPlaceholder")}
           />
         )}
       </FormField>
@@ -87,12 +89,12 @@ export function LoginForm() {
           href="/forgot-password"
           className="text-[13px] text-fog underline-offset-4 transition-colors hover:text-ink hover:underline"
         >
-          Forgot your password?
+          {t("auth.forgot")}
         </Link>
       </div>
 
-      <SubmitButton pending={pending} pendingLabel="Signing in…">
-        Sign in
+      <SubmitButton pending={pending} pendingLabel={t("common.saving")}>
+        {t("auth.signIn")}
       </SubmitButton>
 
       <p className="text-center text-sm text-fog">

@@ -89,26 +89,48 @@ export function allExpressionDefs(): BlockDef[] {
 }
 
 function normalizeCategory(raw: string | undefined): BlockDef["category"] {
-  const allowed: BlockDef["category"][] = ["ui", "variables", "control", "navigation", "text", "logic"];
+  const allowed: BlockDef["category"][] = [
+    "ui",
+    "variables",
+    "control",
+    "navigation",
+    "text",
+    "logic",
+    "audio",
+    "storage",
+    "connectivity",
+    "sensors",
+    "media",
+  ];
   return allowed.includes(raw as BlockDef["category"]) ? (raw as BlockDef["category"]) : "ui";
 }
 
 function normalizeInputKind(raw: string | undefined): BlockInputSpec["kind"] {
-  const allowed: BlockInputSpec["kind"][] = ["component", "property", "screen", "variable", "text", "number"];
+  const allowed: BlockInputSpec["kind"][] = ["component", "property", "screen", "variable", "text", "number", "boolean"];
   return allowed.includes(raw as BlockInputSpec["kind"]) ? (raw as BlockInputSpec["kind"]) : "text";
 }
 
-/** Create a block from any registry type (built-in or extension). */
-export function createRegistryBlock(type: string): ProjectModelBlock | undefined {
+/** Create a block from any registry type (built-in or extension), with optional preset inputs. */
+export function createRegistryBlock(
+  type: string,
+  preset?: { inputs?: Record<string, string | number | boolean> },
+): ProjectModelBlock | undefined {
   const def = getAnyBlockDef(type);
   if (!def) return undefined;
-  if (!isExtensionBlock(type)) return createBlock(type);
+  if (!isExtensionBlock(type)) return createBlock(type, preset);
   const block: ProjectModelBlock = { id: genId("b"), kind: def.kind, type };
   const inputs = def.inputs ?? [];
   if (inputs.length > 0) {
     block.inputs = {};
     for (const input of inputs) {
-      block.inputs[input.key] = input.kind === "number" ? 0 : "";
+      const presetValue = preset?.inputs?.[input.key];
+      block.inputs[input.key] = presetValue !== undefined
+        ? presetValue
+        : input.kind === "number"
+          ? 0
+          : input.kind === "boolean"
+            ? false
+            : "";
     }
   }
   if (def.slots) block.slots = Object.fromEntries(def.slots.map((s) => [s.key, undefined]));

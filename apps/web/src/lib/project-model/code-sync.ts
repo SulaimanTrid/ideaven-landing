@@ -220,6 +220,63 @@ function convertStatement(
         return makeBlock("statement", "set-variable", { inputs: { name }, slots: { value } });
       }
     }
+    if (method === "changeVariable" && call.arguments.length === 2) {
+      const name = stringArg(tsMod, call.arguments[0]);
+      const amount = convertExpression(tsMod, sf, call.arguments[1] as ts.Expression, apiName, unsupported, code);
+      if (name !== null && amount !== null) {
+        return makeBlock("statement", "change-variable", { inputs: { name }, slots: { amount } });
+      }
+    }
+    if (method === "playSound" && call.arguments.length === 1) {
+      if (tsMod.isStringLiteral(call.arguments[0] as ts.Expression)) {
+        return makeBlock("statement", "play-sound", {
+          inputs: { sound: (call.arguments[0] as ts.StringLiteral).text },
+        });
+      }
+    }
+    if (method === "stopSound" && call.arguments.length === 0) {
+      return makeBlock("statement", "stop-sound", {});
+    }
+    if (method === "storeValue" && call.arguments.length === 2) {
+      const key = stringArg(tsMod, call.arguments[0]);
+      const value = convertExpression(tsMod, sf, call.arguments[1] as ts.Expression, apiName, unsupported, code);
+      if (key !== null && value !== null) {
+        return makeBlock("statement", "tinydb-store", { inputs: { key }, slots: { value } });
+      }
+    }
+    if (method === "notify" && call.arguments.length === 1) {
+      const message = convertExpression(tsMod, sf, call.arguments[0] as ts.Expression, apiName, unsupported, code);
+      if (message !== null) {
+        return makeBlock("statement", "notifier-alert", { slots: { message } });
+      }
+    }
+    if (method === "webGet" && call.arguments.length === 1) {
+      const url = stringArg(tsMod, call.arguments[0]);
+      if (url !== null) {
+        return makeBlock("statement", "web-get", { inputs: { url } });
+      }
+    }
+    if (method === "requestLocation" && call.arguments.length === 0) {
+      return makeBlock("statement", "location-request", {});
+    }
+    if (method === "speak" && call.arguments.length === 1) {
+      const message = convertExpression(tsMod, sf, call.arguments[0] as ts.Expression, apiName, unsupported, code);
+      if (message !== null) {
+        return makeBlock("statement", "tts-speak", { slots: { message } });
+      }
+    }
+    if (method === "canvasClear" && call.arguments.length === 0) {
+      return makeBlock("statement", "canvas-clear", {});
+    }
+    if (method === "drawCircle" && call.arguments.length === 4) {
+      const x = tsMod.isNumericLiteral(call.arguments[0] as ts.Expression) ? Number((call.arguments[0] as ts.NumericLiteral).text) : null;
+      const y = tsMod.isNumericLiteral(call.arguments[1] as ts.Expression) ? Number((call.arguments[1] as ts.NumericLiteral).text) : null;
+      const r = tsMod.isNumericLiteral(call.arguments[2] as ts.Expression) ? Number((call.arguments[2] as ts.NumericLiteral).text) : null;
+      const color = stringArg(tsMod, call.arguments[3]);
+      if (x !== null && y !== null && r !== null && color !== null) {
+        return makeBlock("statement", "canvas-draw-circle", { inputs: { x, y, r, color } });
+      }
+    }
     if (method === "show" && call.arguments.length === 1) {
       const message = convertExpression(tsMod, sf, call.arguments[0] as ts.Expression, apiName, unsupported, code);
       if (message !== null) {
@@ -272,8 +329,8 @@ function convertExpression(
     return makeBlock("expression", "number", { inputs: { value: Number(node.text) } });
   }
   if (node.kind === tsMod.SyntaxKind.TrueKeyword || node.kind === tsMod.SyntaxKind.FalseKeyword) {
-    return makeBlock("expression", "text", {
-      inputs: { value: node.kind === tsMod.SyntaxKind.TrueKeyword ? "true" : "false" },
+    return makeBlock("expression", "boolean", {
+      inputs: { value: node.kind === tsMod.SyntaxKind.TrueKeyword },
     });
   }
   if (tsMod.isCallExpression(node)) {

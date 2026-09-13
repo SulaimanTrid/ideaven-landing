@@ -35,7 +35,17 @@ export type PropsMap = Record<string, string | number | boolean>;
 export interface ProjectModel {
   schemaVersion: number;
   type: ProjectType;
-  settings: { theme: string };
+  settings: {
+    theme: string;
+    /** Universal viewport presentation (TASK 11). Optional; editors default. */
+    preview?: {
+      device?: "phone" | "tablet" | "desktop" | "custom";
+      orientation?: "portrait" | "landscape";
+      safeArea?: boolean;
+      width?: number;
+      height?: number;
+    };
+  };
   screens: ProjectModelScreen[];
   navigation: { startScreenId: string };
   variables: { id: string; name: string; type: string }[];
@@ -61,9 +71,25 @@ export interface ProjectModelScreen {
  * Structured block program. Statements run in handler bodies; expressions
  * fill slots. The tree structure is the connection graph; component
  * references may dangle after deletion (diagnostics, never data loss).
+ *
+ * `parked` holds runs the user placed freely on the Blocks canvas without
+ * attaching them to a handler — visible drafts that are NOT part of the
+ * program (never code-generated, never executed). Each run keeps its
+ * statement order, like a handler body. `positions` stores canvas
+ * coordinates for handler scripts and parked runs (keyed by handler ID or
+ * the run's first block ID) so layout survives save, reload, and another
+ * device; coordinates are canvas px at zoom 1.
  */
 export interface ProjectModelLogic {
   handlers: ProjectModelHandler[];
+  parked?: ProjectModelBlock[][];
+  positions?: Record<string, ProjectModelPoint>;
+}
+
+/** A canvas position for a script or parked block (Blocks mode). */
+export interface ProjectModelPoint {
+  x: number;
+  y: number;
 }
 
 export interface ProjectModelHandler {

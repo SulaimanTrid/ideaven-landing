@@ -17,7 +17,14 @@ type UpdateProfileInput struct {
 	DisplayName string
 	Bio         string
 	AvatarURL   string
+	// Locale is the account-level UI language (TASK 10): "" (unset), "en",
+	// or "id". Anything else is a field error.
+	Locale string
 }
+
+// localeVocabulary is the closed set of supported account locales; empty
+// means "not set" and the client falls back to local/browser preference.
+var localeVocabulary = map[string]bool{"": true, "en": true, "id": true}
 
 // UpdateProfile rewrites the editable profile fields of the session's user.
 // The caller passes the server-derived user ID; clients never supply one.
@@ -38,6 +45,9 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, input Update
 	}
 	if err := ValidateAvatarURL(avatarURL); err != nil {
 		return nil, field("avatarUrl", err)
+	}
+	if !localeVocabulary[input.Locale] {
+		return nil, field("locale", errors.New("Locale must be empty, en, or id."))
 	}
 	if displayName == "" {
 		displayName = username
@@ -61,7 +71,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, input Update
 	}
 
 	updated, err := s.users.UpdateProfile(ctx, userID, user.ProfileUpdate{
-		Username: username, DisplayName: displayName, Bio: bio, AvatarURL: avatarURL,
+		Username: username, DisplayName: displayName, Bio: bio, AvatarURL: avatarURL, Locale: input.Locale,
 	})
 	if err != nil {
 		if errors.Is(err, user.ErrDuplicateUsername) {

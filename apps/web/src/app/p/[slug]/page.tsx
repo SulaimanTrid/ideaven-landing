@@ -2,14 +2,16 @@ import type { Metadata } from "next";
 import { projectTypeLabel } from "@/lib/project-meta";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { publicApi } from "@/lib/api";
+import { API_BASE_URL, publicApi, type CommunityPost } from "@/lib/api";
 import { LiveApp } from "@/components/runtime/live-app";
 import { RemixButton } from "@/components/community/remix-button";
+import { ProjectDiscussions } from "@/components/community/project-discussions";
 
 /**
  * The public page of a published project (roadmap 19). Server-rendered from
  * the stored snapshot: editing the project never changes this page until the
- * owner republishes. Unpublishing kills it immediately.
+ * owner republishes. Unpublishing kills it immediately. TASK 07 connects it
+ * to the community: real discussions attached to this project.
  */
 
 export const dynamic = "force-dynamic";
@@ -27,6 +29,20 @@ async function load(slug: string) {
   }
 }
 
+async function loadDiscussions(slug: string): Promise<CommunityPost[]> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/community/feed?projectSlug=${encodeURIComponent(slug)}&limit=10`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) return [];
+    const data = (await response.json()) as { posts: CommunityPost[] };
+    return data.posts ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const publication = await load(slug).catch(() => null);
@@ -41,6 +57,7 @@ export default async function PublishedProjectPage({ params }: PageProps) {
   const { slug } = await params;
   const publication = await load(slug);
   if (!publication) notFound();
+  const discussions = await loadDiscussions(slug);
 
   const published = new Date(publication.publishedAt).toLocaleDateString(undefined, {
     year: "numeric",
@@ -76,6 +93,8 @@ export default async function PublishedProjectPage({ params }: PageProps) {
         </div>
 
         <LiveApp model={publication.model} />
+
+        <ProjectDiscussions slug={publication.slug} discussions={discussions} />
       </main>
 
       <footer className="border-t border-line bg-panel py-6 text-center text-[12px] text-mist">

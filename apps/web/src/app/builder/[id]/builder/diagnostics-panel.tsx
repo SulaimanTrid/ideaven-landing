@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { collectModelDiagnostics } from "@/lib/project-model/diagnostics";
 import { useBuilder } from "./builder-context";
+import { useI18n } from "@/lib/i18n/i18n";
 import { cn } from "@ideaven/ui";
 import { IconSparkle } from "@/components/visuals/icons";
 
 /**
  * The bottom diagnostics panel (spec §30/§54): live model diagnostics plus
- * Code-mode parse diagnostics, severity counts ("No errors 🎉" when
+ * Code-mode parse diagnostics, severity counts ("{t("builder.noErrors")} 🎉" when
  * healthy), and click-to-source navigation into Blocks or Code.
  *
  * Auto-Fix (§AI-recheck): "Fix with AI" sends the current errors/warnings to
@@ -17,7 +18,14 @@ import { IconSparkle } from "@/components/visuals/icons";
  */
 export function DiagnosticsPanel({ onRequestAIFix }: { onRequestAIFix?: (prompt: string) => void }) {
   const { model, setMode, selectHandler, setActiveScreen, codeDiagnostics } = useBuilder();
+  const { t } = useI18n();
   const [open, setOpen] = useState(true);
+  // Build/export failures elsewhere can open the panel explicitly.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("ideaven:open-diagnostics", onOpen);
+    return () => window.removeEventListener("ideaven:open-diagnostics", onOpen);
+  }, []);
   const [filter, setFilter] = useState<"all" | "error" | "warning" | "info">("all");
 
   const modelDiags = useMemo(() => collectModelDiagnostics(model), [model]);
@@ -144,7 +152,7 @@ export function DiagnosticsPanel({ onRequestAIFix }: { onRequestAIFix?: (prompt:
       {open ? (
         <div className="h-[132px] overflow-y-auto px-3 py-2">
           {all.length === 0 ? (
-            <p className="py-4 text-center text-[12.5px] text-mist">No errors 🎉</p>
+            <p className="py-4 text-center text-[12.5px] text-mist">{t("builder.noErrors")} 🎉</p>
           ) : visible.length === 0 ? (
             <p className="py-4 text-center text-[12.5px] text-mist">
               No {filter} diagnostics.

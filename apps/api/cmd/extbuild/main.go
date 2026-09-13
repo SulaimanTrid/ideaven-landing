@@ -1,16 +1,29 @@
 // extbuild is IDEAVEN's isolated extension build worker (roadmap 2.0 Phase 1).
 // It runs as its own process — the API server never packages or executes
 // untrusted extension content in-process. Protocol: one JSON job on stdin,
-// one JSON result on stdout.
+// a stream of NDJSON events on stdout (each line flushed as it happens),
+// ending with exactly one "result" event.
 //
 // Job:   {"slug","name","version","manifest":<json>,"docs":string,
-//         "dependencies":[{"slug","version"}]}
-// Result: {"ok":bool,"logs":[{"step","level","message"}],"aixBase64"?:string,
-//          "checksum"?:string,"error"?:string}
+//         "source":string,"dependencies":[{"slug","version"}],
+//         "registrySnapshot":{slug:[versions]}}
+//
+// Events, one JSON object per line:
+//
+//	{"type":"state","state":"validating","step":"manifest","message":…}
+//	{"type":"log","step":"source","level":"info|error","message":…}
+//	{"type":"result","ok":bool,"error"?:string,"failedStep"?:string,
+//	 "aixBase64"?:string,"checksum"?:string,"size"?:number}
+//
+// Build states: validating → source-validation → resolving-dependencies →
+// compiling → packaging → verifying → success | failed. Every state is
+// emitted when the step actually starts — the worker never announces work
+// it has not begun, and never claims success it did not verify.
 //
 // Pipeline: manifest validation → source validation → dependency resolution
-// (against the job's registry snapshot) → AIX packaging (zip) → verification
-// (reopen + parse + checksum) — every step logged.
+// (against the job's registry snapshot) → structural source compile → AIX
+// packaging (zip incl. the authored source) → verification (reopen + parse +
+// recompile + checksum).
 package main
 
 import (
@@ -24,21 +37,37 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 	"time"
+
+	"ideaven/apps/api/internal/extsrc"
 )
 
-type logEntry struct {
-	Step    string `json:"step"`
-	Level   string `json:"level"`
-	Message string `json:"message"`
-}
+// Build states, mirrored by the API's build state machine.
+const (
+	stateValidating   = "validating"
+	stateSource       = "source-validation"
+	stateDependencies = "resolving-dependencies"
+	stateCompiling    = "compiling"
+	statePackaging    = "packaging"
+	stateVerifying    = "verifying"
+)
 
-type buildResult struct {
-	OK        bool       `json:"ok"`
-	Logs      []logEntry `json:"logs"`
-	AIXBase64 string     `json:"aixBase64,omitempty"`
-	Checksum  string     `json:"checksum,omitempty"`
-	Error     string     `json:"error,omitempty"`
+// event is one NDJSON line on stdout.
+type event struct {
+	Type    string `json:"type"` // state | log | result
+	State   string `json:"state,omitempty"`
+	Step    string `json:"step,omitempty"`
+	Level   string `json:"level,omitempty"`
+	Message string `json:"message,omitempty"`
+
+	// Result payload (final line only).
+	OK         bool   `json:"ok,omitempty"`
+	AIXBase64  string `json:"aixBase64,omitempty"`
+	Checksum   string `json:"checksum,omitempty"`
+	Size       int    `json:"size,omitempty"`
+	Error      string `json:"error,omitempty"`
+	FailedStep string `json:"failedStep,omitempty"`
 }
 
 type dependencySpec struct {
@@ -47,12 +76,13 @@ type dependencySpec struct {
 }
 
 type buildJob struct {
-	Slug         string          `json:"slug"`
-	Name         string          `json:"name"`
-	Version      string          `json:"version"`
-	Manifest     json.RawMessage `json:"manifest"`
-	Docs         string          `json:"docs"`
-	Dependencies []dependencySpec `json:"dependencies"`
+	Slug         string             `json:"slug"`
+	Name         string             `json:"name"`
+	Version      string             `json:"version"`
+	Manifest     json.RawMessage    `json:"manifest"`
+	Docs         string             `json:"docs"`
+	Source       string             `json:"source"`
+	Dependencies []dependencySpec   `json:"dependencies"`
 	// RegistrySnapshot maps available extension slugs to their published
 	// versions; dependency resolution happens against this snapshot so the
 	// worker stays deterministic and side-effect free.
@@ -68,94 +98,139 @@ type blockSpec struct {
 	Kind string `json:"kind"`
 }
 type manifestDoc struct {
-	Format     int            `json:"format"`
+	Format     int             `json:"format"`
 	Components []componentSpec `json:"components"`
-	Blocks     []blockSpec    `json:"blocks"`
+	Blocks     []blockSpec     `json:"blocks"`
 }
 
-var logs []logEntry
+// currentStep tracks which pipeline step is running so a panic or malformed
+// failure can still report where the build died.
+var currentStep string
+
+func emit(ev event) {
+	encoded, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	// os.Stdout is unbuffered — each event reaches the API the moment the
+	// step really happens.
+	fmt.Println(string(encoded))
+}
+
+func statef(step, state, format string, args ...any) {
+	currentStep = step
+	emit(event{Type: "state", State: state, Step: step, Message: fmt.Sprintf(format, args...)})
+}
 
 func logf(step, level, format string, args ...any) {
-	logs = append(logs, logEntry{Step: step, Level: level, Message: fmt.Sprintf(format, args...)})
+	emit(event{Type: "log", Step: step, Level: level, Message: fmt.Sprintf(format, args...)})
 }
 
-func fail(err error) {
-	logf("build", "error", "%v", err)
-	emit(buildResult{OK: false, Logs: logs, Error: err.Error()})
-	os.Exit(1)
-}
-
-func emit(result buildResult) {
-	encoded, _ := json.Marshal(result)
-	fmt.Println(string(encoded))
+// fail emits the terminal failure result and exits — the pipeline stops at
+// the first real problem; nothing after it runs.
+func fail(step, format string, args ...any) {
+	if step == "" {
+		step = currentStep
+	}
+	message := fmt.Sprintf(format, args...)
+	if step != "" {
+		logf(step, "error", "%s", message)
+	}
+	emit(event{Type: "result", OK: false, Error: message, FailedStep: step})
+	os.Exit(0)
 }
 
 func main() {
 	raw, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		fail(fmt.Errorf("read job: %w", err))
+		fail("", "read job: %v", err)
 	}
 	var job buildJob
 	if err := json.Unmarshal(raw, &job); err != nil {
-		fail(fmt.Errorf("parse job: %w", err))
+		fail("", "parse job: %v", err)
 	}
 
 	// 1. Manifest validation.
-	logf("validate-manifest", "info", "Validating manifest for %s v%s…", job.Slug, job.Version)
+	statef("manifest", stateValidating, "validating manifest for %s v%s", job.Slug, job.Version)
 	var manifest manifestDoc
 	if err := json.Unmarshal(job.Manifest, &manifest); err != nil {
-		fail(fmt.Errorf("manifest is not valid JSON: %w", err))
+		fail("manifest", "manifest is not valid JSON: %v", err)
 	}
 	if manifest.Format != 1 {
-		fail(fmt.Errorf("unsupported manifest format %d", manifest.Format))
+		fail("manifest", "unsupported manifest format %d (supported: 1)", manifest.Format)
 	}
-	logf("validate-manifest", "info", "Manifest format 1 OK — %d component(s), %d block(s).",
+	logf("manifest", "info", "manifest format 1 OK — %d component(s), %d block(s)",
 		len(manifest.Components), len(manifest.Blocks))
 
 	// 2. Source validation: every component must carry a label; every block a
-	// known kind. Deeper artifact compilation arrives when extensions carry
-	// executable artifacts — the pipeline shape stays the same.
+	// known kind.
+	statef("source", stateSource, "validating source metadata")
 	for _, c := range manifest.Components {
 		if c.ID == "" || c.Label == "" {
-			fail(fmt.Errorf("component %q is missing an id or label", c.ID))
+			fail("source", "component %q is missing an id or label", c.ID)
 		}
 	}
 	for _, b := range manifest.Blocks {
 		if b.Type == "" || (b.Kind != "statement" && b.Kind != "expression") {
-			fail(fmt.Errorf("block %q has an unknown kind %q", b.Type, b.Kind))
+			fail("source", "block %q has an unknown kind %q", b.Type, b.Kind)
 		}
 	}
-	logf("validate-source", "info", "Source metadata consistent.")
+	logf("source", "info", "source metadata consistent")
 
 	// 3. Dependency resolution against the registry snapshot.
+	statef("dependencies", stateDependencies, "resolving dependencies")
 	for _, dep := range job.Dependencies {
 		versions, ok := job.RegistrySnapshot[dep.Slug]
 		if !ok {
-			fail(fmt.Errorf("dependency %q is not in the registry", dep.Slug))
+			fail("dependencies", "dependency %q is not in the registry (it may be unpublished)", dep.Slug)
 		}
 		if dep.Version != "" && !contains(versions, dep.Version) {
-			fail(fmt.Errorf("dependency %q v%s is not available (have %v)", dep.Slug, dep.Version, versions))
+			fail("dependencies", "dependency %q v%s is not available (registry has %v)",
+				dep.Slug, dep.Version, versions)
 		}
-		logf("resolve-dependencies", "info", "Resolved %s → registry.", dep.Slug)
+		logf("dependencies", "info", "resolved %s → registry", dep.Slug)
 	}
-	logf("resolve-dependencies", "info", "%d dependency(ies) resolved.", len(job.Dependencies))
+	logf("dependencies", "info", "%d dependency(ies) resolved", len(job.Dependencies))
 
-	// 4. AIX packaging.
-	logf("package", "info", "Packaging AIX…")
+	// 4. Structural compile of the authored source. This is lexical
+	// analysis — the worker never executes untrusted code and shells out to
+	// nothing.
+	statef("compile", stateCompiling, "compiling source")
+	if strings.TrimSpace(job.Source) == "" {
+		logf("compile", "info", "no authored source — nothing to compile, skipped")
+	} else {
+		problems := extsrc.Analyze(job.Source)
+		if len(problems) > 0 {
+			first := problems[0]
+			fail("compile", "source compilation failed — line %d: %s", first.Line, first.Message)
+		}
+		lines := strings.Count(job.Source, "\n") + 1
+		logf("compile", "info", "structural compile OK — %s, %d line(s), delimiters balanced",
+			extsrc.FileNameFor(job.Source), lines)
+	}
+
+	// 5. AIX packaging.
+	statef("package", statePackaging, "packaging AIX")
 	aix, checksum, err := packageAIX(job)
 	if err != nil {
-		fail(fmt.Errorf("package: %w", err))
+		fail("package", "packaging failed: %v", err)
 	}
+	logf("package", "info", "AIX generated — %d bytes", len(aix))
 
-	// 5. Verification: reopen the package and re-parse the manifest inside.
-	logf("verify", "info", "Verifying package (reopen + parse + checksum)…")
-	if err := verifyAIX(aix, job.Slug, job.Version); err != nil {
-		fail(fmt.Errorf("verify: %w", err))
+	// 6. Verification: reopen the package, re-parse the manifest inside,
+	// re-run the structural compile, re-checksum.
+	statef("verify", stateVerifying, "verifying package")
+	if err := verifyAIX(aix, job); err != nil {
+		fail("verify", "verification failed: %v", err)
 	}
-	logf("verify", "info", "Package verified — checksum %s.", short(checksum))
-	logf("build", "info", "Build complete: %s v%s (%d bytes).", job.Slug, job.Version, len(aix))
+	logf("verify", "info", "package verified — checksum %s", short(checksum))
+	logf("done", "info", "AIX generated: %s v%s", job.Slug, job.Version)
 
-	emit(buildResult{OK: true, Logs: logs, AIXBase64: base64.StdEncoding.EncodeToString(aix), Checksum: checksum})
+	emit(event{
+		Type: "result", OK: true,
+		AIXBase64: base64.StdEncoding.EncodeToString(aix),
+		Checksum:  checksum, Size: len(aix),
+	})
 }
 
 func contains(list []string, want string) bool {
@@ -175,28 +250,31 @@ func short(sum string) string {
 }
 
 func packageAIX(job buildJob) ([]byte, string, error) {
-	prettyManifest := json.RawMessage(job.Manifest)
-
 	meta := map[string]string{
 		"slug":     job.Slug,
 		"name":     job.Name,
 		"version":  job.Version,
 		"builtAt":  time.Now().UTC().Format(time.RFC3339),
-		"packager": "ideaven-extbuild/1",
+		"packager": "ideaven-extbuild/2",
 	}
 
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
 	files := map[string][]byte{
-		"manifest.json": prettyManifest,
+		"manifest.json": job.Manifest,
 		"docs.md":       []byte(job.Docs),
 		"meta.json":     mustJSON(meta),
 	}
+	if strings.TrimSpace(job.Source) != "" {
+		files["src/"+extsrc.FileNameFor(job.Source)] = []byte(job.Source)
+	}
+
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
 	for _, name := range names {
 		writer, err := zw.Create(name)
 		if err != nil {
@@ -214,7 +292,7 @@ func packageAIX(job buildJob) ([]byte, string, error) {
 	return aix, hex.EncodeToString(sum[:]), nil
 }
 
-func verifyAIX(aix []byte, slug, version string) error {
+func verifyAIX(aix []byte, job buildJob) error {
 	zr, err := zip.NewReader(bytes.NewReader(aix), int64(len(aix)))
 	if err != nil {
 		return fmt.Errorf("not a readable zip: %w", err)
@@ -227,12 +305,7 @@ func verifyAIX(aix []byte, slug, version string) error {
 	if !ok {
 		return fmt.Errorf("package is missing manifest.json")
 	}
-	read, err := manifestFile.Open()
-	if err != nil {
-		return err
-	}
-	inside, err := io.ReadAll(read)
-	read.Close()
+	inside, err := readMember(manifestFile)
 	if err != nil {
 		return err
 	}
@@ -243,16 +316,8 @@ func verifyAIX(aix []byte, slug, version string) error {
 	if manifest.Format != 1 {
 		return fmt.Errorf("packaged manifest has format %d", manifest.Format)
 	}
-	metaFile, ok := byName["meta.json"]
-	if !ok {
-		return fmt.Errorf("package is missing meta.json")
-	}
-	read, err = metaFile.Open()
-	if err != nil {
-		return err
-	}
-	metaRaw, err := io.ReadAll(read)
-	read.Close()
+
+	metaRaw, err := readMember(byName["meta.json"])
 	if err != nil {
 		return err
 	}
@@ -260,10 +325,36 @@ func verifyAIX(aix []byte, slug, version string) error {
 	if err := json.Unmarshal(metaRaw, &meta); err != nil {
 		return fmt.Errorf("packaged meta.json does not parse: %w", err)
 	}
-	if meta["slug"] != slug || meta["version"] != version {
+	if meta["slug"] != job.Slug || meta["version"] != job.Version {
 		return fmt.Errorf("package identity mismatch: %s/%s", meta["slug"], meta["version"])
 	}
+
+	// The packaged source must re-compile exactly like the input did.
+	for name, file := range byName {
+		if !strings.HasPrefix(name, "src/") {
+			continue
+		}
+		source, err := readMember(file)
+		if err != nil {
+			return err
+		}
+		if problems := extsrc.Analyze(string(source)); len(problems) > 0 {
+			return fmt.Errorf("packaged source does not compile: %s", problems[0].Message)
+		}
+	}
 	return nil
+}
+
+func readMember(file *zip.File) ([]byte, error) {
+	if file == nil {
+		return nil, fmt.Errorf("package member missing")
+	}
+	read, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer read.Close()
+	return io.ReadAll(read)
 }
 
 func mustJSON(value any) []byte {

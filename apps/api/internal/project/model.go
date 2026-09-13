@@ -1,10 +1,11 @@
-﻿// Package project implements Ideaven's project domain: the project library
+// Package project implements Ideaven's project domain: the project library
 // (create, list, rename, duplicate, archive, delete) and the canonical
 // versioned Project Model every future editor surface renders from.
 package project
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 
@@ -35,7 +36,21 @@ type Model struct {
 
 // ModelSettings holds project-wide presentation defaults.
 type ModelSettings struct {
-	Theme string `json:"theme"`
+	Theme   string           `json:"theme"`
+	Preview *PreviewSettings `json:"preview,omitempty"`
+}
+
+// PreviewSettings (TASK 11) is the project's universal viewport
+// presentation: which device/viewport the preview and editors frame the
+// project in, its orientation, and whether the app safe-area overlay is
+// shown. Optional and backward compatible — absent means the editor
+// defaults.
+type PreviewSettings struct {
+	Device      string `json:"device,omitempty"`      // phone | tablet | desktop | custom
+	Orientation string `json:"orientation,omitempty"` // portrait | landscape
+	SafeArea    bool   `json:"safeArea,omitempty"`
+	Width       int    `json:"width,omitempty"`  // custom viewport only
+	Height      int    `json:"height,omitempty"` // custom viewport only
 }
 
 // Screen is one page/scene of the project. Styles is screen-level
@@ -56,9 +71,23 @@ type Screen struct {
 // Logic is a screen's event-handler collection. Handlers reference
 // components by ID; when a component is later deleted the references are
 // allowed to dangle — the validator flags them as diagnostics, it does not
-// destroy the user's blocks.
+// destroy the user's blocks. Parked holds runs the user placed freely on the
+// Blocks canvas without attaching them to a handler: visible drafts that are
+// not part of the program (never code-generated, never executed). Each run
+// keeps its statement order, like a handler body. Positions stores canvas
+// coordinates for scripts and parked runs (keyed by handler ID or the run's
+// first block ID) so the workspace layout survives save and reload.
 type Logic struct {
-	Handlers []EventHandler `json:"handlers"`
+	Handlers  []EventHandler      `json:"handlers"`
+	Parked    [][]Block           `json:"parked,omitempty"`
+	Positions map[string]Position `json:"positions,omitempty"`
+}
+
+// Position is a Blocks-canvas coordinate (px at zoom 1) for one script
+// (keyed by handler ID) or parked block (keyed by block ID).
+type Position struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // EventHandler wires one component event (or a screen event, when ComponentID
@@ -189,6 +218,32 @@ func ValidateModel(m *Model) error {
 	if m.Navigation.StartScreenID != "" && !seenScreens[m.Navigation.StartScreenID] {
 		return invalidModel("The start screen does not exist.")
 	}
+	if err := validatePreviewSettings(m.Settings.Preview); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validatePreviewSettings (TASK 11) enforces the closed vocabularies and
+// sane bounds of the universal viewport presentation. Absent settings are
+// valid (editors apply their defaults).
+func validatePreviewSettings(p *PreviewSettings) error {
+	if p == nil {
+		return nil
+	}
+	devices := map[string]bool{"": true, "phone": true, "tablet": true, "desktop": true, "custom": true}
+	if !devices[p.Device] {
+		return invalidModel("Preview device must be phone, tablet, desktop, or custom.")
+	}
+	orientations := map[string]bool{"": true, "portrait": true, "landscape": true}
+	if !orientations[p.Orientation] {
+		return invalidModel("Preview orientation must be portrait or landscape.")
+	}
+	if p.Device == "custom" {
+		if p.Width < 200 || p.Width > 2000 || p.Height < 200 || p.Height > 2000 {
+			return invalidModel("Custom preview size must be between 200 and 2000 pixels.")
+		}
+	}
 	return nil
 }
 
@@ -217,13 +272,47 @@ func validateLogic(logic *Logic) error {
 		if strings.TrimSpace(handler.Event) == "" {
 			return invalidModel(fmt.Sprintf("Handler %q is missing an event name.", handler.ID))
 		}
+	}
 
-		seenBlocks := make(map[string]bool)
+	// Block IDs are unique across the whole screen's logic: handler bodies and
+	// parked drafts share one namespace so moves between them stay unambiguous.
+	seenBlocks := make(map[string]bool)
+	for _, handler := range logic.Handlers {
 		if err := validateBlocks(handler.Body, seenBlocks); err != nil {
 			return err
 		}
 	}
+	for _, run := range logic.Parked {
+		if len(run) == 0 {
+			return invalidModel("A parked run is empty.")
+		}
+		if err := validateBlocks(run, seenBlocks); err != nil {
+			return err
+		}
+	}
+	return validatePositions(logic.Positions)
+}
+
+// validatePositions checks that every Blocks-canvas position is a finite
+// coordinate (NaN/Inf cannot round-trip through JSON) within a sane range.
+func validatePositions(positions map[string]Position) error {
+	for key, position := range positions {
+		if strings.TrimSpace(key) == "" {
+			return invalidModel("A canvas position is missing its block or handler key.")
+		}
+		if !finite(position.X) || !finite(position.Y) {
+			return invalidModel(fmt.Sprintf("Canvas position %q has a non-finite coordinate.", key))
+		}
+		const limit = 1_000_000
+		if position.X < -limit || position.X > limit || position.Y < -limit || position.Y > limit {
+			return invalidModel(fmt.Sprintf("Canvas position %q is out of range.", key))
+		}
+	}
 	return nil
+}
+
+func finite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func validateBlocks(blocks []Block, seen map[string]bool) error {
@@ -282,4 +371,3 @@ func invalidModel(message string) *httpx.Error {
 	return httpx.Errorf(http.StatusBadRequest, httpx.CodeValidation, message).
 		WithDetails(httpx.FieldError{Field: "model", Message: message})
 }
-

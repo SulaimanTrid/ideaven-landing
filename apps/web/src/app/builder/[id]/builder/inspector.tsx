@@ -50,6 +50,15 @@ function ScreenInspector({ screenId }: { screenId: string }) {
           value={typeof screen.styles?.background === "string" ? screen.styles.background : "#ffffff"}
           onChange={(value) => actions.updateScreenStyles(screenId, { background: value })}
         />
+        <label className="flex items-center justify-between gap-2 py-1">
+          <span className="text-[12px] text-fog">Scrollable screen</span>
+          <input
+            type="checkbox"
+            checked={screen.styles?.scrollable === true}
+            onChange={(event) => actions.updateScreenStyles(screenId, { scrollable: event.target.checked })}
+            className="h-4 w-4 accent-[#8f7bff]"
+          />
+        </label>
       </Section>
       <p className="px-1 text-[11px] leading-5 text-mist">
         Select a component on the canvas or in the tree to edit its properties.

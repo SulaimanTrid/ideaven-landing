@@ -32,6 +32,7 @@ type SafeUser struct {
 	DisplayName   string     `json:"displayName"`
 	Bio           string     `json:"bio"`
 	AvatarURL     string     `json:"avatarUrl"`
+	Locale        string     `json:"locale"`
 	EmailVerified bool       `json:"emailVerified"`
 	CreatedAt     time.Time  `json:"createdAt"`
 	UpdatedAt     time.Time  `json:"updatedAt"`
@@ -46,6 +47,7 @@ func toSafeUser(u *user.User) SafeUser {
 		DisplayName:   u.DisplayName,
 		Bio:           u.Bio,
 		AvatarURL:     u.AvatarURL,
+		Locale:        u.Locale,
 		EmailVerified: u.EmailVerified,
 		CreatedAt:     u.CreatedAt,
 		UpdatedAt:     u.UpdatedAt,
@@ -235,6 +237,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		DisplayName string `json:"displayName"`
 		Bio         string `json:"bio"`
 		AvatarURL   string `json:"avatarUrl"`
+		Locale      string `json:"locale"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		httpx.WriteError(w, err)
@@ -243,6 +246,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.service.UpdateProfile(r.Context(), current.ID, UpdateProfileInput{
 		Username: body.Username, DisplayName: body.DisplayName, Bio: body.Bio, AvatarURL: body.AvatarURL,
+		Locale:   body.Locale,
 	})
 	if err != nil {
 		httpx.WriteError(w, err)

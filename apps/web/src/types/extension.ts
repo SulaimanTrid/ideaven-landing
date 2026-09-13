@@ -52,6 +52,8 @@ export interface ExtensionDependencySpec {
 
 export interface ExtensionManifest {
   format: number;
+  /** Display name of the extension package (required by import validation). */
+  name?: string;
   components?: ExtensionComponentSpec[];
   methods?: ExtensionMethodSpec[];
   events?: ExtensionEventSpec[];
@@ -100,6 +102,84 @@ export interface ExtensionVersion {
   source: Record<string, unknown>;
   changelog: string;
   createdAt: string;
+}
+
+// ---- build pipeline (Task 06) ----------------------------------------------------
+
+/** Pipeline states, emitted by the build worker the moment each step runs. */
+export type BuildState =
+  | "idle"
+  | "validating"
+  | "source-validation"
+  | "resolving-dependencies"
+  | "compiling"
+  | "packaging"
+  | "verifying"
+  | "success"
+  | "failed"
+  | "cancelled";
+
+export interface BuildLogLine {
+  step: string;
+  level: string;
+  message: string;
+}
+
+/** One streamed build event (SSE): state | log | result | conflict. */
+export interface BuildEvent {
+  type: "state" | "log" | "result" | "conflict";
+  state?: BuildState;
+  step?: string;
+  level?: string;
+  message?: string;
+  buildId?: string;
+  ok?: boolean;
+  version?: string;
+  checksum?: string;
+  size?: number;
+  error?: string;
+  failedStep?: string;
+  conflict?: VersionConflict;
+}
+
+/** Version-collision choices the backend actually supports. */
+export interface VersionConflict {
+  version: string;
+  builtAt?: string;
+  suggestions: Array<{
+    action: "use-existing" | "change-version" | "bump-patch";
+    label: string;
+    version?: string;
+  }>;
+}
+
+/** One real build run — the build history row. */
+export interface BuildRecord {
+  id: string;
+  extensionId: string;
+  version: string;
+  status: "running" | "success" | "failed" | "cancelled";
+  failedStep?: string;
+  error?: string;
+  logs: BuildLogLine[];
+  checksum?: string;
+  size?: number;
+  changelog?: string;
+  createdAt: string;
+  finishedAt?: string;
+}
+
+/** Diff-based AI fix proposal for a failed build. */
+export interface FixProposal {
+  buildId: string;
+  target: "source" | "manifest";
+  explanation: string;
+  diff: string;
+  newContent: string;
+  valid: boolean;
+  problems?: Array<{ line: number; message: string }>;
+  provider?: string;
+  model?: string;
 }
 
 export type { ThemePreference };

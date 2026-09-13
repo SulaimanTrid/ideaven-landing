@@ -173,12 +173,12 @@ func (s *Service) List(ctx context.Context, ownerID string, query ListQuery) ([]
 	}
 
 	statuses := map[string][]string{
-		"":         {StatusDraft, StatusPublished},
-		"active":   {StatusDraft, StatusPublished},
-		"draft":    {StatusDraft},
+		"":          {StatusDraft, StatusPublished},
+		"active":    {StatusDraft, StatusPublished},
+		"draft":     {StatusDraft},
 		"published": {StatusPublished},
-		"archived": {StatusArchived},
-		"all":      {StatusDraft, StatusPublished, StatusArchived},
+		"archived":  {StatusArchived},
+		"all":       {StatusDraft, StatusPublished, StatusArchived},
 	}[query.Status]
 
 	projects, total, err := s.store.List(ctx, ListFilter{

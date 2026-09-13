@@ -11,18 +11,24 @@ function controlButtonClasses(disabled: boolean) {
 
 type TopBarProps = {
   status: EngineStatus;
+  /** Live coin score from the running preview — real state, really rendered. */
+  score: number;
   onRun: () => void;
   onPause: () => void;
   onStop: () => void;
 };
 
 /** Editor chrome: project identity plus Run / Pause / Stop / AI controls. */
-export function TopBar({ status, onRun, onPause, onStop }: TopBarProps) {
+export function TopBar({ status, score, onRun, onPause, onStop }: TopBarProps) {
   return (
     <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel/80 px-3">
       <span className="flex min-w-0 items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1 font-mono text-[11px] text-fog">
         <IconBolt size={11} className="shrink-0 text-amber" />
         <span className="truncate">coin-run.scene</span>
+        <span aria-hidden="true" className="h-3.5 w-px bg-line" />
+        <span className="shrink-0 tabular-nums text-amber" aria-label={`Score ${score}`}>
+          SCORE {String(score).padStart(2, "0")}
+        </span>
       </span>
 
       <div className="flex items-center gap-1.5">

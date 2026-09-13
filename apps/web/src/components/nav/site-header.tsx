@@ -120,6 +120,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
+          <LanguageSwitcher compact />
           {authenticated ? (
             <div ref={menuRef} className="relative">
               <button
@@ -226,8 +227,7 @@ export function SiteHeader() {
           <div className="mt-4 flex items-center justify-between rounded-lg border border-line px-3 py-2">
             <span className="text-[13px] text-fog">Theme</span>
             <LanguageSwitcher compact />
-            <LanguageSwitcher compact />
-              <ThemeToggle />
+            <ThemeToggle />
           </div>
           <div className="mt-3 flex flex-col gap-2 pb-1">
             {authenticated ? (

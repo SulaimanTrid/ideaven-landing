@@ -42,6 +42,11 @@ var allowedMIMEs = map[string]string{
 	"image/jpeg": "image",
 	"image/webp": "image",
 	"image/gif":  "image",
+	// Audio powers the play-sound/stop-sound block vocabulary; http.
+	// DetectContentType sniffs these reliably (WAV → audio/wave).
+	"audio/wave":      "audio",
+	"audio/mpeg":      "audio",
+	"application/ogg": "audio",
 }
 
 // ErrTooLarge, ErrUnsupportedType, ErrTooMany and ErrBadName are the

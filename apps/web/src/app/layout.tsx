@@ -78,15 +78,15 @@ export default function RootLayout({
           Skip to content
         </a>
         <ThemeProvider>
-          <I18nProvider>
           <AuthProvider>
+          <I18nProvider>
             <SiteHeader />
             <main id="main">{children}</main>
             <FooterGate>
               <SiteFooter />
             </FooterGate>
-          </AuthProvider>
           </I18nProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

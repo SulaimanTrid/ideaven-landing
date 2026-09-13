@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { AuthShell } from "@/components/auth/auth-shell";
+import { LocalizedAuthShell } from "@/components/auth/localized-auth-shell";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 
 export const metadata: Metadata = {
@@ -11,20 +10,13 @@ export const metadata: Metadata = {
 
 export default function ForgotPasswordPage() {
   return (
-    <AuthShell
-      kicker="Account recovery"
-      title="Forgot your password?"
-      description="Enter your email and we will send you a reset link."
-      footer={
-        <>
-          Remembered it after all?{" "}
-          <Link href="/login" className="font-medium text-violet underline-offset-4 hover:underline">
-            Back to sign in
-          </Link>
-        </>
-      }
+    <LocalizedAuthShell
+      kickerKey="auth.forgotTitle"
+      titleKey="auth.forgotTitle"
+      descriptionKey="auth.forgotSub"
+      footer="forgot"
     >
       <ForgotPasswordForm />
-    </AuthShell>
+    </LocalizedAuthShell>
   );
 }

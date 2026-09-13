@@ -5,10 +5,12 @@ import { authApi } from "@/lib/api";
 import { FormAlert, SubmitButton } from "@/components/auth/form-alert";
 import { FormField, TextInput } from "@/components/auth/form-field";
 import { ApiError } from "@/types/auth";
+import { useI18n, type TranslationKey } from "@/lib/i18n/i18n";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ForgotPasswordForm() {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [pending, setPending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -55,7 +57,7 @@ export function ForgotPasswordForm() {
     <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
       {formError ? <FormAlert tone="error">{formError}</FormAlert> : null}
 
-      <FormField label="Email" error={fieldError}>
+      <FormField label={t("auth.email")} error={fieldError}>
         {({ id, describedBy, invalid }) => (
           <TextInput
             id={id}

@@ -16,6 +16,20 @@ func (r *responseRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Flush forwards flushing so SSE/streaming handlers keep working behind the
+// logger. Without it the embedded interface hides Flusher and streams die
+// with "Streaming is not supported on this connection".
+func (r *responseRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Unwrap lets http.NewResponseController reach the underlying writer.
+func (r *responseRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
 // Logger writes one structured log line per request.
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

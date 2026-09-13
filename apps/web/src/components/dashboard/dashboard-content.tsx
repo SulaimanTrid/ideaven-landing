@@ -47,12 +47,12 @@ export function DashboardContent() {
       />
 
       <div className="relative">
-        <Chip tone="violet">Workspace</Chip>
+        <Chip tone="violet">{t("dash.projects") === "Proyek" ? "Ruang Kerja" : "Workspace"}</Chip>
 
         <div className="mt-5 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0">
             <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-              Welcome back.
+              {t("dash.welcome")}
             </h1>
             <p className="mt-3 text-pretty text-lg leading-8 text-fog">
               Good to see you, {user.displayName}. {t("dash.welcomeSub")}
@@ -64,14 +64,14 @@ export function DashboardContent() {
             className="shrink-0 self-start md:self-auto"
           >
             <IconPlus size={16} />
-            Create Project
+            {t("dash.createProjectBtn")}
           </ButtonLink>
         </div>
 
         {!user.emailVerified ? (
           <div className="mt-8 flex flex-col gap-3 rounded-xl border border-amber/30 bg-amber/10 p-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[13px] leading-5 text-amber">
-              Your email isn&apos;t verified yet — verify it to secure account recovery.
+              {t("dash.verifyBanner")}
             </p>
             {resendState === "sent" ? (
               <span className="text-[13px] text-amber/80">New link sent — check your inbox.</span>
@@ -82,7 +82,7 @@ export function DashboardContent() {
                 onClick={resend}
                 disabled={resendState === "sending"}
               >
-                {resendState === "sending" ? "Sending…" : "Resend link"}
+                {resendState === "sending" ? t("dash.sending") : t("dash.resendLink")}
               </Button>
             )}
           </div>
@@ -147,10 +147,10 @@ export function DashboardContent() {
                 </Block>
               </div>
 
-              <p className="mt-8 text-lg font-medium">No projects yet.</p>
+              <p className="mt-8 text-lg font-medium">{t("dash.emptyTitle")}</p>
               <p className="mt-1 text-fog">Your next idea could start here.</p>
               <ButtonLink href="/dashboard/projects/new" className="mt-6">
-                Create your first project
+                {t("dash.createFirst")}
               </ButtonLink>
             </div>
           )}

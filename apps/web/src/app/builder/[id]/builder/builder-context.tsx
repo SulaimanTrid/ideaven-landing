@@ -8,6 +8,7 @@ import type {
   ProjectModelHandler,
 } from "@/types/project";
 import type { PropsPatch } from "@/lib/project-model/ops";
+import type { StackTarget } from "@/lib/project-model/blocks";
 import type { SyncDiagnostic } from "@/lib/project-model/code-sync";
 
 /**
@@ -77,8 +78,8 @@ export interface BuilderContextValue {
   applyDrop: () => void;
   /**
    * Commit a whole model snapshot as one undoable step (AI changesets,
-   * asset registration, restores). origin:"ai" labels the resulting server
-   * snapshot as an applied AI changeset.
+   * asset registration, restores, canvas gestures). origin:"ai" labels the
+   * resulting server snapshot as an applied AI changeset.
    */
   commitModel: (next: ProjectModel, options?: { origin?: "ai" }) => void;
   saveNow: () => Promise<void>;
@@ -96,6 +97,7 @@ export interface BuilderContextValue {
     deleteScreen: (screenId: string) => void;
     setStartScreen: (screenId: string) => void;
     updateScreenStyles: (screenId: string, patch: PropsPatch) => void;
+    updatePreviewSettings: (patch: NonNullable<ProjectModel["settings"]["preview"]>) => void;
     // Code ↔ model sync.
     applyCodeSync: (screenId: string, handlers: ProjectModelHandler[]) => void;
     setScreenCode: (screenId: string, code: string | null) => void;
@@ -109,6 +111,15 @@ export interface BuilderContextValue {
     setBlockInput: (handlerId: string, blockId: string, key: string, value: string | number | boolean) => void;
     addVariable: (name: string, type: string) => void;
     removeVariable: (id: string) => void;
+    // Blocks canvas — free movement (every call is one undoable commit).
+    moveRunTo: (sourceHandlerId: string, blockId: string, target: StackTarget) => void;
+    parkStatement: (sourceHandlerId: string, blockId: string, x: number, y: number) => void;
+    attachParkedRun: (leadBlockId: string, target: StackTarget) => void;
+    moveParkedRun: (leadBlockId: string, x: number, y: number) => void;
+    removeParkedRun: (leadBlockId: string) => void;
+    duplicateStatementBlock: (handlerId: string, blockId: string) => void;
+    duplicateParkedRun: (leadBlockId: string) => void;
+    moveScript: (handlerId: string, x: number, y: number) => void;
     undo: () => void;
     redo: () => void;
     canUndo: boolean;
@@ -126,6 +137,8 @@ export function useBuilder(): BuilderContextValue {
 
 /** Tree display label: the component's text content when it has one. */
 export function componentLabel(node: ProjectModelComponent): string {
+  const named = node.props?.name; // scene entities carry an explicit name
+  if (typeof named === "string" && named.trim() !== "") return named.trim();
   const text = node.props?.text ?? node.props?.label;
   return typeof text === "string" && text.trim() !== "" ? text.trim() : node.type;
 }

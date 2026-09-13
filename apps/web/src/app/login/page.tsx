@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { AuthShell } from "@/components/auth/auth-shell";
+import { LocalizedAuthShell } from "@/components/auth/localized-auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 
 export const metadata: Metadata = {
@@ -11,21 +10,13 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <AuthShell
-      kicker="Welcome back"
-      title="Log in"
-      description="Sign in to pick up right where you left off."
-      footer={
-        <>
-          New here?{" "}
-          <Link href="/register" className="font-medium text-violet underline-offset-4 hover:underline">
-            Create an account
-          </Link>{" "}
-          — it takes a minute.
-        </>
-      }
+    <LocalizedAuthShell
+      kickerKey="dash.welcome"
+      titleKey="auth.loginTitle"
+      descriptionKey="auth.loginSub"
+      footer="login"
     >
       <LoginForm />
-    </AuthShell>
+    </LocalizedAuthShell>
   );
 }

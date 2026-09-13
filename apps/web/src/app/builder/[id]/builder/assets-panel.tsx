@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { assetApi, imageUrl, type ProjectAsset } from "@/lib/api";
 import { ApiError } from "@/types/auth";
 import { insertComponent, locateComponent, newComponent } from "@/lib/project-model/ops";
 import { useBuilder } from "./builder-context";
+import { useI18n } from "@/lib/i18n/i18n";
 import { IconClose, IconImage, IconPlus, IconTrash } from "@/components/visuals/icons";
 
 /**
@@ -24,6 +26,7 @@ function formatSize(bytes: number): string {
 
 export function AssetsPanel({ onClose }: { onClose: () => void }) {
   const { project, model, commitModel, activeScreenId, selectedId, actions } = useBuilder();
+  const { t } = useI18n();
   const [assets, setAssets] = useState<ProjectAsset[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -130,13 +133,19 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
         <div className="flex items-center gap-2">
           <IconImage size={15} className="text-mint" />
-          <h2 className="text-[14px] font-semibold">Assets</h2>
+          <h2 className="text-[14px] font-semibold">{t("builder.assetsTitle")}</h2>
           {assets ? (
             <span className="font-mono text-[11px] text-mist">
               {assets.length}/{ASSET_LIMIT}
             </span>
           ) : null}
         </div>
+        <Link
+          href={`/builder/${project.id}/asset-studio`}
+          className="rounded-md border border-violet/40 bg-violet/10 px-2 py-1 text-[11.5px] font-medium text-violet transition-colors hover:bg-violet/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+        >
+          🎨 {t("builder.assetStudio")}
+        </Link>
         <button
           type="button"
           aria-label="Close Assets"

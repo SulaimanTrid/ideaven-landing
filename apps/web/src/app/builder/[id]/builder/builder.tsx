@@ -9,8 +9,8 @@ import { Palette } from "./palette";
 import { ScreensPanel } from "./screens-panel";
 import { ComponentTree } from "./tree";
 import { Inspector } from "./inspector";
-import { BlocksMode } from "./blocks-mode";
-import { BlocksSidePanel, BlockPalette } from "./blocks-side";
+import { BlocksWorkspace } from "./blocks-mode";
+import { BlocksSidePanel } from "./blocks-side";
 import { CodeMode } from "./code-mode";
 import { PreviewMode } from "./preview-mode";
 import { DiagnosticsPanel } from "./diagnostics-panel";
@@ -45,18 +45,28 @@ import {
   setStartScreen,
   updateComponent,
   updateScreenStyles,
+  updatePreviewSettings,
 } from "@/lib/project-model/ops";
 import {
   addHandler,
   addStatement,
   addVariable,
+  attachParked,
+  duplicateAttached,
+  duplicateParked,
+  moveParked,
+  moveRun,
   moveStatement,
+  parkRun,
   removeBlock,
   removeHandler,
+  removeParked,
   removeVariable,
   setBlockInput,
+  setScriptPosition,
   setSlot,
 } from "@/lib/project-model/blocks";
+import type { StackTarget } from "@/lib/project-model/blocks";
 import { projectApi } from "@/lib/api";
 import { ApiError } from "@/types/auth";
 import type { ProjectModel, ProjectModelBlock } from "@/types/project";
@@ -374,6 +384,8 @@ function BuilderSession({
       setStartScreen: (screenId) => commit(setStartScreen(modelRef.current, screenId)),
       updateScreenStyles: (screenId, patch: PropsPatch) =>
         commit(updateScreenStyles(modelRef.current, screenId, patch)),
+      updatePreviewSettings: (patch) =>
+        commit(updatePreviewSettings(modelRef.current, patch)),
       // Code ↔ model sync.
       applyCodeSync: (screenId, handlers) => {
         const next = applyCodeSync(modelRef.current, screenId, handlers);
@@ -408,6 +420,31 @@ function BuilderSession({
       },
       addVariable: (name, type) => commit(addVariable(modelRef.current, name, type)),
       removeVariable: (id) => commit(removeVariable(modelRef.current, id)),
+      // Blocks canvas — free movement, one undoable commit per call.
+      moveRunTo: (sourceHandlerId, blockId, target: StackTarget) => {
+        commit(moveRun(modelRef.current, activeScreenIdRef.current, sourceHandlerId, blockId, target));
+      },
+      parkStatement: (sourceHandlerId, blockId, x, y) => {
+        commit(parkRun(modelRef.current, activeScreenIdRef.current, sourceHandlerId, blockId, x, y));
+      },
+      attachParkedRun: (leadBlockId, target: StackTarget) => {
+        commit(attachParked(modelRef.current, activeScreenIdRef.current, leadBlockId, target));
+      },
+      moveParkedRun: (leadBlockId, x, y) => {
+        commit(moveParked(modelRef.current, activeScreenIdRef.current, leadBlockId, x, y));
+      },
+      removeParkedRun: (leadBlockId) => {
+        commit(removeParked(modelRef.current, activeScreenIdRef.current, leadBlockId));
+      },
+      duplicateStatementBlock: (handlerId, blockId) => {
+        commit(duplicateAttached(modelRef.current, activeScreenIdRef.current, handlerId, blockId));
+      },
+      duplicateParkedRun: (leadBlockId) => {
+        commit(duplicateParked(modelRef.current, activeScreenIdRef.current, leadBlockId));
+      },
+      moveScript: (handlerId, x, y) => {
+        commit(setScriptPosition(modelRef.current, activeScreenIdRef.current, handlerId, x, y));
+      },
       undo: () => {
         history.undo();
         setSelectedId(null);
@@ -462,9 +499,14 @@ function BuilderSession({
       setIndicator,
       commitModel: (next, options) => {
         commit(next);
-        if (options?.origin === "ai") pendingOriginRef.current = "ai";
+        if (options?.origin === "ai") {
+          pendingOriginRef.current = "ai";
+          // An AI changeset can rewrite whole screens — stale selections go.
+          setSelectedId(null);
+          setSelectedHandlerId(null);
+          return;
+        }
         setSelectedId(null);
-        setSelectedHandlerId(null);
       },
       applyDrop: () => {
         const payload = draggingRef.current;
@@ -519,7 +561,7 @@ function BuilderSession({
           {mode === "design" ? (
             <BuilderCanvas />
           ) : mode === "blocks" ? (
-            <BlocksMode />
+            <BlocksWorkspace />
           ) : mode === "preview" ? (
             <PreviewMode />
           ) : mode === "insights" ? (
@@ -528,7 +570,7 @@ function BuilderSession({
             <CodeMode />
           )}
 
-          {/* Right rail: design tools / blocks palette */}
+          {/* Right rail: design tools (Blocks mode renders its own palette rail) */}
           {mode === "design" ? (
             <aside className="hidden w-72 shrink-0 flex-col border-l border-line bg-panel lg:flex">
               <div className="flex max-h-[45%] flex-col border-b border-line">
@@ -546,18 +588,6 @@ function BuilderSession({
                   </h3>
                 </div>
                 <Inspector />
-                <div className="h-6" />
-              </div>
-            </aside>
-          ) : mode === "blocks" ? (
-            <aside className="hidden w-72 shrink-0 flex-col border-l border-line bg-panel lg:flex">
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <div className="p-3 pb-1">
-                  <h3 className="px-1 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
-                    Blocks
-                  </h3>
-                </div>
-                <BlockPalette />
                 <div className="h-6" />
               </div>
             </aside>

@@ -52,7 +52,7 @@ func (s *Store) FindBySelector(ctx context.Context, selector string) (*Session, 
 	row := s.db.QueryRowContext(ctx, `
 		SELECT s.selector, s.verifier_hash, s.created_at, s.last_seen_at, s.expires_at,
 		       u.id, u.email, u.username, u.password_hash, u.display_name,
-		       u.bio, u.avatar_url, u.email_verified, u.created_at, u.updated_at, u.last_login_at
+		       u.bio, u.avatar_url, u.locale, u.email_verified, u.created_at, u.updated_at, u.last_login_at
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.selector = $1`, selector)
@@ -61,7 +61,7 @@ func (s *Store) FindBySelector(ctx context.Context, selector string) (*Session, 
 	sess.User = &user.User{}
 	err := row.Scan(&sess.Selector, &sess.VerifierHash, &sess.CreatedAt, &sess.LastSeenAt, &sess.ExpiresAt,
 		&sess.User.ID, &sess.User.Email, &sess.User.Username, &sess.User.PasswordHash, &sess.User.DisplayName,
-		&sess.User.Bio, &sess.User.AvatarURL, &sess.User.EmailVerified, &sess.User.CreatedAt, &sess.User.UpdatedAt, &sess.User.LastLoginAt)
+		&sess.User.Bio, &sess.User.AvatarURL, &sess.User.Locale, &sess.User.EmailVerified, &sess.User.CreatedAt, &sess.User.UpdatedAt, &sess.User.LastLoginAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
