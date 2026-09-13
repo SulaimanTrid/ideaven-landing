@@ -43,11 +43,12 @@ type Handler struct {
 	usage    *usageStore
 	db       *sql.DB
 	cookie   CookieConfig
+	dedupe   *commandDeduper
 }
 
 // NewHandler builds the AI handler. provider may be nil (AI not configured).
 func NewHandler(provider Provider, auth AuthenticateFunc, db *sql.DB, cookie CookieConfig) *Handler {
-	return &Handler{provider: provider, auth: auth, usage: &usageStore{db: db}, db: db, cookie: cookie}
+	return &Handler{provider: provider, auth: auth, usage: &usageStore{db: db}, db: db, cookie: cookie, dedupe: newCommandDeduper()}
 }
 
 // projectRules loads the caller's durable project rules (5.0 M5). The JOIN
@@ -206,7 +207,18 @@ func (h *Handler) Command(w http.ResponseWriter, r *http.Request) {
 			rows.Close()
 		}
 	}
-	userMessage := buildUserMessage(prompt, body.Context, rules, intent)
+	// 5B Context Engine: ranked, budgeted, sanitized, deterministic assembly.
+	userMessage := assembleContext(prompt, body.Context, rules, intent, DefaultContextBudget)
+
+	// 5L duplicate prevention: an identical command (same user, project,
+	// prompt, and context payload) inside the dedupe window replays the
+	// original validated response — no second provider call, no double
+	// credit burn, no divergent plans for one intent.
+	fingerprint := commandDeduperKey(current.ID, body.ProjectID, prompt, string(jsonEncodeItems(body.Context)))
+	if cached, ok := h.dedupe.lookup(fingerprint); ok {
+		httpx.WriteJSON(w, http.StatusOK, cached)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
@@ -227,7 +239,18 @@ func (h *Handler) Command(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.dedupe.remember(fingerprint, response)
 	httpx.WriteJSON(w, http.StatusOK, response)
+}
+
+// jsonEncodeItems serializes context items deterministically for the
+// dedupe fingerprint (never hashed raw client bytes order-sensitively).
+func jsonEncodeItems(items []ContextItem) string {
+	encoded, err := json.Marshal(items)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 func decodeCommand(r *http.Request) (*commandRequest, error) {

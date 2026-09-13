@@ -18,7 +18,7 @@ interface Command {
   id: string;
   label: string;
   hint?: string;
-  group: "Actions" | "Navigate" | "Projects" | "Builder" | "Theme";
+  group: "Actions" | "Navigate" | "Projects" | "Project" | "Builder" | "Theme";
   keywords?: string;
   run: () => void;
 }
@@ -29,8 +29,21 @@ interface ProjectHit {
   type: string;
 }
 
+/** One searchable object inside the open project (M5 universal search). */
+interface ProjectObjectHit {
+  id: string;
+  label: string;
+  hint: string;
+  jump: { screenId: string; componentId?: string; handlerId?: string };
+}
+
 function isBuilderPath(path: string): boolean {
   return /^\/builder\/[^/]+/.test(path);
+}
+
+function builderProjectId(path: string): string | null {
+  const match = path.match(/^\/builder\/([0-9a-f-]{36})/i);
+  return match ? match[1]! : null;
 }
 
 export function CommandPalette() {
@@ -39,6 +52,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [projects, setProjects] = useState<ProjectHit[] | null>(null);
+  const [objects, setObjects] = useState<ProjectObjectHit[]>([]);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
@@ -46,7 +60,8 @@ export function CommandPalette() {
   // Builder context (mode switching) is read lazily via a DOM hook: the
   // palette is platform-chrome, not a builder consumer, so it dispatches
   // clicks on the real mode buttons instead of importing builder context.
-  const builderPath = isBuilderPath(usePathnameSafe());
+  const pathname = usePathnameSafe();
+  const builderPath = isBuilderPath(pathname);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -65,6 +80,61 @@ export function CommandPalette() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
+
+  // M5 universal search: inside a builder, index the open project's
+  // screens, components, handlers, blocks, variables, and assets.
+  useEffect(() => {
+    if (!open || !builderPath) return;
+    const projectId = builderProjectId(pathname);
+    if (!projectId) return;
+    let cancelled = false;
+    projectApi
+      .get(projectId)
+      .then(({ project }) => {
+        if (cancelled) return;
+        const model = project.model;
+        const hits: ProjectObjectHit[] = [];
+        const eventName = (event: string) => event.replace(/^touches-/, "touches ");
+        for (const screen of model.screens) {
+          hits.push({ id: `screen-${screen.id}`, label: screen.name, hint: "screen", jump: { screenId: screen.id } });
+          const walk = (nodes: typeof screen.components, depth: number) => {
+            for (const node of nodes) {
+              const label = String(node.props?.text ?? node.props?.label ?? "") || node.type;
+              hits.push({
+                id: `comp-${node.id}`,
+                label: `${label} (${node.type})`,
+                hint: depth === 0 ? "component" : `in ${screen.name}`,
+                jump: { screenId: screen.id, componentId: node.id },
+              });
+              if (node.children) walk(node.children, depth + 1);
+            }
+          };
+          walk(screen.components, 0);
+          for (const handler of screen.logic?.handlers ?? []) {
+            const body = (function count(blocks: typeof handler.body): number {
+              return blocks.reduce((n, b) => n + 1 + count(b.children ?? []) + count(b.elseChildren ?? []), 0);
+            })(handler.body);
+            hits.push({
+              id: `handler-${handler.id}`,
+              label: `when ${handler.componentId ?? "screen"} ${eventName(handler.event)}`,
+              hint: `${body} block${body === 1 ? "" : "s"}`,
+              jump: { screenId: screen.id, handlerId: handler.id },
+            });
+          }
+        }
+        for (const variable of model.variables) {
+          hits.push({ id: `var-${variable.id}`, label: variable.name, hint: "variable", jump: { screenId: model.navigation.startScreenId || model.screens[0]?.id || "" } });
+        }
+        for (const asset of model.assets) {
+          hits.push({ id: `asset-${asset.id}`, label: asset.name, hint: "asset", jump: { screenId: model.navigation.startScreenId || model.screens[0]?.id || "" } });
+        }
+        setObjects(hits);
+      })
+      .catch(() => setObjects([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, builderPath, pathname]);
 
   useEffect(() => {
     if (open && projects === null) {
@@ -150,8 +220,26 @@ export function CommandPalette() {
               group: "Projects" as const,
               run: () => navigate(`/builder/${p.id}`),
             }));
-    return [...projectHits, ...matching];
-  }, [commands, projects, q, navigate]);
+    const objectHits: Command[] =
+      builderPath && q !== ""
+        ? objects
+            .filter((o) => o.label.toLowerCase().includes(q) || o.hint.toLowerCase().includes(q))
+            .slice(0, 8)
+            .map((o) => ({
+              id: o.id,
+              label: o.label,
+              hint: o.hint,
+              group: "Project" as const,
+              run: () => {
+                close();
+                window.dispatchEvent(
+                  new CustomEvent("ideaven:palette-jump", { detail: o.jump }),
+                );
+              },
+            }))
+        : [];
+    return [...projectHits, ...objectHits, ...matching];
+  }, [commands, projects, objects, q, navigate, builderPath, close]);
 
   useEffect(() => setActive(0), [query]);
 

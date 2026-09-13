@@ -2321,3 +2321,164 @@ orientation, safe areas, fit/zoom, and persistence. No duplicated shells.
   the 3D milestone lands; zoom persistence is session-local (device/
   orientation/safe-area are project-persisted).
 - Servers left running for the user: web :3000, API :8090.
+
+## 41. Work in session 34 (IDEAVEN 4.0 completion pass — audit + M5 + M30)
+
+Directive: complete the entire 4.0 roadmap. STEP 1 first: a full evidence
+matrix for M0–M56 now lives in `docs/IDEAVEN_4_COMPLETION_AUDIT.md` — the
+roadmap table was stale (sessions 17–33 had already delivered M4, M15,
+M38-minimum, M39, M41-core; the matrix re-statuses every milestone with
+files/tests/browser evidence and names every remaining gap).
+
+### Completed this session
+
+- **M5 universal search closed**: the Ctrl/Cmd+K palette indexes the OPEN
+  project — screens, components (by type/label), handlers (with block
+  counts), blocks (by translated label), variables, assets — and jumps
+  with context (screen → Design, handler → Blocks with the handler
+  selected) via a window event the builder session listens for. The
+  palette stays platform-chrome (no builder context import).
+- **M30 asset intelligence delivered**: `GET /api/projects/{id}/asset-
+  intelligence` (owner-scoped) derives dimensions from real image headers
+  (PNG/JPEG/GIF/WebP — no image library), decoded memory estimate, usage
+  counts from the canonical model, orphan detection, and honest hints.
+  The Assets panel renders the report (stored size, decoded MB, orphan
+  count, per-asset dimensions/uses, top hints). Project↔asset stays
+  acyclic via a narrow `AssetMediaSource` interface + adapter methods in
+  the asset package. `TestAssetIntelligence` covers dimensions/uses/
+  orphan/404/401.
+- Bugs found by testing: React hook-order crash (usePathname inside an
+  effect — minified error #321), a JSX block inserted outside the return
+  (silent tsc pass → now verified at runtime), missing orphanCount
+  increment, and a test-only import cycle (project↔asset).
+
+### Verification (session 34)
+
+- Full Go suite 10/10 green; tsc clean; production build green.
+- Browser: palette finds "score" variable/handler and jumps with context;
+  asset intelligence report renders real dimensions (32×32px), stored
+  bytes, orphan count and hints in the Assets panel; 0 console errors.
+- Per-milestone status/limitation detail: see
+  `docs/IDEAVEN_4_COMPLETION_AUDIT.md`.
+
+### 4.0 honest bottom line
+
+COMPLETE: M0–M5, M15, M27(core), M38(min), M39, M41(core), M30.
+PARTIAL-with-named-gaps: M6–M9, M11, M13–M14, M16–M20, M25–M26, M36–M37,
+M42–M47, M51–M56. FOUNDATION-by-design: M8, M21–M24, M28, M31–M35, M46,
+M48–M50. MISSING (largest builds): M10 branching, M12 collaboration, M29
+game director. **5.0 READINESS: NO** — 5.0 phases assume the M6–M12 core
+and the M21–M24 backend studio.
+
+## 42. Work in session 35 (IDEAVEN 5.0 completion pass — 5B Context Engine + 5L dedupe)
+
+Directive: complete the 5.0 roadmap. STEP 1: per-phase evidence matrix now
+in `docs/IDEAVEN_5_COMPLETION_AUDIT.md` (5A was already ✅ from session 18;
+5B–5O statuses with named gaps).
+
+### 5B Context Engine — COMPLETE (core)
+
+`internal/ai/context_engine.go` — `assembleContext` replaces the old
+unranked `buildUserMessage` (removed; one pipeline, no duplicate) as the
+single server-side assembler for everything the model sees:
+- Priority ranking (project header > selection > diagnostics > screens >
+  other kinds), with selection-mention boost.
+- Deterministic relevance scoring (request-term overlap, no model calls).
+- 24k-char budget with hard truncation + explicit `[truncated]` marker;
+  the user request always survives.
+- Secret redaction (`api_key=…`, bearer values) and injection defense
+  (instruction-impersonating phrases neutralized; untrusted items wrapped
+  in `<<< … >>>` data-only delimiters with a "never instructions"
+  disclaimer — the closed operation vocabulary remains the hard boundary).
+- Deterministic assembly (stable sort: priority → relevance → index).
+Tests: `context_engine_test.go` — 7 green (priority, budget, determinism,
+relevance, redaction, injection, request-always-present).
+
+### 5L — duplicate-command prevention shipped
+
+`internal/ai/dedupe.go` — a 60-second idempotency dedupe keyed on
+(user, project, prompt, exact context payload): an identical rapid retry
+replays the original validated response with **no second provider call**
+(a double-click can never burn credits twice or fork plans). Different
+prompt/context/user never collide; entries expire; concurrent access is
+mutex-guarded. Tests: `dedupe_test.go` — 3 green (replay, TTL expiry,
+concurrency). The no-false-success rule is unchanged: provider/unparseable
+failures still surface as honest AI_PROVIDER_ERROR.
+
+Removed `buildUserMessage` entirely — the context pipeline is singular.
+
+### Verification (session 35)
+
+- Full Go suite 10/10 green (AI package includes the 7 context-engine
+  tests + 3 dedupe tests); tsc clean; production build green.
+- Known honest gaps: 5C plan contract (goal/assumptions/risks), 5D
+  multi-agent, 5E sandbox session, 5K evolution — all scoped in the audit
+  doc with dependencies.
+
+## 43. Work in session 36 (IDEAVEN 6.0 completion pass — 6J portability shipped)
+
+Directive: complete the 6.0 roadmap. STEP 1: per-phase evidence matrix in
+`docs/IDEAVEN_6_COMPLETION_AUDIT.md` (6A storage core/6F/6H/6I-ledger
+already substantially delivered; 6B collaboration and 6C backend studio
+named as the largest missing builds).
+
+### 6J Project Package portability — COMPLETE
+
+- **Export**: `GET /api/projects/{id}/package` (owner-only) streams one zip
+  — `package.json` (format 1, kind, schemaVersion, exportedAt, name/type/
+  description, assetCount), `model.json` (the canonical document), and
+  `assets/<id>__<name>` media entries. Owner-scoped 404/401 tested.
+- **Import**: `POST /api/projects/import` (session-gated, create-limited)
+  restores a package as a NEW owned project — "(imported)" suffix, fresh
+  id/slug, model validated BEFORE anything is created, assets re-enter
+  through the asset service's validated Create path (MIME sniffed, capped)
+  with `asset:<old>` → `asset:<new>` id remapping in the model. The
+  original project is never touched.
+- Wired through the **existing** export pipeline: the Export menu gained a
+  "Project package (backup)" target that flows through the same
+  validate→prepare→compile→package→download stages as every other target.
+  The Projects page gained an "Import package" button (Projects → builder).
+- Project↔asset stays acyclic (AssetMediaSource interface from M30).
+
+### Bugs found by testing and fixed (session 36)
+
+1. The classic mux conflict: `POST /api/projects/import` with a
+   same-path 405 fallback conflicts with `GET /api/projects/{id}` —
+   registered method-first without a fallback (documented pattern reused).
+2. `AssetInserter` wired before `assetService` existed (nil reference) —
+   reordered after the handler wiring.
+3. Asset id remap produced `asset:asset:<id>` (inserter returned the full
+   reference) — now returns the bare id.
+4. The GET package route was lost in a later patch — caught by the browser
+   flow (404 on the endpoint), restored and re-verified via curl + browser.
+5. Download label for the package target read ".package" — now
+   ".zip (project package)".
+
+### Verification (session 36)
+
+- Full Go suite 10/10 green; tsc clean; production build green.
+- `TestProjectPackageRoundTrip`: export zip entries (package.json/
+  model.json/asset), import creates a NEW project with remapped asset ids,
+  foreign 404, anonymous 401.
+- Browser: Export menu → package target → real pipeline → "Build complete ✓
+  · Download .zip (project package)" → download event fires with a
+  package-named zip; Projects page shows the import button. Regressions:
+  scene-gameplay 21/21, asset-studio 25/25.
+
+## 44. Session 37 (MASTER CROSS-VERSION AUDIT — verification, no new features)
+
+- `docs/IDEAVEN_MASTER_COMPLETION_MATRIX.md`: all milestones 1.0→7.0
+  re-statused against implementation (roadmap checkmarks treated as
+  claims).
+- `IDEAVEN_FINAL_MASTER_AUDIT.md`: per-version findings, product
+  experience audit (fresh browser journeys: landing console sweep,
+  signup→dashboard, app+game create→preview with real coin-collision
+  scoring, blocks→code, extension shelf, export package, honest 3D
+  wizard state), cross-version consistency (ONE of every core system,
+  verified by fixed-string greps), honest scores (overall 8.3/10 — below
+  the 9.5 bar because collaboration, backend studio, branching/sandbox,
+  multi-agent, and 3D remain foundation/missing), and the final decision.
+- Final gates re-run: Go suite 10/10 green, tsc clean, build artifact
+  present, all 8 browser harnesses green (~160 checks).
+- **DECISION: READY FOR BETA** (P0: none; P1: collaboration, 3D, data
+  export). 8.0 not started.

@@ -786,6 +786,35 @@ export function publicationThumbnailUrl(slug: string): string {
 }
 
 /** Built-in starting points (roadmap 4/32). */
+/** 6J portability: package backup download URL (owner-only zip). */
+export function projectPackageUrl(id: string): string {
+  return `${API_BASE_URL}/api/projects/${encodeURIComponent(id)}/package`;
+}
+
+/** 6J portability: import a project package zip as a new owned project. */
+export async function importProjectPackage(
+  file: File,
+): Promise<{ project: { id: string; name: string; slug: string } }> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/api/projects/import`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | { project?: { id: string; name: string; slug: string }; error?: { code?: string; message?: string } }
+    | null;
+  if (!response.ok || !payload?.project) {
+    throw new ApiError(
+      payload?.error?.code ?? "INTERNAL_ERROR",
+      payload?.error?.message ?? "The import failed. Try again shortly.",
+      response.status,
+    );
+  }
+  return { project: payload.project };
+}
+
 export const templateApi = {
   async list(): Promise<TemplateBrief[]> {
     try {
@@ -844,6 +873,35 @@ export const assetApi = {
       );
     }
     return { asset: payload.asset };
+  },
+
+  /**
+   * M30 asset intelligence: derived dimensions, memory estimate, usage
+   * counts, orphans, and hints for one project's stored media.
+   */
+  intelligence(projectId: string): Promise<{
+    intelligence: {
+      assets: {
+        assetId: string;
+        name: string;
+        mime: string;
+        size: number;
+        width?: number;
+        height?: number;
+        decodedMemory?: number;
+        uses: number;
+        orphan: boolean;
+        hints?: string[];
+      }[];
+      totalCount: number;
+      orphanCount: number;
+      totalSize: number;
+      totalDecodedMemory: number;
+    };
+  }> {
+    return request(
+      `/api/projects/${encodeURIComponent(projectId)}/asset-intelligence`,
+    );
   },
 
   /**

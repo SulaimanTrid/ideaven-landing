@@ -106,6 +106,8 @@ func newHarness(t *testing.T) *harness {
 	mux.HandleFunc("PATCH /api/projects/{id}", projectHandler.Update)
 	mux.HandleFunc("DELETE /api/projects/{id}", projectHandler.Delete)
 	mux.HandleFunc("POST /api/projects/{id}/duplicate", projectHandler.Duplicate)
+	mux.HandleFunc("GET /api/projects/{id}/package", projectHandler.ProjectPackage)
+	mux.HandleFunc("POST /api/projects/import", projectHandler.ImportPackage)
 	mux.HandleFunc("POST /api/projects/{id}/open", projectHandler.Open)
 	mux.HandleFunc("PUT /api/projects/{id}/model", projectHandler.UpdateModel)
 	mux.HandleFunc("GET /api/projects/{id}/versions", projectHandler.ListVersions)
@@ -114,6 +116,7 @@ func newHarness(t *testing.T) *harness {
 	mux.HandleFunc("POST /api/projects/{id}/unpublish", projectHandler.Unpublish)
 	mux.HandleFunc("GET /api/projects/{id}/intelligence", projectHandler.Intelligence)
 	mux.HandleFunc("GET /api/projects/{id}/dna", projectHandler.DNA)
+	mux.HandleFunc("GET /api/projects/{id}/asset-intelligence", projectHandler.AssetIntelligence)
 	mux.HandleFunc("GET /api/projects/{id}/intent", projectHandler.IntentGet)
 	mux.HandleFunc("PUT /api/projects/{id}/intent", projectHandler.IntentSet)
 	mux.HandleFunc("GET /api/projects/{id}/memory", projectHandler.MemoryList)
@@ -132,6 +135,14 @@ func newHarness(t *testing.T) *harness {
 		_, err := projectService.Get(ctx, ownerID, projectID)
 		return err
 	}, storage.NewLocalAdapter(filepath.Join(t.TempDir(), "assets")))
+	projectService.SetAssetMediaSource(asset.NewStore(db))
+	projectService.AssetInserter = func(ctx context.Context, ownerID, projectID, fileName string, data []byte) (string, error) {
+		inserted, err := assetService.Create(ctx, ownerID, projectID, fileName, data)
+		if err != nil {
+			return "", err
+		}
+		return inserted.ID, nil
+	}
 	assetHandler := asset.NewHandler(assetService, authService.Authenticate, asset.CookieConfig{Name: cfg.Cookie.Name})
 	mux.HandleFunc("POST /api/projects/{id}/assets", assetHandler.Upload)
 	mux.HandleFunc("GET /api/assets/{id}/raw", assetHandler.Raw)
@@ -752,4 +763,23 @@ func TestUniversalProjectTypes(t *testing.T) {
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid type = %d, want 400 (%v)", res.StatusCode, body)
 	}
+}
+
+// modelOf fetches the current canonical model as generic JSON.
+func modelOf(t *testing.T, h *harness, cookie *http.Cookie, projectID string) map[string]any {
+	t.Helper()
+	res, payload := call(t, h, http.MethodGet, "/api/projects/"+projectID, nil, cookie)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("get project = %d", res.StatusCode)
+	}
+	project, _ := payload["project"].(map[string]any)
+	model, _ := project["model"].(map[string]any)
+	return model
+}
+
+// putModel saves a modified model document.
+func putModel(t *testing.T, h *harness, cookie *http.Cookie, projectID string, model map[string]any) *http.Response {
+	t.Helper()
+	res, _ := call(t, h, http.MethodPut, "/api/projects/"+projectID+"/model", map[string]any{"model": model, "origin": "edit"}, cookie)
+	return res
 }

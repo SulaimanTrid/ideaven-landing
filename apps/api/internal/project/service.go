@@ -31,10 +31,45 @@ const (
 )
 
 // Service holds the project business logic on top of the store.
+// AssetRef is the project package's view of one stored asset (M30).
+type AssetRef struct {
+	ID    string
+	Name  string
+	MIME  string
+	Size  int
+}
+
+// AssetBytes is one asset's media payload with its identity.
+type AssetBytes struct {
+	Name string
+	MIME string
+	Data []byte
+}
+
+// AssetMediaSource (M30) is the narrow view of the asset store the project
+// package needs; the concrete store is injected by the server wiring. The
+// interface keeps project ↔ asset acyclic (the asset package adapts).
+type AssetMediaSource interface {
+	ProjectMediaList(ctx context.Context, projectID string) ([]AssetRef, error)
+	ProjectMediaData(ctx context.Context, ownerID, id string) (AssetBytes, error)
+}
+
 type Service struct {
-	store  *Store
-	db     *sql.DB
-	logger *slog.Logger
+	store      *Store
+	db         *sql.DB
+	logger     *slog.Logger
+	assetStore AssetMediaSource
+	// assetMedia aliases the same source for package portability (6J).
+	assetMedia AssetMediaSource
+	// AssetInserter, when injected, stores new media during package import
+	// and returns the new asset:<id> reference.
+	AssetInserter func(ctx context.Context, ownerID, projectID, fileName string, data []byte) (newRef string, err error)
+}
+
+// SetAssetMediaSource injects the asset store (server wiring only).
+func (s *Service) SetAssetMediaSource(source AssetMediaSource) {
+	s.assetStore = source
+	s.assetMedia = source
 }
 
 // NewService wires a Service.

@@ -163,6 +163,29 @@ function BuilderSession({
   const [lastSavedError, setLastSavedError] = useState<string | null>(null);
   const [indicator, setIndicator] = useState<DropIndicator | null>(null);
   const [mode, setMode] = useState<BuilderMode>("design");
+
+  // M5 universal search: the platform-chrome command palette dispatches
+  // context jumps (screen/component/handler) through this window event.
+  useEffect(() => {
+    const onJump = (event: Event) => {
+      const detail = (event as CustomEvent<{ screenId: string; componentId?: string; handlerId?: string }>).detail;
+      if (!detail) return;
+      setActiveScreenId(detail.screenId);
+      if (detail.handlerId) {
+        setMode("blocks");
+        setSelectedHandlerId(detail.handlerId);
+        setSelectedId(null);
+      } else if (detail.componentId) {
+        setMode("design");
+        setSelectedId(detail.componentId);
+        setSelectedHandlerId(null);
+      } else {
+        setMode("design");
+      }
+    };
+    window.addEventListener("ideaven:palette-jump", onJump);
+    return () => window.removeEventListener("ideaven:palette-jump", onJump);
+  }, []);
   const [selectedHandlerId, setSelectedHandlerId] = useState<string | null>(null);
   const [codeDiagnostics, setCodeDiagnostics] = useState<SyncDiagnostic[]>([]);
   const [aiOpen, setAiOpen] = useState(false);

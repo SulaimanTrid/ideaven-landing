@@ -184,3 +184,39 @@ providers, i18n coverage expansion, accessibility audit.
 - Status rows: 2D asset canvas TESTED (scripts/e2e-asset-studio.mjs,
   25/25); sprite textures in scenes TESTED; onion skin/tile placement
   PLANNED.
+
+## Session 34 addition (IDEAVEN 4.0 completion pass)
+
+- `docs/IDEAVEN_4_COMPLETION_AUDIT.md`: evidence matrix for M0–M56 with
+  per-milestone STATUS/FILES/TESTS/BROWSER/LIMITATIONS. Roadmap table
+  re-statused (M4/M15/M30/M38/M39/M41 were already delivered by later
+  work).
+- M5 Command Palette closed: in-builder universal search (screens,
+  components, handlers, blocks, variables, assets) with context jumps.
+- M30 Asset Intelligence delivered: owner-scoped report (dimensions from
+  image headers, decoded memory, usage, orphans, hints) + Assets panel
+  section. Project↔asset decoupled via AssetMediaSource interface.
+- Status: 4.0 NOT fully complete — see the audit doc for the honest
+  matrix; 5.0 READINESS: NO.
+
+## Session 35 addition (IDEAVEN 5.0 completion pass)
+
+- `docs/IDEAVEN_5_COMPLETION_AUDIT.md`: per-phase matrix 5A–5O with named
+  gaps (5A was ✅; 5B core + 5L dedupe now delivered; 6.0 READINESS: NO).
+- 5B Context Engine: `assembleContext` — ranked/budgeted/sanitized/
+  deterministic AI context assembly with injection defenses and secret
+  redaction (7 tests). Old unranked assembler removed (single pipeline).
+- 5L: 60s duplicate-command idempotency dedupe (3 tests) — retries never
+  double-burn AI credits.
+
+## Session 36 addition (IDEAVEN 6.0 completion pass)
+
+- `docs/IDEAVEN_6_COMPLETION_AUDIT.md`: per-phase matrix 6A–6O.
+- 6J Project Package portability COMPLETE: owner-only backup zip
+  (metadata + model + assets) + import-as-new-project with asset id
+  remapping through the validated asset path. Export menu target +
+  Projects-page import button. `TestProjectPackageRoundTrip` green;
+  browser flow 5/5.
+- Status: 6.0 NOT fully complete — 6B collaboration/orgs and 6C backend
+  studio are the largest missing builds; others partial with named gaps
+  (see audit doc). 7.0 READINESS: NO.

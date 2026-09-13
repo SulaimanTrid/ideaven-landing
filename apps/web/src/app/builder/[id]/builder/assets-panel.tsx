@@ -28,6 +28,13 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
   const { project, model, commitModel, activeScreenId, selectedId, actions } = useBuilder();
   const { t } = useI18n();
   const [assets, setAssets] = useState<ProjectAsset[] | null>(null);
+  const [intel, setIntel] = useState<{
+    totalCount: number;
+    orphanCount: number;
+    totalSize: number;
+    totalDecodedMemory: number;
+    assets: { assetId: string; name: string; width?: number; height?: number; uses: number; orphan: boolean; hints?: string[] }[];
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -36,6 +43,10 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
     try {
       const { assets: list } = await assetApi.list(project.id);
       setAssets(list);
+      assetApi
+        .intelligence(project.id)
+        .then((r) => setIntel(r.intelligence))
+        .catch(() => setIntel(null));
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load assets.");
@@ -125,6 +136,9 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
     return locateComponent(model, selectedId)?.node.type === "image";
   })();
 
+
+
+
   return (
     <aside
       aria-label="Assets"
@@ -134,7 +148,47 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2">
           <IconImage size={15} className="text-mint" />
           <h2 className="text-[14px] font-semibold">{t("builder.assetsTitle")}</h2>
-          {assets ? (
+            {intel && intel.totalCount > 0 ? (
+          <div className="shrink-0 border-b border-line px-3 py-2.5 text-[11.5px] leading-5 text-fog">
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-mist">
+              {t("assets.intelligence")}
+            </p>
+            <p className="mt-1">
+              {intel.totalCount} {t("builder.assetsTitle").toLowerCase()} ·{" "}
+              {intel.totalSize < 1024
+              ? `${intel.totalSize} B`
+              : `${(intel.totalSize / 1024).toFixed(0)} KB`}{" "}
+            {t("assets.stored")} ·{" "}
+              {(intel.totalDecodedMemory / (1024 * 1024)).toFixed(1)} MB{" "}
+              {t("assets.decoded")}
+            </p>
+            {intel.orphanCount > 0 ? (
+              <p className="mt-0.5 text-amber">
+                {intel.orphanCount} {t("assets.orphans")}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-mint">{t("assets.noOrphans")}</p>
+            )}
+            {intel.assets
+              .filter((a) => a.hints && a.hints.length > 0)
+              .slice(0, 3)
+              .map((a) => (
+                <p key={a.assetId} className="mt-0.5 text-mist">
+                  {a.name}: {a.hints?.[0]}
+                </p>
+              ))}
+            {intel.assets
+              .filter((a) => a.width)
+              .slice(0, 3)
+              .map((a) => (
+                <p key={`d-${a.assetId}`} className="text-mist">
+                  {a.name}: {a.width}×{a.height}px ({a.uses} {t("community.uses")})
+                </p>
+              ))}
+          </div>
+        ) : null}
+
+      {assets ? (
             <span className="font-mono text-[11px] text-mist">
               {assets.length}/{ASSET_LIMIT}
             </span>

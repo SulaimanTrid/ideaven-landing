@@ -41,3 +41,16 @@ marketplace complete on UI evidence alone (M345).
 - ⬜ Remaining in 6A: M8 image processing (deferred per DECISIONS-3),
   M9 avatars via the asset pipeline, M10–M12 sync engine (per DECISIONS-4),
   M7 re-verification pass.
+
+
+## Session 36 status (completion pass)
+
+- 6A storage core ✅ (session 19) + **6J project package portability ✅
+  (session 36)**: backup zip (metadata+model+assets) + import-as-new with
+  asset remapping; export menu + projects-page import UI;
+  `TestProjectPackageRoundTrip`.
+- 6F core ✅, 6H localization core ✅ (TASK 10), 6I credits ledger ✅
+  (session 10) — remaining gaps named in
+  `docs/IDEAVEN_6_COMPLETION_AUDIT.md`.
+- 6B (collaboration/orgs) and 6C (backend studio) remain the largest
+  missing builds; commerce stays locked per DEC-6.0. 7.0 READINESS: NO.

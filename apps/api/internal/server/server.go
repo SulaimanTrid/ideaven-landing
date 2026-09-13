@@ -62,6 +62,7 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	// Phase 4: projects. Every route is scoped to the session's user; project
 	// IDs never travel as a trust signal.
 	projectService := project.NewService(db, slog.Default())
+	projectService.SetAssetMediaSource(asset.NewStore(db))
 	projectHandler := project.NewHandler(projectService, authService, cfg.Cookie)
 
 	// Project creation writes a row plus a model document; cap it per IP so
@@ -78,6 +79,13 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		http.MethodDelete: http.HandlerFunc(projectHandler.Delete),
 	})
 	route(mux, http.MethodPost, "/api/projects/{id}/duplicate", http.HandlerFunc(projectHandler.Duplicate))
+	// 6J project package portability: owner-only backup zip + import.
+	// The import route registers method-first WITHOUT a same-path fallback:
+	// a literal "import" segment conflicts with the {id} wildcard's 405
+	// fallback (the documented mux rule). Other methods on the literal path
+	// fall through to GET /{id}, which rejects "import" as a malformed id.
+	mux.Handle("POST /api/projects/import", middleware.Chain(http.HandlerFunc(projectHandler.ImportPackage), createLimiter.Middleware))
+	route(mux, http.MethodGet, "/api/projects/{id}/package", http.HandlerFunc(projectHandler.ProjectPackage))
 	route(mux, http.MethodPost, "/api/projects/{id}/open", http.HandlerFunc(projectHandler.Open))
 	route(mux, http.MethodPut, "/api/projects/{id}/model", http.HandlerFunc(projectHandler.UpdateModel))
 	route(mux, http.MethodGet, "/api/projects/{id}/versions", http.HandlerFunc(projectHandler.ListVersions))
@@ -87,6 +95,8 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	route(mux, http.MethodGet, "/api/projects/{id}/intelligence", http.HandlerFunc(projectHandler.Intelligence))
 	// Roadmap 4.0 M3: project DNA — derived understanding document.
 	route(mux, http.MethodGet, "/api/projects/{id}/dna", http.HandlerFunc(projectHandler.DNA))
+	// Roadmap 4.0 M30: derived asset intelligence (owner-only).
+	route(mux, http.MethodGet, "/api/projects/{id}/asset-intelligence", http.HandlerFunc(projectHandler.AssetIntelligence))
 	// Roadmap 7.0 M11 (phase 7A): project intent — structured purpose.
 	routeMethods(mux, "/api/projects/{id}/intent", map[string]http.Handler{
 		http.MethodGet: http.HandlerFunc(projectHandler.IntentGet),
@@ -204,6 +214,16 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		return err
 	}, storage.NewLocalAdapter(filepath.Join(".data", "assets")))
 	assetHandler := asset.NewHandler(assetService, authService.Authenticate, asset.CookieConfig{Name: cfg.Cookie.Name})
+
+	// 6J package import: assets re-enter through the asset service's
+	// validated Create path (MIME sniffed, capped) — never raw bytes.
+	projectService.AssetInserter = func(ctx context.Context, ownerID, projectID, fileName string, data []byte) (string, error) {
+		inserted, err := assetService.Create(ctx, ownerID, projectID, fileName, data)
+		if err != nil {
+			return "", err
+		}
+		return inserted.ID, nil // bare id — the importer remaps asset:<old> → asset:<new>
+	}
 	uploadLimiter := middleware.NewRateLimiter(30, time.Minute)
 
 	routeMethods(mux, "/api/projects/{id}/assets", map[string]http.Handler{

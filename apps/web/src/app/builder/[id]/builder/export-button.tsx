@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { projectApi } from "@/lib/api";
+import { projectPackageUrl, projectApi } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/i18n";
 import { useBuilder } from "./builder-context";
 import { getAnyBlockDef } from "@/lib/project-model/block-registry";
@@ -20,7 +20,7 @@ import { IconClose } from "@/components/visuals/icons";
  * toolchains live; the labels say exactly that.
  */
 
-type TargetId = "web" | "apk" | "aab" | "exe";
+type TargetId = "web" | "apk" | "aab" | "exe" | "package";
 
 type Target = {
   id: TargetId;
@@ -49,6 +49,13 @@ const TARGETS: Target[] = [
     title: "Android · AAB (Play)",
     output: "gradle project zip → .aab via bundleDebug",
     where: "Same project, preconfigured for the Play bundle; CI uploads the artifact.",
+  },
+  {
+    id: "package",
+    title: "Project package (backup)",
+    output: ".zip — model + assets + metadata",
+    where: "Re-importable from the Projects page as a new copy.",
+    primary: false,
   },
   {
     id: "exe",
@@ -197,7 +204,9 @@ export function ExportButton() {
         ? projectApi.exportHTMLUrl(project.id)
         : target.id === "exe"
           ? projectApi.exportWindowsUrl(project.id)
-          : projectApi.exportAndroidUrl(project.id, target.id);
+          : target.id === "package"
+            ? projectPackageUrl(project.id)
+            : projectApi.exportAndroidUrl(project.id, target.id);
     try {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) {
@@ -414,7 +423,7 @@ export function ExportButton() {
             >
               <span className="block text-[13px] font-semibold text-ink">Build complete ✓</span>
               <span className="mt-0.5 block font-mono text-[11px] text-fog">
-                Download {activeTarget.id === "web" ? ".html" : `.${activeTarget.id === "exe" ? "zip (Windows project)" : activeTarget.id}`}{bytes !== null ? ` · ${formatBytes(bytes)}` : ""}
+                Download {activeTarget.id === "web" ? ".html" : `.${activeTarget.id === "exe" ? "zip (Windows project)" : activeTarget.id === "package" ? "zip (project package)" : activeTarget.id}`}{bytes !== null ? ` · ${formatBytes(bytes)}` : ""}
               </span>
             </a>
           ) : null}

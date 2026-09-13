@@ -304,6 +304,14 @@ export const dictionaries = {
     "viewport.width": "Width",
     "viewport.height": "Height",
 
+
+    "assets.intelligence": "Asset intelligence",
+    "assets.stored": "stored",
+    "assets.decoded": "decoded",
+    "assets.orphans": "orphaned assets — unused by any component",
+    "assets.noOrphans": "Every asset is in use.",
+    "community.uses": "uses",
+
     "errors.NETWORK_ERROR": "Cannot reach the Ideaven service. Check your connection and try again.",
     "errors.UNAUTHORIZED": "Please sign in to continue.",
     "errors.VALIDATION_ERROR": "Some details need fixing before this can be saved.",
@@ -662,6 +670,14 @@ export const dictionaries = {
     "viewport.fit": "Pas",
     "viewport.width": "Lebar",
     "viewport.height": "Tinggi",
+
+
+    "assets.intelligence": "Inteligensi aset",
+    "assets.stored": "tersimpan",
+    "assets.decoded": "terdekode",
+    "assets.orphans": "aset yatim — tidak dipakai komponen mana pun",
+    "assets.noOrphans": "Semua aset terpakai.",
+    "community.uses": "dipakai",
 
     "errors.NETWORK_ERROR": "Tidak dapat menghubungi layanan Ideaven. Periksa koneksimu dan coba lagi.",
     "errors.UNAUTHORIZED": "Silakan masuk untuk melanjutkan.",

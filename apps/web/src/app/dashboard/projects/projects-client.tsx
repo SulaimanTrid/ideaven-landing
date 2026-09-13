@@ -1,5 +1,7 @@
 "use client";
 
+import { importProjectPackage } from "@/lib/api";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { Button, ButtonLink, Chip } from "@ideaven/ui";
 import { Modal } from "@/components/dashboard/modal";
@@ -95,14 +97,17 @@ export function ProjectsClient() {
               your library.
             </p>
           </div>
-          <ButtonLink
-            href="/dashboard/projects/new"
-            size="lg"
-            className="shrink-0 self-start md:self-auto"
-          >
-            <IconPlus size={16} />
-            Create Project
-          </ButtonLink>
+          <div className="flex shrink-0 flex-col gap-2 self-start md:flex-row md:self-auto">
+            <ImportPackageButton />
+            <ButtonLink
+              href="/dashboard/projects/new"
+              size="lg"
+              className="shrink-0"
+            >
+              <IconPlus size={16} />
+              Create Project
+            </ButtonLink>
+          </div>
         </div>
 
         {/* Toolbar: search, status tabs, sort. */}
@@ -421,5 +426,50 @@ function DeleteDialog({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function ImportPackageButton() {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onFile = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { project } = await importProjectPackage(file);
+      router.push(`/builder/${project.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "The import failed. Try again shortly.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="inline-flex flex-col">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".zip"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void onFile(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        aria-label="Import a project package"
+        className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-card px-4 text-[14px] font-medium text-fog transition-colors hover:border-violet/50 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:opacity-40"
+      >
+        {busy ? "Importing…" : "Import package"}
+      </button>
+      {error ? <span className="text-[11.5px] text-rose">{error}</span> : null}
+    </span>
   );
 }

@@ -10,8 +10,8 @@ One milestone at a time; STOP + checkpoint report after each.
 | M1 | Core Project Intelligence | ✅ delivered (3.0 M1) | canonical model, block walker | — (kept: report + Insights mode) | — |
 | M2 | Project Graph | ✅ | M1 navigation edges, diagnostics walker | full graph layer (UI/logic/asset/extension/data) + Project Map UI with relationship inspector | M1 |
 | M3 | Project DNA | ✅ | M1 report, templates metadata | derived DNA doc + UI tabs (purpose/architecture/conventions/health) | M1 |
-| M4 | Project Memory | ⬜ | AI request context assembly | per-project instruction store + planner consumption + UI | M6 |
-| M5 | Command Palette + Universal Search | ◐ (palette ✅) | navigation routes, model tree | Ctrl+K palette (commands + search across project/dashboard) | — |
+| M4 | Project Memory | ✅ delivered (5.0 phase 5A, session 18) | AI request context assembly | per-project instruction store + planner consumption + UI | M6 |
+| M5 | Command Palette + Universal Search | ✅ delivered (session 21 palette + session 34 in-builder universal search) | navigation routes, model tree | Ctrl+K palette (commands + search across project/dashboard) | — |
 | M6 | AI Project Agent | ◐ | Ask AI plan/preview/apply pipeline | inspect/plan/test/validate/review loop, agent summary, roles | M1 |
 | M7 | Change Preview | ◐ | AI proposal UI, one-commit apply | universal diff surfaces (tree/block/code), apply-selected | M6 |
 | M8 | AI Sandbox | ⬜ | model versioning, restore | sandbox state + merge/discard flow | M6, M7 |
@@ -21,7 +21,7 @@ One milestone at a time; STOP + checkpoint report after each.
 | M12 | Collaboration | ⬜ | sessions | presence, comments (entity-attached), roles/permissions | M11 |
 | M13 | Design System Studio | ◐ | @ideaven/ui tokens, theme system | project-level token editor (colors/type/spacing/radius) | — |
 | M14 | Adaptive UI / Modes | ◐ | builder modes, insights | beginner/advanced complexity levels, Focus/Debug/Learn/Studio modes | — |
-| M15 | Simulator | ◐ | preview-mode runtime | device presets, orientation, offline sim, labeled limitations | — |
+| M15 | Simulator | ✅ delivered (TASK 11, session 33) | preview-mode runtime | device presets, orientation, offline sim, labeled limitations | — |
 | M16 | Tests / Test Generator | ⬜ | runtime interpreter, diagnostics | deterministic navigation/interaction runs in preview sandbox + generated test artifacts | M15 |
 | M17 | Health Center | ◐ | M1 report + Insights UI | dashboard health center (root cause, affected objects, suggested fix) | M1 |
 | M18 | Performance Doctor | ◐ | M1 performance signals, asset sizes | suggestions + preview/apply | M1 |
@@ -36,7 +36,7 @@ One milestone at a time; STOP + checkpoint report after each.
 | M27 | AIX Build Pipeline | ✅ core | cmd/extbuild isolated worker, zip+sha256+verify | test step in pipeline | — |
 | M28 | Companion | ⬜ | preview runtime (web) | device app shell for live preview/debug | M15 |
 | M29 | Game Director | ⬜ | AI changesets, game templates | structured game plan → approved artifacts | M6 |
-| M30 | Asset Intelligence | ◐ | asset metadata (mime/size), M1 usage | dimensions/usage/memory tracking, optimization hints | M1 |
+| M30 | Asset Intelligence | ✅ delivered (session 34) | asset metadata (mime/size), M1 usage | dimensions/usage/memory tracking, optimization hints | M1 |
 | M31 | Release Center | ⬜ | publish flow, versions | staged releases (dev→testing→beta→RC→prod) + validation gates | M16, M19 |
 | M32 | Build Center | ◐ | HTML + Android export, GH Actions workflow | centralized multi-target build UI (honest platform claims) | M33 |
 | M33 | Build Farm | ◐ pattern | extension isolated worker | queue + worker pool for app builds | M32 |
@@ -44,10 +44,10 @@ One milestone at a time; STOP + checkpoint report after each.
 | M35 | Project Monitoring | ⬜ | request slog | deployed-app monitoring hooks (opt-in, no PII) | M31 |
 | M36 | AI Teaching | ◐ | Ask AI explanations, Learn pages | Explain/Teach-me/Why actions on generated changes + modes | M6 |
 | M37 | Documentation 2.0 | ◐ | docs + learn static pages | progressive explanation levels, interactive playgrounds | M36 |
-| M38 | Localization | ⬜ | none (hardcoded EN) | i18n architecture, 10 locales, key tooling, fallbacks | — |
-| M39 | Landing Product Experience | ◐ | real landing sections, live exports | genuinely representative live demo/playable game | M15 |
+| M38 | Localization | ✅ minimum delivered (TASK 10, session 32: EN/ID, account→local→browser→EN, key-based, e2e-i18n-audit 26/26) | dictionary architecture | additional locales = data; deep panels expanding | — |
+| M39 | Landing Product Experience | ✅ delivered (session 23) | real landing sections, live exports | genuinely representative live demo/playable game | M15 |
 | M40 | Brand / Logo | ◐ | logo + consistent visual language | full identity kit + brand guidelines | — |
-| M41 | Community 2.0 | ◐ | community = publications aggregation | forums/threads/comments/reactions backend | — |
+| M41 | Community 2.0 | ✅ core delivered (TASK 07, session 29) | community = publications aggregation | forums/threads/comments/reactions backend | — |
 | M42 | Showcase / Remix / Discovery | ◐ | publish, explore, remix, creators | For You/Trending/New/Featured, attribution metadata | M41 |
 | M43 | Creator Analytics | ◐ | public stats | per-project views/remixes dashboard (privacy-respecting) | M42 |
 | M44 | Marketplace Foundation | ◐ | extension registry + installs | categories, reviews, listings UI | M41 |

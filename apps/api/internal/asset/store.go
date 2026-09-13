@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"ideaven/apps/api/internal/project"
 )
 
 // Asset is a stored media row (metadata only; bytes are fetched explicitly
@@ -193,4 +195,27 @@ func (s *Store) CountForProject(ctx context.Context, projectID string) (int, err
 		return 0, fmt.Errorf("asset: count: %w", err)
 	}
 	return count, nil
+}
+
+// ProjectMediaList adapts ListByProject to the project package's
+// AssetMediaSource interface (TASK 11 / M30) — keeps project ↔ asset acyclic.
+func (s *Store) ProjectMediaList(ctx context.Context, projectID string) ([]project.AssetRef, error) {
+	assets, err := s.ListByProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]project.AssetRef, 0, len(assets))
+	for _, a := range assets {
+		refs = append(refs, project.AssetRef{ID: a.ID, Name: a.Name, MIME: a.MIME, Size: a.Size})
+	}
+	return refs, nil
+}
+
+// ProjectMediaData adapts FindDataForOwner to the same interface.
+func (s *Store) ProjectMediaData(ctx context.Context, ownerID, id string) (project.AssetBytes, error) {
+	asset, data, err := s.FindDataForOwner(ctx, ownerID, id)
+	if err != nil {
+		return project.AssetBytes{}, err
+	}
+	return project.AssetBytes{Name: asset.Name, MIME: asset.MIME, Data: data}, nil
 }
