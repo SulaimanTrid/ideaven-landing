@@ -83,3 +83,75 @@ export function entityIsTrigger(type: string, props: PropsMap | undefined): bool
   if (type === "coin" || type === "enemy" || type === "trigger") return props?.trigger !== false;
   return props?.trigger === true;
 }
+
+// ---- Tilemap (SYSTEM 4) ------------------------------------------------------
+// The tiles prop is the canonical cell store: "col,row:tile;…" in the
+// tilemap's own grid. Painting/erasing edits this string through the normal
+// model commit path; every surface (design canvas, preview, published pages)
+// derives both pixels and collision from it via the helpers below.
+
+/** Minimum cell size a tilemap accepts (mirrors the registry field bound). */
+export const TILEMAP_CELL_MIN = 8;
+
+/** Reads a tilemap's cell size with the runtime's 32px fallback. */
+export function tilemapCellSize(props: PropsMap | undefined): number {
+  const size = props?.cellSize;
+  return typeof size === "number" && size >= TILEMAP_CELL_MIN ? size : 32;
+}
+
+/** Reads a tilemap's grid bounds with the registry defaults. */
+export function tilemapGrid(props: PropsMap | undefined): { cols: number; rows: number } {
+  const num = (value: unknown, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) && value >= 1 ? Math.floor(value) : fallback;
+  return { cols: num(props?.cols, 12), rows: num(props?.rows, 7) };
+}
+
+/** Parses a "col,row:tile;…" tilemap payload into cell coordinates. */
+export function parseTiles(tiles: string): { col: number; row: number; tile: number }[] {
+  const out: { col: number; row: number; tile: number }[] = [];
+  for (const part of tiles.split(";")) {
+    const seg = part.trim();
+    if (!seg) continue;
+    const [pos, tile] = seg.split(":");
+    if (!pos) continue;
+    const [colRaw, rowRaw] = pos.split(",");
+    const col = parseInt(colRaw ?? "", 10);
+    const row = parseInt(rowRaw ?? "", 10);
+    const tileNum = parseInt(tile ?? "0", 10);
+    if (Number.isFinite(col) && Number.isFinite(row)) {
+      out.push({ col, row, tile: Number.isFinite(tileNum) ? tileNum : 0 });
+    }
+  }
+  return out;
+}
+
+/** Parses the tiles prop into a mutable cell map (the editor's working form). */
+export function tilesToMap(tiles: string): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const cell of parseTiles(tiles)) map.set(`${cell.col},${cell.row}`, cell.tile);
+  return map;
+}
+
+/** Serializes a cell map back into the canonical prop — row-major, deterministic. */
+export function tilesToString(tiles: Map<string, number>): string {
+  return [...tiles.entries()]
+    .map(([key, tile]) => {
+      const [col, row] = key.split(",");
+      return { col: Number(col), row: Number(row), tile };
+    })
+    .filter((c) => Number.isFinite(c.col) && Number.isFinite(c.row))
+    .sort((a, b) => a.row - b.row || a.col - b.col)
+    .map((c) => `${c.col},${c.row}:${c.tile}`)
+    .join(";");
+}
+
+/** World-space rects of a tilemap's painted cells — what is painted is what collides. */
+export function tilemapCellRects(props: PropsMap | undefined, rect: EntityRect): EntityRect[] {
+  const cell = tilemapCellSize(props);
+  return parseTiles(String(props?.tiles ?? "")).map(({ col, row }) => ({
+    x: rect.x + col * cell,
+    y: rect.y + row * cell,
+    width: cell,
+    height: cell,
+  }));
+}

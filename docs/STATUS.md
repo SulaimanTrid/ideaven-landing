@@ -2482,3 +2482,131 @@ named as the largest missing builds).
   present, all 8 browser harnesses green (~160 checks).
 - **DECISION: READY FOR BETA** (P0: none; P1: collaboration, 3D, data
   export). 8.0 not started.
+
+## 45. Session 38 (2D Game Engine expansion — PHASE E physics slice, SYSTEM 3)
+
+Directive: evolve the existing 2D foundation into a real 2D engine in
+vertical slices. This session delivered **Phase E — the 2D physics
+abstraction** as one complete vertical slice (model → registry → editor
+fields → preview runtime → blocks UI), reusing the existing scene stage —
+no second runtime, no second asset registry.
+
+- **Per-entity physics (canonical props, no schema change)**: bodyType
+  (dynamic/static/kinematic), gravityScale (−4..4), bounciness (0..1),
+  friction (0..1). Defaults preserve previous behavior exactly.
+- **Runtime** (`scene-stage.tsx`): gravity scale applies; grounded friction
+  damps residual horizontal motion; landing reflects impact via
+  bounciness (impacts > 120 px/s bounce, smaller impacts stop);
+  static/kinematic bodies skip gravity.
+- **Collision events upgraded**: enter (existing), exit
+  (`touches-exit-<id>`), stay (`touching-<id>` throttled ~2 Hz) — all
+  dispatched into the block runtime and surfaced in the Runtime trace.
+- **Blocks UI**: handler creation offers enter/stay/exit per scene entity
+  with human labels ("Touches Coin 1", "While touching Coin 1", "Stops
+  touching Coin 1").
+- **SYSTEM 16 verified**: delete works consistently for app, 2D-game
+  template, and blank game projects (200 + gone), foreign 404, anonymous
+  401 — no fix needed; existing architecture confirmed correct.
+
+### Verified (session 38)
+
+- Physics E2E 4/4: gravity+landing, collision enter traced, exit traced,
+  stay throttling; tsc clean; full Go suite 10/10 green.
+- Export runtime note (honest): exported HTML/Android/Windows still run
+  the previous gravity model — gravityScale/bounciness/friction flow into
+  the export sceneTick in the next slice (editor preview + published pages
+  run the new physics today).
+
+### Not done in this session (honest, per the delivery plan)
+
+Tilemap (SYSTEM 4), lighting (5), sprite shape (6), pixel-perfect camera
+(7), camera behaviors (8), sorting layers (9), prefabs (10), particles
+(18), input abstraction (19), animation state machine (20), debug overlays
+(21), atlas/slicing/pivot deepening (1C–1F), skeletal foundation (2B) —
+each is a separate future slice per PHASE F–J.
+
+### Session 38 addendum — export physics parity closed
+
+The honest limitation from the physics slice is now closed: the exported
+runtime (HTML/Android/Windows sceneTick) reads the player's gravityScale,
+bounciness, and friction from the model props and applies the same math as
+the editor preview (gravity scale, grounded friction damping, bouncy
+landings). Verified: exported HTML with player gravityScale 0.4 jumps
+floatier (player top 604px vs ground 744), exported JS carries
+gravityScale/bounciness/friction, 0 page errors. SYSTEM 24 satisfied for
+the physics slice — preview and export run the same physics.
+
+## 46. Session 39 (2D engine — PHASE F slice: Tilemap core, SYSTEM 4)
+
+- **Tilemap is a first-class scene entity**: `tilemap` type in the registry
+  (cellSize/cols/rows/tiles "col,row:tile;…"/tileColor/collider), rendered
+  on the design stage and in the preview runtime from the canonical props.
+- **Runtime collision**: filled cells act as a coherent solid surface — the
+  player lands on tile cells like a platform (per-cell landing resolution).
+- **Persistence**: tilemap lives in the canonical model (props only — no
+  schema change), saves/reloads with the project.
+- **Verified**: `Tilemap Slice` E2E 3/3 — model save, design-canvas cell
+  render, player lands on the tile surface in preview. tsc clean.
+- **Export runtime**: tilemap rendering/collision not yet ported to the
+  export sceneTick (same honest pattern as physics parity — next slice).
+- **Not done (next slices)**: tile palette UI, painting/erase/fill tools,
+  rule tiles, multiple layers, export parity.
+
+Per the directive's slice rule, painting tools are the next tilemap slice.
+
+## 47. Session 40 (2D engine — Tilemap painting tools + honest collision fix, SYSTEM 4 complete)
+
+Resumed from the 0/3 checkpoint (tilemap painting / E2E / gates). The working
+tree held a half-finished paint gesture (broken `onPointerDown`); the audit
+also found that session 39's "per-cell landing" claim was **not true of the
+code** — the runtime landed players on the tilemap's whole bounding box and
+`ENTITY_SHAPES` never included `tilemap`, so preview never rendered cells at
+all. This session made the slice genuinely real end to end.
+
+- **Paint/Erase tools (editor)**: a Tilemap tools group (Select / Paint /
+  Erase) appears in the canvas toolbar when a tilemap is selected; with
+  Paint/Erase active, a pointer gesture on the tilemap edits cells instead
+  of dragging — click paints, drag paints every crossed cell, Erase removes.
+  Every cell change commits `tiles` through the normal `updateProps` path
+  (canonical model, one undo step per cell, autosave). Grid bounds
+  (cols/rows) clamp input; cursor becomes a crosshair; tools reset to
+  Select when the selection leaves the tilemap.
+- **Shared tile helpers** (`lib/project-model/scene.ts`): parseTiles /
+  tilesToMap / tilesToString (row-major deterministic serialization) /
+  tilemapCellRects / tilemapCellSize / tilemapGrid — one source of truth for
+  the design canvas, preview, and published pages; `scene-stage` re-exports
+  `parseTiles` for compatibility.
+- **Honest per-cell collision (runtime)**: preview + published pages land
+  players on individual painted cells (painted cell = solid, empty cell =
+  air) and fire tilemap touch enter/stay/exit per cell overlap — no more
+  invisible bounding-box platforms.
+- **Preview rendering fixed**: `ENTITY_SHAPES` now includes `tilemap`, so
+  cells actually render in Preview and on published pages (the E2E caught
+  this — they never rendered before).
+- **Export parity closed** (no remaining tilemap export gap): the exported
+  HTML/Android/Windows sceneTick carries `tilemap` as an entity, renders
+  painted cells, and resolves landing per cell. Runtime-proven: exported
+  page player rests at top 712 on a painted cell (748−36) vs 744 on the
+  floor — same math as the preview.
+- **E2E**: `scripts/e2e-tilemap-paint.mjs` (19 checks) drives the real UI —
+  palette add, tool engage, click-paint, drag-stroke, model assertions via
+  the API, erase, hard-reload persistence, then Preview: the player moved
+  above a painted strip lands ON the cells (bottom ≈ cell top), not the
+  floor. 0 console/page errors. Also updated the stale collision-trace
+  regex in `e2e-scene-gameplay.mjs` (21/21 green after the session-38
+  "collision enter/exit" trace vocabulary).
+
+### Verified (session 40)
+
+- `tsc --noEmit` clean; production `next build` green (dev stopped first).
+- `go vet ./...` clean; full `go test -count=1 ./...` green (10/10 packages)
+  against live PostgreSQL.
+- E2E: tilemap-paint 19/19, scene-gameplay 21/21; export landing proof above.
+- Honest notes: single tile type per tilemap for now (tileColor prop); no
+  tile-palette picker, no fill tool, no rule tiles / multiple layers yet —
+  each stays a future slice. Painting is one undo step per cell.
+
+### Next exact task
+
+Rule tiles or the tile-palette picker (multi-tile painting), then the
+camera behaviors slice (SYSTEM 8) — per the 2D engine priority order.

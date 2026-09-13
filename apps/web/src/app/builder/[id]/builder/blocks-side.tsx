@@ -58,7 +58,9 @@ function HandlersPanel() {
   // Scene entities expose dynamic touch events: "when <this> touches <other>".
   const touchEvents =
     target && ENTITY_TYPES.has(target.type)
-      ? sceneEntities.filter((e) => e.id !== target.id).map((e) => touchEventFor(e.id))
+      ? sceneEntities
+          .filter((e) => e.id !== target.id)
+          .flatMap((e) => [touchEventFor(e.id), `touching-${e.id}`, `touches-exit-${e.id}`])
       : [];
   const availableEvents = [
     ...(target ? eventsFor(target.type) : [...SCREEN_EVENTS]),

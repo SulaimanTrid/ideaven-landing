@@ -412,14 +412,15 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
   // sprite) play as real scenes: input, gravity, AABB collision, and dynamic
   // touches-<id> events dispatched into the same block runtime. Only the
   // player moves; solids block landing; triggers fire events.
-  var ENTITY_TYPES = { player: 1, platform: 1, coin: 1, enemy: 1, trigger: 1, sprite: 1 };
+  var ENTITY_TYPES = { player: 1, platform: 1, coin: 1, enemy: 1, trigger: 1, sprite: 1, tilemap: 1 };
   var ENTITY_DEFAULTS = {
     player: { x: 24, y: 560, width: 36, height: 36 },
     platform: { x: 24, y: 640, width: 160, height: 20 },
     coin: { x: 120, y: 520, width: 28, height: 28 },
     enemy: { x: 220, y: 560, width: 32, height: 32 },
     trigger: { x: 260, y: 480, width: 100, height: 80 },
-    sprite: { x: 160, y: 300, width: 48, height: 48 }
+    sprite: { x: 160, y: 300, width: 48, height: 48 },
+    tilemap: { x: 0, y: 620, width: 390, height: 224 }
   };
   var SCENE_GRAVITY = 1500, SCENE_MOVE = 190, SCENE_JUMP = 520;
   var sceneState = null; // persists the player across handler-triggered rerenders
@@ -443,6 +444,23 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
   }
   function overlap(a, b) {
     return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  }
+  function tilemapCellSize(props) {
+    return typeof props.cellSize === "number" && props.cellSize >= 8 ? props.cellSize : 32;
+  }
+  // One rect per painted cell — a painted cell is solid, an empty cell never is.
+  function tilemapCellRects(props, r) {
+    var cell = tilemapCellSize(props);
+    var out = [];
+    String(props.tiles || "").split(";").forEach(function (seg) {
+      seg = seg.trim();
+      if (!seg) return;
+      var pos = seg.split(":")[0].split(",");
+      var col = parseInt(pos[0], 10), row = parseInt(pos[1], 10);
+      if (!isFinite(col) || !isFinite(row)) return;
+      out.push({ x: r.x + col * cell, y: r.y + row * cell, width: cell, height: cell });
+    });
+    return out;
   }
 
   function buildScene(screen) {
@@ -501,6 +519,21 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
           el.style.border = "2px dashed " + color; el.style.borderRadius = "8px";
           el.style.background = color + "22";
           break;
+        case "tilemap": {
+          var tcell = tilemapCellSize(props);
+          var tcolor = typeof props.tileColor === "string" ? props.tileColor : color;
+          el.style.position = "relative"; el.style.overflow = "hidden";
+          tilemapCellRects(props, { x: 0, y: 0, width: r.width, height: r.height }).forEach(function (c) {
+            var tile = document.createElement("div");
+            tile.style.cssText = "position:absolute";
+            tile.style.left = (c.x - r.x) + "px"; tile.style.top = (c.y - r.y) + "px";
+            tile.style.width = tcell + "px"; tile.style.height = tcell + "px";
+            tile.style.background = tcolor;
+            tile.style.boxShadow = "inset 0 0 0 1px rgb(255 255 255 / .06)";
+            el.appendChild(tile);
+          });
+          break;
+        }
         default:
           el.style.background = color; el.style.borderRadius = "6px"; el.style.opacity = ".92";
       }
@@ -526,11 +559,21 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       return;
     }
     var spawn = playerComponent ? sceneRect(componentProps[playerComponent.id] || {}, "player") : { x: 24, y: 24 };
+    // 2D physics material (SYSTEM 3 parity with the editor preview):
+    // gravity scale + bounciness + friction come from the player's props.
+    var pprops = playerComponent ? (componentProps[playerComponent.id] || {}) : {};
+    var pn = function (v, lo, hi, f) { return typeof v === "number" && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : f; };
+    var praw = typeof pprops.bodyType === "string" ? pprops.bodyType : "";
     sceneState = {
       screenId: currentScreenId, refs: refs, playerComponentId: playerComponent ? playerComponent.id : null,
       player: { x: spawn.x, y: spawn.y, vx: 0, vy: 0, facing: 1, grounded: false },
       spawn: { x: spawn.x, y: spawn.y }, touching: {}, keys: { left: false, right: false },
-      width: stage.clientWidth || 390, height: stage.clientHeight || 844
+      width: stage.clientWidth || 390, height: stage.clientHeight || 844,
+      phys: {
+        gravityScale: pn(pprops.gravityScale, -4, 4, 1),
+        bounciness: pn(pprops.bounciness, 0, 1, 0),
+        friction: pn(pprops.friction, 0, 1, 0)
+      }
     };
   }
 
@@ -557,11 +600,17 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
     var dt = Math.min((now - sceneLast) / 1000, 0.05);
     sceneLast = now;
     var p = sceneState.player;
+    var phys = sceneState.phys || { gravityScale: 1, bounciness: 0, friction: 0 };
     p.vx = (sceneState.keys.left ? -SCENE_MOVE : 0) + (sceneState.keys.right ? SCENE_MOVE : 0);
     if (p.vx !== 0) p.facing = p.vx > 0 ? 1 : -1;
+    // Grounded friction damps residual horizontal motion when no input.
+    if (p.grounded && p.vx !== 0 && !sceneState.keys.left && !sceneState.keys.right) {
+      var drop = phys.friction * 12 * dt;
+      p.vx = Math.abs(p.vx) <= drop ? 0 : p.vx - (p.vx > 0 ? drop : -drop);
+    }
     var body = { x: p.x, y: p.y, width: 36, height: 36 };
     body.x = Math.max(0, Math.min(sceneState.width - body.width, body.x + p.vx * dt));
-    p.vy += SCENE_GRAVITY * dt;
+    p.vy += SCENE_GRAVITY * phys.gravityScale * dt;
     body.y += p.vy * dt;
     p.grounded = false;
     (screen.components || []).forEach(function (n) {
@@ -569,12 +618,26 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       var props = componentProps[n.id] || {};
       if (!sceneSolid(n.type, props)) return;
       var r = sceneRect(props, n.type);
-      var withinX = body.x + body.width > r.x + 2 && body.x < r.x + r.width - 2;
-      var feet = body.y + body.height;
-      var landing = p.vy >= 0 && feet >= r.y && feet <= r.y + r.height + 10 && feet - p.vy * dt <= r.y + 4;
-      if (withinX && landing) { body.y = r.y - body.height; p.vy = 0; p.grounded = true; }
+      // Tilemaps collide per painted cell; other solids are one rect.
+      var solids = n.type === "tilemap" ? tilemapCellRects(props, r) : [r];
+      solids.forEach(function (s) {
+        var withinX = body.x + body.width > s.x + 2 && body.x < s.x + s.width - 2;
+        var feet = body.y + body.height;
+        var landing = p.vy >= 0 && feet >= s.y && feet <= s.y + s.height + 10 && feet - p.vy * dt <= s.y + 4;
+        if (withinX && landing) {
+          body.y = s.y - body.height;
+          var impact = Math.abs(p.vy);
+          p.vy = phys.bounciness > 0 && impact > 120 ? -impact * phys.bounciness : 0;
+          p.grounded = p.vy === 0;
+        }
+      });
     });
-    if (body.y + body.height >= sceneState.height) { body.y = sceneState.height - body.height; p.vy = 0; p.grounded = true; }
+    if (body.y + body.height >= sceneState.height) {
+      var fImpact = Math.abs(p.vy);
+      body.y = sceneState.height - body.height;
+      p.vy = phys.bounciness > 0 && fImpact > 120 ? -fImpact * phys.bounciness : 0;
+      p.grounded = p.vy === 0;
+    }
     if (body.y < -60) { body.y = -60; p.vy = 0; }
     if (body.y > sceneState.height + 120) { body.x = sceneState.spawn.x; body.y = sceneState.spawn.y; p.vy = 0; sceneState.touching = {}; }
     p.x = body.x; p.y = body.y;

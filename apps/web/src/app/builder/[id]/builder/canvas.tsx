@@ -6,7 +6,7 @@ import { ComponentNode, DropLine } from "./renderer";
 import { DeviceFrame } from "@/components/builder/device-frame";
 import { findScreen } from "@/lib/project-model/ops";
 import { isSceneScreen } from "@/lib/project-model/scene";
-import { SceneEditor } from "./scene-canvas";
+import { SceneEditor, type SceneTool } from "./scene-canvas";
 import { viewportSize, ViewportFrame, type ViewportDevice, type ViewportOrientation } from "@/components/builder/viewport";
 import { useI18n } from "@/lib/i18n/i18n";
 
@@ -25,11 +25,13 @@ const DEVICES = [
 type DeviceId = (typeof DEVICES)[number]["id"];
 
 export function BuilderCanvas() {
-  const { model, activeScreenId, select, setIndicator, draggingRef, applyDrop, actions } = useBuilder();
+  const { model, activeScreenId, selectedId, select, setIndicator, draggingRef, applyDrop, actions } = useBuilder();
   const { t } = useI18n();
   /** Game projects design against a dark SCENE stage, not a white device. */
   const isGame = model.type === "game";
   const [snap, setSnap] = useState(true);
+  // Tilemap painting tools (SYSTEM 4): active while a tilemap is selected.
+  const [sceneTool, setSceneTool] = useState<SceneTool>("select");
   const saved = model.settings.preview;
   const [device, setDevice] = useState<ViewportDevice>(saved?.device ?? "phone");
   const [orientation, setOrientation] = useState<ViewportOrientation>(saved?.orientation ?? "portrait");
@@ -41,6 +43,16 @@ export function BuilderCanvas() {
   const frame = viewportSize({ device, orientation });
   const screen = findScreen(model, activeScreenId) ?? model.screens[0];
   const isScene = isSceneScreen(screen);
+  const tilemapSelected =
+    isScene &&
+    typeof selectedId === "string" &&
+    screen?.components.some((c) => c.id === selectedId && c.type === "tilemap");
+
+  // Selecting anything that is not that tilemap returns the stage to Select
+  // so a stale paint mode never surprises a drag elsewhere.
+  useEffect(() => {
+    if (!tilemapSelected) setSceneTool("select");
+  }, [tilemapSelected]);
 
   // Fit-to-width: measure the surface and scale the frame down when needed.
   useEffect(() => {
@@ -150,17 +162,51 @@ export function BuilderCanvas() {
 
         <div className="flex items-center gap-1" role="group" aria-label="Zoom">
           {isScene ? (
-            <button
-              type="button"
-              onClick={() => setSnap((value) => !value)}
-              aria-pressed={snap}
-              title="Snap entity positions to a 10px grid"
-              className={`mr-2 h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
-                snap ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
-              }`}
-            >
-              ⌗ {snap ? t("builder.snapOn") : t("builder.snapOff")}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setSnap((value) => !value)}
+                aria-pressed={snap}
+                title="Snap entity positions to a 10px grid"
+                className={`mr-2 h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                  snap ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
+                }`}
+              >
+                ⌗ {snap ? t("builder.snapOn") : t("builder.snapOff")}
+              </button>
+              {tilemapSelected ? (
+                <div
+                  className="mr-2 flex h-7 items-center gap-0.5 rounded-md border border-line p-0.5"
+                  role="group"
+                  aria-label="Tilemap tools"
+                >
+                  {(
+                    [
+                      { id: "select", label: "Select", glyph: "⬉" },
+                      { id: "paint", label: "Paint", glyph: "▦" },
+                      { id: "erase", label: "Erase", glyph: "⌫" },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSceneTool(item.id)}
+                      aria-pressed={sceneTool === item.id}
+                      title={`${item.label} tiles — click or drag across the tilemap`}
+                      className={`h-6 rounded px-2 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                        sceneTool === item.id
+                          ? item.id === "erase"
+                            ? "bg-rose/20 text-rose"
+                            : "bg-surface-strong text-ink"
+                          : "text-mist hover:text-fog"
+                      }`}
+                    >
+                      {item.glyph} {item.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
           ) : null}
           {device !== "desktop" ? (
             <button
@@ -264,7 +310,7 @@ export function BuilderCanvas() {
                   {t("builder.dragComponents")}
                 </div>
               ) : isScene ? (
-                <SceneEditor screen={screen} scale={scale} snap={snap} />
+                <SceneEditor screen={screen} scale={scale} snap={snap} tool={sceneTool} />
               ) : (
                 screen.components.map((child) => (
                   <ComponentNode

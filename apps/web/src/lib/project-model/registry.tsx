@@ -544,6 +544,20 @@ COMPONENT_DEFS.push(
     styleFields: [],
   },
   {
+    type: "tilemap", label: "Tilemap", category: "game", container: false,
+    glyph: glyph("M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"),
+    defaultProps: { name: "Tilemap", x: 0, y: 620, width: 390, height: 224, cellSize: 32, cols: 12, rows: 7, tiles: "0,6:1;1,6:1;2,6:1;3,6:1", color: "#2a3348", visible: true, collider: true, layer: "solid" },
+    defaultStyles: {},
+    propFields: entityFields([
+      f.number("cellSize", "Cell size", 8, 128),
+      f.number("cols", "Columns", 1, 64),
+      f.number("rows", "Rows", 1, 64),
+      f.text("tiles", "Tiles (col,row:tile;…)"),
+      f.color("tileColor", "Tile color", "#2a3348"),
+    ]),
+    styleFields: [],
+  },
+  {
     type: "sprite", label: "Sprite", category: "game", container: false,
     glyph: glyph("M4 5h16v14H4zM8 15l3-4 2.5 3L16 11l4 6"),
     defaultProps: { name: "Sprite", x: 160, y: 300, width: 48, height: 48, color: "#58c7f0", visible: true, collider: false, layer: "default" },
@@ -555,7 +569,7 @@ COMPONENT_DEFS.push(
 
 /** Component types that behave as scene entities (TASK 08). */
 export const ENTITY_TYPES: ReadonlySet<string> = new Set([
-  "player", "platform", "coin", "enemy", "trigger", "sprite",
+  "player", "platform", "coin", "enemy", "trigger", "sprite", "tilemap",
 ]);
 
 /**
@@ -586,6 +600,8 @@ export function translatedCategoryLabel(category: string, t: (key: string) => st
 
 /** Label for any event name, including dynamic scene touch events. */
 export function eventLabel(event: string): string {
+  if (event.startsWith("touches-exit-")) return "Stops touching";
+  if (event.startsWith("touching-")) return "While touching";
   if (event.startsWith("touches-")) return "Touches"; // target resolved by the UI
   return EVENT_LABELS[event] ?? event;
 }

@@ -13,7 +13,10 @@ import {
   entityRect,
   entityVisible,
   entitiesOf,
+  parseTiles,
   rectsOverlap,
+  tilemapCellRects,
+  tilemapCellSize,
   touchEventFor,
   type EntityRect,
 } from "@/lib/project-model/scene";
@@ -37,6 +40,29 @@ const GRAVITY = 1500; // px/s²
 const MOVE = 190; // px/s
 const JUMP = 520; // px/s
 
+/** Parses a "col,row:tile;…" tilemap payload into cell coordinates. */
+export { parseTiles } from "@/lib/project-model/scene";
+
+/** Per-entity physics configuration (SYSTEM 3 — 2D physics abstraction). */
+interface EntityPhys {
+  bodyType: "dynamic" | "static" | "kinematic";
+  gravityScale: number;
+  bounciness: number;
+  friction: number;
+}
+
+function entityPhys(props: PropsMap): EntityPhys {
+  const num = (v: unknown, lo: number, hi: number, f: number) =>
+    typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : f;
+  const raw = typeof props.bodyType === "string" ? props.bodyType : "";
+  return {
+    bodyType: raw === "static" || raw === "kinematic" ? raw : "dynamic",
+    gravityScale: num(props.gravityScale, -4, 4, 1),
+    bounciness: num(props.bounciness, 0, 1, 0),
+    friction: num(props.friction, 0, 1, 0),
+  };
+}
+
 interface PlayerState {
   x: number;
   y: number;
@@ -44,6 +70,10 @@ interface PlayerState {
   vy: number;
   facing: 1 | -1;
   grounded: boolean;
+  /** 2D physics material (SYSTEM 3): seeded from the player's model props. */
+  gravityScale: number;
+  bounciness: number;
+  friction: number;
 }
 
 export interface SceneStageProps {
@@ -81,7 +111,8 @@ export function SceneStage({ screen, runtime, emit, onRestart, onTrace, width, h
       return;
     }
     const rect = entityRect(liveProps(playerComponent.id), "player");
-    playerRef.current = { x: rect.x, y: rect.y, vx: 0, vy: 0, facing: 1, grounded: false };
+    const phys = entityPhys(liveProps(playerComponent.id));
+    playerRef.current = { x: rect.x, y: rect.y, vx: 0, vy: 0, facing: 1, grounded: false, gravityScale: phys.gravityScale, bounciness: phys.bounciness, friction: phys.friction };
     spawnRef.current = { x: rect.x, y: rect.y };
     touchingRef.current = new Set();
     onTrace(`run start · player "${componentLabel(playerComponent)}" at (${rect.x}, ${rect.y}) · ${entities.length} entities`);
@@ -106,38 +137,53 @@ export function SceneStage({ screen, runtime, emit, onRestart, onTrace, width, h
         player.vx = (keys.current.left ? -MOVE : 0) + (keys.current.right ? MOVE : 0);
         if (player.vx !== 0) player.facing = player.vx > 0 ? 1 : -1;
 
+        // PHYSICS (SYSTEM 3): gravity scale + grounded friction damping.
+        player.vy += GRAVITY * player.gravityScale * dt;
+        if (player.grounded && player.vx !== 0 && keys.current.left === keys.current.right) {
+          // No input this frame: friction bleeds residual horizontal speed.
+          const drop = player.friction * 12 * dt;
+          player.vx = Math.abs(player.vx) <= drop ? 0 : player.vx - Math.sign(player.vx) * drop;
+        }
+
         // MOVEMENT: integrate, clamp to the stage.
         player.x = Math.max(0, Math.min(width - playerDim(player).width, player.x + player.vx * dt));
-        player.vy += GRAVITY * dt;
         player.y += player.vy * dt;
         player.grounded = false;
 
         // COLLISION (solid): land on top surfaces of non-trigger collidables.
+        // A tilemap contributes one rect per painted cell — a painted cell is
+        // solid, an empty cell never is.
         const body = playerDim(player);
         for (const entity of others) {
           const props = liveProps(entity.id);
           if (!entityVisible(props) || !entityCollidable(props)) continue;
           if (entityIsTrigger(entity.type, props)) continue;
           const rect = entityRect(props, entity.type);
-          const withinX = body.x + body.width > rect.x + 2 && body.x < rect.x + rect.width - 2;
-          const feet = body.y + body.height;
-          const landing =
-            player.vy >= 0 &&
-            feet >= rect.y &&
-            feet <= rect.y + rect.height + 10 &&
-            feet - player.vy * dt <= rect.y + 4;
-          if (withinX && landing) {
-            player.y = rect.y - body.height;
-            player.vy = 0;
-            player.grounded = true;
+          const solids = entity.type === "tilemap" ? tilemapCellRects(props, rect) : [rect];
+          for (const solid of solids) {
+            const withinX = body.x + body.width > solid.x + 2 && body.x < solid.x + solid.width - 2;
+            const feet = body.y + body.height;
+            const landing =
+              player.vy >= 0 &&
+              feet >= solid.y &&
+              feet <= solid.y + solid.height + 10 &&
+              feet - player.vy * dt <= solid.y + 4;
+            if (withinX && landing) {
+              player.y = solid.y - body.height;
+              // PHYSICS MATERIAL: bounciness reflects impact velocity.
+              const impact = Math.abs(player.vy);
+              player.vy = player.bounciness > 0 && impact > 120 ? -impact * player.bounciness : 0;
+              player.grounded = player.vy === 0;
+            }
           }
         }
 
         // Stage floor + ceiling + respawn safety net.
         if (body.y + body.height >= height) {
+          const impact = Math.abs(player.vy);
           player.y = height - body.height;
-          player.vy = 0;
-          player.grounded = true;
+          player.vy = player.bounciness > 0 && impact > 120 ? -impact * player.bounciness : 0;
+          player.grounded = player.vy === 0;
         }
         if (player.y < -60) {
           player.y = -60;
@@ -151,20 +197,31 @@ export function SceneStage({ screen, runtime, emit, onRestart, onTrace, width, h
           traceRef.current("player fell out of the stage — respawned at the start point");
         }
 
-        // COLLISION (triggers): edge-triggered touch events into the blocks.
+        // COLLISION EVENTS (SYSTEM 3): enter / stay (2 Hz, not every frame) /
+        // exit — all dispatched into the block runtime. Tilemap overlap is
+        // per painted cell, matching the collision solids.
         const stillTouching = new Set<string>();
         for (const entity of others) {
           const props = liveProps(entity.id);
           if (!entityVisible(props) || !entityCollidable(props)) continue;
           const rect = entityRect(props, entity.type);
-          if (rectsOverlap(body, rect)) {
+          const touchRects = entity.type === "tilemap" ? tilemapCellRects(props, rect) : [rect];
+          if (touchRects.some((touchRect) => rectsOverlap(body, touchRect))) {
             stillTouching.add(entity.id);
             if (!touchingRef.current.has(entity.id)) {
               traceRef.current(
-                `collision: player ↔ ${componentLabel(entity)} (${entity.type}) — firing ${touchEventFor(entity.id)}`,
+                `collision enter: player ↔ ${componentLabel(entity)} (${entity.type}) — firing ${touchEventFor(entity.id)}`,
               );
               emit(playerComponent.id, touchEventFor(entity.id));
+            } else if (Math.floor(now / 500) !== Math.floor((now - 16) / 500)) {
+              // Stay: throttled to ~2 Hz so a stay handler can't flood blocks.
+              emit(playerComponent.id, `touching-${entity.id}`);
             }
+          } else if (touchingRef.current.has(entity.id)) {
+            traceRef.current(
+              `collision exit: player ↔ ${componentLabel(entity)} (${entity.type}) — firing touches-exit-${entity.id}`,
+            );
+            emit(playerComponent.id, `touches-exit-${entity.id}`);
           }
         }
         touchingRef.current = stillTouching;
@@ -346,6 +403,18 @@ function EntityView({ component, props }: { component: ProjectModelComponent; pr
           </div>
         </div>
       );
+    case "tilemap": {
+      const cell = tilemapCellSize(props);
+      const tileColor = typeof props.tileColor === "string" ? props.tileColor : color;
+      const cells = parseTiles(String(props.tiles ?? ""));
+      return (
+        <div data-entity={component.id} title={componentLabel(component)} style={{ ...base }}>
+          {cells.map(({ col, row }, i) => (
+            <div key={i} data-cell={`${col},${row}`} style={{ position: "absolute", left: col * cell, top: row * cell, width: cell, height: cell, background: tileColor, boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.06)" }} />
+          ))}
+        </div>
+      );
+    }
     case "trigger":
       return (
         <div
@@ -409,7 +478,7 @@ function Eye({ dark }: { dark?: boolean }) {
   );
 }
 
-const ENTITY_SHAPES = new Set(["player", "platform", "coin", "enemy", "trigger", "sprite"]);
+const ENTITY_SHAPES = new Set(["player", "platform", "coin", "enemy", "trigger", "sprite", "tilemap"]);
 
 function StageButton({
   label,

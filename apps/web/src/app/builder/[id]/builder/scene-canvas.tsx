@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useBuilder, componentLabel } from "@/app/builder/[id]/builder/builder-context";
-import { entityRect, entitiesOf, entityVisible, type EntityRect } from "@/lib/project-model/scene";
+import { entityRect, entitiesOf, entityVisible, tilemapCellSize, tilemapGrid, tilesToMap, tilesToString, type EntityRect } from "@/lib/project-model/scene";
 import type { ProjectModelComponent, ProjectModelScreen } from "@/types/project";
 import { imageUrl } from "@/lib/api";
 
@@ -12,18 +12,28 @@ import { imageUrl } from "@/lib/api";
  * rendered live), duplicate, delete — every gesture commits once through
  * the shared model path, so undo/redo and autosave behave like every other
  * edit. Grid dots + optional snap keep placement deliberate.
+ *
+ * Tilemap painting (SYSTEM 4): with the Paint or Erase tool active, a
+ * pointer gesture on a tilemap edits its cells instead of moving it — each
+ * cell change commits `tiles` through the same updateProps path, so the
+ * canonical model, undo, and autosave all see every cell.
  */
 
 const SNAP = 10;
+
+/** Tools for the selected tilemap; move/resize stays the select-tool behavior. */
+export type SceneTool = "select" | "paint" | "erase";
 
 export function SceneEditor({
   screen,
   scale,
   snap,
+  tool = "select",
 }: {
   screen: ProjectModelScreen;
   scale: number;
   snap: boolean;
+  tool?: SceneTool;
 }) {
   const { selectedId, select, actions } = useBuilder();
   const entities = entitiesOf(screen);
@@ -50,6 +60,20 @@ export function SceneEditor({
   const liveRef = useRef(live);
   liveRef.current = live;
 
+  // Tile painting gesture state: the tilemap under the pointer plus its
+  // working cell map, so a drag paints many cells against one snapshot and
+  // each change lands in the model immediately.
+  const paintRef = useRef<{
+    id: string;
+    left: number;
+    top: number;
+    cell: number;
+    cols: number;
+    rows: number;
+    mode: Exclude<SceneTool, "select">;
+    tiles: Map<string, number>;
+  } | null>(null);
+
   // Drag gestures listen on window: React's conditional container props are
   // evaluated at render time, and a pointerdown whose selection re-render
   // races the first pointermove silently drops the gesture. Window listeners
@@ -58,6 +82,54 @@ export function SceneEditor({
     (event: React.PointerEvent, component: ProjectModelComponent, kind: "move" | "resize") => {
       event.stopPropagation();
       event.preventDefault();
+
+      // Tile painting: with Paint/Erase active, a gesture on a tilemap edits
+      // cells instead of dragging the entity.
+      if (tool !== "select" && kind === "move" && component.type === "tilemap") {
+        const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+        const grid = tilemapGrid(component.props);
+        paintRef.current = {
+          id: component.id,
+          left: box.left,
+          top: box.top,
+          cell: tilemapCellSize(component.props),
+          cols: grid.cols,
+          rows: grid.rows,
+          mode: tool,
+          tiles: tilesToMap(String(component.props?.tiles ?? "")),
+        };
+        const applyAt = (clientX: number, clientY: number) => {
+          const paint = paintRef.current;
+          if (!paint) return;
+          const col = Math.floor((clientX - paint.left) / scale / paint.cell);
+          const row = Math.floor((clientY - paint.top) / scale / paint.cell);
+          if (col < 0 || row < 0 || col >= paint.cols || row >= paint.rows) return;
+          const key = `${col},${row}`;
+          if (paint.mode === "paint") {
+            if (paint.tiles.get(key) === 1) return;
+            paint.tiles.set(key, 1);
+          } else {
+            if (!paint.tiles.has(key)) return;
+            paint.tiles.delete(key);
+          }
+          // Every cell change is a real model commit (canonical props, undo,
+          // autosave) — never local-only state.
+          actions.updateProps(paint.id, { tiles: tilesToString(paint.tiles) });
+        };
+        applyAt(event.clientX, event.clientY);
+        const onPaintMove = (move: PointerEvent) => applyAt(move.clientX, move.clientY);
+        const onPaintUp = () => {
+          window.removeEventListener("pointermove", onPaintMove);
+          window.removeEventListener("pointerup", onPaintUp);
+          window.removeEventListener("pointercancel", onPaintUp);
+          paintRef.current = null;
+        };
+        window.addEventListener("pointermove", onPaintMove);
+        window.addEventListener("pointerup", onPaintUp);
+        window.addEventListener("pointercancel", onPaintUp);
+        return;
+      }
+
       (event.target as HTMLElement).setPointerCapture(event.pointerId);
       select(component.id);
       const origin = liveRef.current[component.id] ?? entityRect(component.props, component.type);
@@ -110,7 +182,7 @@ export function SceneEditor({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [scale, snap, select, actions],
+    [scale, snap, select, actions, tool],
   );
 
   return (
@@ -137,7 +209,7 @@ export function SceneEditor({
               outline: selected ? "2px solid #8f7bff" : "1px solid rgb(255 255 255 / 0.18)",
               outlineOffset: 1,
               borderRadius: 6,
-              cursor: "move",
+              cursor: tool !== "select" && component.type === "tilemap" ? "crosshair" : "move",
               touchAction: "none",
             }}
           >
@@ -223,6 +295,24 @@ function EntityGlyph({ component, rect }: { component: ProjectModelComponent; re
       return (
         <div title={label} style={{ width: "100%", height: "100%", borderRadius: "50%", background: color, boxShadow: "inset -3px -3px 0 rgb(0 0 0 / 0.28)" }} />
       );
+    case "tilemap": {
+      const cell = tilemapCellSize(component.props);
+      const tileColor = typeof component.props?.tileColor === "string" ? component.props.tileColor : color;
+      const tiles = String(component.props?.tiles ?? "");
+      const cells: React.ReactNode[] = [];
+      tiles.split(";").forEach((seg) => {
+        const [pos, tile] = seg.trim().split(":");
+        if (!pos) return;
+        const [colS, rowS] = pos.split(",");
+        const col = parseInt(colS ?? "", 10);
+        const row = parseInt(rowS ?? "", 10);
+        if (!Number.isFinite(col) || !Number.isFinite(row)) return;
+        cells.push(
+          <div key={`${col}-${row}`} data-cell={`${col},${row}`} style={{ position: "absolute", left: col * cell, top: row * cell, width: cell, height: cell, background: tileColor, boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.06)" }} />,
+        );
+      });
+      return <div title={label} data-tile-count={cells.length} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>{cells}</div>;
+    }
     case "enemy":
       return <div title={label} style={{ width: "100%", height: "100%", borderRadius: 8, background: color, boxShadow: "inset -3px -3px 0 rgb(0 0 0 / 0.22)" }} />;
     case "trigger":

@@ -1,6 +1,7 @@
 // TASK 08 acceptance: real coin-collision gameplay in the builder preview,
 // scene editor persistence, restart reset, public page, export, landing chip.
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const pw = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const chromium = pw.chromium ?? pw.default?.chromium;
 const API = "http://localhost:8090";
 const WEB = "http://localhost:3000";
 const errors = [];
@@ -109,7 +110,7 @@ check("player actually moved (collision is positional)", playerLeft > 100, `x=${
 
 await page.getByRole("button", { name: /Runtime trace/ }).click();
 await page.waitForTimeout(300);
-const traceLine = await page.getByText(/collision: player ↔/).count();
+const traceLine = await page.getByText(/collision (enter|exit): player ↔/).count();
 check("runtime trace records the collision event", traceLine > 0);
 
 await page.keyboard.down("ArrowRight");
