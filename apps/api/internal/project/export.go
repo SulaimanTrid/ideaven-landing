@@ -448,6 +448,17 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
   function tilemapCellSize(props) {
     return typeof props.cellSize === "number" && props.cellSize >= 8 ? props.cellSize : 32;
   }
+  // Palette "value:#hex;…" → tile color; falls back to the tileColor prop.
+  function tileColorAt(props, tile) {
+    var palette = String(props.palette || "").split(";");
+    for (var i = 0; i < palette.length; i++) {
+      var seg = palette[i].trim();
+      if (!seg) continue;
+      var pair = seg.split(":");
+      if (parseInt(pair[0], 10) === tile && pair[1]) return pair[1].trim();
+    }
+    return typeof props.tileColor === "string" ? props.tileColor : "#2a3348";
+  }
   // One rect per painted cell — a painted cell is solid, an empty cell never is.
   function tilemapCellRects(props, r) {
     var cell = tilemapCellSize(props);
@@ -455,10 +466,11 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
     String(props.tiles || "").split(";").forEach(function (seg) {
       seg = seg.trim();
       if (!seg) return;
-      var pos = seg.split(":")[0].split(",");
+      var parts = seg.split(":");
+      var pos = parts[0].split(",");
       var col = parseInt(pos[0], 10), row = parseInt(pos[1], 10);
       if (!isFinite(col) || !isFinite(row)) return;
-      out.push({ x: r.x + col * cell, y: r.y + row * cell, width: cell, height: cell });
+      out.push({ x: r.x + col * cell, y: r.y + row * cell, width: cell, height: cell, tile: parseInt(parts[1], 10) || 1 });
     });
     return out;
   }
@@ -521,14 +533,13 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
           break;
         case "tilemap": {
           var tcell = tilemapCellSize(props);
-          var tcolor = typeof props.tileColor === "string" ? props.tileColor : color;
           el.style.position = "relative"; el.style.overflow = "hidden";
           tilemapCellRects(props, { x: 0, y: 0, width: r.width, height: r.height }).forEach(function (c) {
             var tile = document.createElement("div");
             tile.style.cssText = "position:absolute";
             tile.style.left = (c.x - r.x) + "px"; tile.style.top = (c.y - r.y) + "px";
             tile.style.width = tcell + "px"; tile.style.height = tcell + "px";
-            tile.style.background = tcolor;
+            tile.style.background = tileColorAt(props, c.tile);
             tile.style.boxShadow = "inset 0 0 0 1px rgb(255 255 255 / .06)";
             el.appendChild(tile);
           });

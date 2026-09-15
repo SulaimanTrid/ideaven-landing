@@ -15,6 +15,7 @@ import {
   entitiesOf,
   parseTiles,
   rectsOverlap,
+  tileColorAt,
   tilemapCellRects,
   tilemapCellSize,
   touchEventFor,
@@ -405,12 +406,16 @@ function EntityView({ component, props }: { component: ProjectModelComponent; pr
       );
     case "tilemap": {
       const cell = tilemapCellSize(props);
-      const tileColor = typeof props.tileColor === "string" ? props.tileColor : color;
       const cells = parseTiles(String(props.tiles ?? ""));
       return (
         <div data-entity={component.id} title={componentLabel(component)} style={{ ...base }}>
-          {cells.map(({ col, row }, i) => (
-            <div key={i} data-cell={`${col},${row}`} style={{ position: "absolute", left: col * cell, top: row * cell, width: cell, height: cell, background: tileColor, boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.06)" }} />
+          {cells.map(({ col, row, tile }, i) => (
+            <div
+              key={i}
+              data-cell={`${col},${row}`}
+              data-tile={tile}
+              style={{ position: "absolute", left: col * cell, top: row * cell, width: cell, height: cell, background: tileColorAt(props, tile), boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.06)" }}
+            />
           ))}
         </div>
       );

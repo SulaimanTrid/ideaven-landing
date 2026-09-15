@@ -2610,3 +2610,43 @@ all. This session made the slice genuinely real end to end.
 
 Rule tiles or the tile-palette picker (multi-tile painting), then the
 camera behaviors slice (SYSTEM 8) — per the 2D engine priority order.
+
+## 48. Session 41 (2D engine — Tile palette: multi-tile painting, SYSTEM 4 completion)
+
+The follow-up slice from §47's next-task list: tilemaps now paint with
+multiple tile types, palette-driven, end to end.
+
+- **Palette prop (canonical)**: `palette` "value:#hex;…" on the tilemap
+  (registry default 4 entries; editable as a text field). The `tiles`
+  payload already carried per-cell tile values — painting now writes them.
+- **Toolbar tile swatches**: with a tilemap selected, a swatch row shows
+  each palette entry in its color; the active tile (aria-pressed, ring
+  highlight) is what the Paint tool writes. The active value is clamped to
+  the tilemap's own palette.
+- **Per-tile rendering everywhere**: design canvas, preview, published
+  pages, and the exported HTML/Android/Windows runtime all resolve each
+  cell's color through the palette (fallback: the `tileColor` prop) —
+  `tileColorAt` in scene.ts and `tileColorAt` in the export engine are the
+  two implementations of the same rule.
+- **E2E extended** (`e2e-tilemap-paint.mjs`, now 24 checks): pick "Tile 2"
+  from the swatches → paint → the cell renders with `data-tile="2"` in the
+  palette color on the design canvas AND in preview; the canonical model
+  carries `4,2:2` through save. Export HTML verified to embed the palette
+  + per-value cells.
+- Gates: `tsc --noEmit` clean; production `next build` green; `go vet`
+  clean; full `go test -count=1 ./...` green (11/11 packages) against
+  live PostgreSQL; gameplay E2E regression 21/21.
+
+### Honest notes (session 41)
+
+- Palette editing is a text field ("value:#hex;…") — a color-picker editor
+  UI is a future polish slice.
+- All tile values are solid; per-value collision flags (e.g. non-solid
+  decoration tiles) are a future slice.
+- No rule tiles yet (neighbor-aware auto-tiling) — still the next tilemap
+  slice after this.
+
+### Next exact task
+
+Rule tiles (auto-tiling on paint) or the camera-behaviors slice
+(SYSTEM 8: follow/smoothing/bounds/shake) per the priority order.

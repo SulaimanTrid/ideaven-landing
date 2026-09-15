@@ -128,14 +128,27 @@ model = await getModel(cookie, project.id);
 const tiles3 = String(model.screens.find((s) => s.id === "screen-play").components.find((c) => c.type === "tilemap")?.props?.tiles ?? "");
 check("reloaded model still contains 1,1:1", tiles3.includes("1,1:1"), `tiles="${tiles3}"`);
 
-// ---- 9. Paint a landing strip and drop the player onto it --------------------
+// ---- 9. Multi-tile painting: pick tile 2 from the palette swatches ----------
 await tilemapNode2.click();
 await page.waitForTimeout(300);
+await page.getByRole("button", { name: "Tile 2", exact: true }).click();
 await page.getByRole("button", { name: /Paint/ }).click();
 await page.waitForTimeout(200);
 const box2 = await tilemapNode2.boundingBox();
 const scale2 = box2.width / 390;
 const cellPx2 = 32 * scale2;
+await page.mouse.click(box2.x + 4.5 * cellPx2, box2.y + 2.5 * cellPx2); // col 4, row 2
+await page.waitForTimeout(400);
+const cell42 = tilemapNode2.locator('[data-cell="4,2"]');
+check("tile-2 cell paints on the design canvas", (await cell42.count()) === 1 && (await cell42.getAttribute("data-tile")) === "2");
+const cellColor = await cell42.evaluate((el) => getComputedStyle(el).backgroundColor);
+check("tile-2 cell renders in its palette color", cellColor === "rgb(143, 123, 255)", `color=${cellColor}`);
+await waitForSaved(page);
+model = await getModel(cookie, project.id);
+const tiles4 = String(model.screens.find((s) => s.id === "screen-play").components.find((c) => c.type === "tilemap")?.props?.tiles ?? "");
+check("model carries the tile VALUE (4,2:2)", tiles4.includes("4,2:2"), `tiles="${tiles4}"`);
+
+// ---- 10. Paint a landing strip and drop the player onto it -------------------
 await page.mouse.click(box2.x + 8.5 * cellPx2, box2.y + 1.5 * cellPx2); // col 8, row 1
 await page.mouse.click(box2.x + 9.5 * cellPx2, box2.y + 1.5 * cellPx2); // col 9, row 1
 await page.waitForTimeout(400);
@@ -155,7 +168,7 @@ await yField.fill("560");
 await page.keyboard.press("Tab");
 await waitForSaved(page);
 
-// ---- 10. Preview: the player must land ON the painted cells ------------------
+// ---- 11. Preview: the player must land ON the painted cells ------------------
 await page.getByRole("button", { name: "Preview", exact: true }).first().click();
 await page.waitForTimeout(1000);
 await page.getByRole("button", { name: /PLAY/ }).click(); // start screen → Play scene
@@ -164,6 +177,10 @@ await page.waitForTimeout(2000); // fall + settle (drop from 560 → cell top 65
 const player = page.locator('[data-entity="p-player"]');
 const cell81 = page.locator('[data-cell="8,1"]');
 check("preview renders the painted cell", (await cell81.count()) >= 1);
+check("preview renders the tile-2 cell with its value",
+  (await page.locator('[data-cell="4,2"][data-tile="2"]').count()) === 1);
+const cell42PreviewColor = await page.locator('[data-cell="4,2"][data-tile="2"]').first().evaluate((el) => getComputedStyle(el).backgroundColor);
+check("preview honors the palette color", cell42PreviewColor === "rgb(143, 123, 255)", `color=${cell42PreviewColor}`);
 const pBox = await player.boundingBox();
 const cBox = await cell81.first().boundingBox();
 const gap = pBox && cBox ? pBox.y + pBox.height - cBox.y : NaN;

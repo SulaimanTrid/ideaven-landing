@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useBuilder, componentLabel } from "@/app/builder/[id]/builder/builder-context";
-import { entityRect, entitiesOf, entityVisible, tilemapCellSize, tilemapGrid, tilesToMap, tilesToString, type EntityRect } from "@/lib/project-model/scene";
+import { entityRect, entitiesOf, entityVisible, tileColorAt, tilemapCellSize, tilemapGrid, tilesToMap, tilesToString, type EntityRect } from "@/lib/project-model/scene";
 import type { ProjectModelComponent, ProjectModelScreen } from "@/types/project";
 import { imageUrl } from "@/lib/api";
 
@@ -29,11 +29,14 @@ export function SceneEditor({
   scale,
   snap,
   tool = "select",
+  activeTile = 1,
 }: {
   screen: ProjectModelScreen;
   scale: number;
   snap: boolean;
   tool?: SceneTool;
+  /** Tile value the Paint tool writes (from the toolbar's palette swatches). */
+  activeTile?: number;
 }) {
   const { selectedId, select, actions } = useBuilder();
   const entities = entitiesOf(screen);
@@ -106,8 +109,8 @@ export function SceneEditor({
           if (col < 0 || row < 0 || col >= paint.cols || row >= paint.rows) return;
           const key = `${col},${row}`;
           if (paint.mode === "paint") {
-            if (paint.tiles.get(key) === 1) return;
-            paint.tiles.set(key, 1);
+            if (paint.tiles.get(key) === activeTile) return;
+            paint.tiles.set(key, activeTile);
           } else {
             if (!paint.tiles.has(key)) return;
             paint.tiles.delete(key);
@@ -182,7 +185,7 @@ export function SceneEditor({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [scale, snap, select, actions, tool],
+    [scale, snap, select, actions, tool, activeTile],
   );
 
   return (
@@ -297,7 +300,6 @@ function EntityGlyph({ component, rect }: { component: ProjectModelComponent; re
       );
     case "tilemap": {
       const cell = tilemapCellSize(component.props);
-      const tileColor = typeof component.props?.tileColor === "string" ? component.props.tileColor : color;
       const tiles = String(component.props?.tiles ?? "");
       const cells: React.ReactNode[] = [];
       tiles.split(";").forEach((seg) => {
@@ -306,9 +308,15 @@ function EntityGlyph({ component, rect }: { component: ProjectModelComponent; re
         const [colS, rowS] = pos.split(",");
         const col = parseInt(colS ?? "", 10);
         const row = parseInt(rowS ?? "", 10);
+        const tileNum = parseInt(tile ?? "1", 10);
         if (!Number.isFinite(col) || !Number.isFinite(row)) return;
         cells.push(
-          <div key={`${col}-${row}`} data-cell={`${col},${row}`} style={{ position: "absolute", left: col * cell, top: row * cell, width: cell, height: cell, background: tileColor, boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.06)" }} />,
+          <div
+            key={`${col}-${row}`}
+            data-cell={`${col},${row}`}
+            data-tile={Number.isFinite(tileNum) ? tileNum : 1}
+            style={{ position: "absolute", left: col * cell, top: row * cell, width: cell, height: cell, background: tileColorAt(component.props, Number.isFinite(tileNum) ? tileNum : 1), boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.06)" }}
+          />,
         );
       });
       return <div title={label} data-tile-count={cells.length} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>{cells}</div>;

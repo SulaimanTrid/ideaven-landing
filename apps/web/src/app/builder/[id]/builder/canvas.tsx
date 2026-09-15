@@ -5,7 +5,7 @@ import { useBuilder, type DropSpot } from "./builder-context";
 import { ComponentNode, DropLine } from "./renderer";
 import { DeviceFrame } from "@/components/builder/device-frame";
 import { findScreen } from "@/lib/project-model/ops";
-import { isSceneScreen } from "@/lib/project-model/scene";
+import { isSceneScreen, tileColorAt, tilemapPaletteValues } from "@/lib/project-model/scene";
 import { SceneEditor, type SceneTool } from "./scene-canvas";
 import { viewportSize, ViewportFrame, type ViewportDevice, type ViewportOrientation } from "@/components/builder/viewport";
 import { useI18n } from "@/lib/i18n/i18n";
@@ -32,6 +32,7 @@ export function BuilderCanvas() {
   const [snap, setSnap] = useState(true);
   // Tilemap painting tools (SYSTEM 4): active while a tilemap is selected.
   const [sceneTool, setSceneTool] = useState<SceneTool>("select");
+  const [activeTile, setActiveTile] = useState(1);
   const saved = model.settings.preview;
   const [device, setDevice] = useState<ViewportDevice>(saved?.device ?? "phone");
   const [orientation, setOrientation] = useState<ViewportOrientation>(saved?.orientation ?? "portrait");
@@ -47,6 +48,12 @@ export function BuilderCanvas() {
     isScene &&
     typeof selectedId === "string" &&
     screen?.components.some((c) => c.id === selectedId && c.type === "tilemap");
+  const tilemapComponent = tilemapSelected
+    ? screen?.components.find((c) => c.id === selectedId)
+    : undefined;
+  const paletteValues = tilemapComponent ? tilemapPaletteValues(tilemapComponent.props) : [];
+  // Keep the active tile paintable: clamp to the tilemap's own palette.
+  const safeActiveTile = paletteValues.includes(activeTile) ? activeTile : (paletteValues[0] ?? 1);
 
   // Selecting anything that is not that tilemap returns the stage to Select
   // so a stale paint mode never surprises a drag elsewhere.
@@ -206,6 +213,30 @@ export function BuilderCanvas() {
                   ))}
                 </div>
               ) : null}
+              {tilemapSelected && tilemapComponent ? (
+                <div
+                  className="mr-2 flex h-7 items-center gap-1 rounded-md border border-line px-1.5"
+                  role="group"
+                  aria-label="Tile palette"
+                >
+                  {paletteValues.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setActiveTile(value)}
+                      aria-pressed={safeActiveTile === value}
+                      aria-label={`Tile ${value}`}
+                      title={`Paint with tile ${value}`}
+                      style={{ background: tileColorAt(tilemapComponent.props, value) }}
+                      className={`h-4 w-4 rounded-sm border transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                        safeActiveTile === value
+                          ? "border-white/90 shadow-[0_0_0_2px_rgb(143_123_255/0.9)]"
+                          : "border-white/25"
+                      }`}
+                    />
+                  ))}
+                </div>
+              ) : null}
             </>
           ) : null}
           {device !== "desktop" ? (
@@ -310,7 +341,7 @@ export function BuilderCanvas() {
                   {t("builder.dragComponents")}
                 </div>
               ) : isScene ? (
-                <SceneEditor screen={screen} scale={scale} snap={snap} tool={sceneTool} />
+                <SceneEditor screen={screen} scale={scale} snap={snap} tool={sceneTool} activeTile={safeActiveTile} />
               ) : (
                 screen.components.map((child) => (
                   <ComponentNode

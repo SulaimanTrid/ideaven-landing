@@ -546,13 +546,14 @@ COMPONENT_DEFS.push(
   {
     type: "tilemap", label: "Tilemap", category: "game", container: false,
     glyph: glyph("M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"),
-    defaultProps: { name: "Tilemap", x: 0, y: 620, width: 390, height: 224, cellSize: 32, cols: 12, rows: 7, tiles: "0,6:1;1,6:1;2,6:1;3,6:1", color: "#2a3348", visible: true, collider: true, layer: "solid" },
+    defaultProps: { name: "Tilemap", x: 0, y: 620, width: 390, height: 224, cellSize: 32, cols: 12, rows: 7, tiles: "0,6:1;1,6:1;2,6:1;3,6:1", palette: "1:#2a3348;2:#8f7bff;3:#46e3b4;4:#f0b429", color: "#2a3348", visible: true, collider: true, layer: "solid" },
     defaultStyles: {},
     propFields: entityFields([
       f.number("cellSize", "Cell size", 8, 128),
       f.number("cols", "Columns", 1, 64),
       f.number("rows", "Rows", 1, 64),
       f.text("tiles", "Tiles (col,row:tile;…)"),
+      f.text("palette", "Tile palette (value:#hex;…)"),
       f.color("tileColor", "Tile color", "#2a3348"),
     ]),
     styleFields: [],

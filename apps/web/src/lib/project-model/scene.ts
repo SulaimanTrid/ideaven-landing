@@ -155,3 +155,30 @@ export function tilemapCellRects(props: PropsMap | undefined, rect: EntityRect):
     height: cell,
   }));
 }
+
+/** Parses a "value:#hex;…" tile palette prop into a tile→color map. */
+export function parseTilePalette(palette: string): Map<number, string> {
+  const map = new Map<number, string>();
+  for (const part of palette.split(";")) {
+    const seg = part.trim();
+    if (!seg) continue;
+    const [value, hex] = seg.split(":");
+    const num = parseInt(value ?? "", 10);
+    if (Number.isFinite(num) && typeof hex === "string" && hex.trim() !== "") {
+      map.set(num, hex.trim());
+    }
+  }
+  return map;
+}
+
+/** The color a painted cell renders with: its palette entry, else the fallback tileColor. */
+export function tileColorAt(props: PropsMap | undefined, tile: number): string {
+  const color = parseTilePalette(String(props?.palette ?? "")).get(tile);
+  if (color) return color;
+  return typeof props?.tileColor === "string" ? props.tileColor : "#2a3348";
+}
+
+/** The tile values the palette offers for painting (sorted ascending). */
+export function tilemapPaletteValues(props: PropsMap | undefined): number[] {
+  return [...parseTilePalette(String(props?.palette ?? "")).keys()].sort((a, b) => a - b);
+}
