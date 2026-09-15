@@ -4,7 +4,7 @@
 > The repository is the source of truth; this file only points at it.
 
 CURRENT_DATE: 2026-09-16
-CURRENT_COMMIT: ef32e75 + uncommitted tile-palette slice (session 41)
+CURRENT_COMMIT: cf1d9d1 (feat(2d): tile palette — multi-tile painting end to end)
 CURRENT_BRANCH: main
 
 CURRENT_OBJECTIVE:
@@ -95,7 +95,7 @@ SESSION LOG:
 
 ## Session 41 (2026-09-16)
 DATE: 2026-09-16
-COMMIT: (this slice; base ef32e75)
+COMMIT: cf1d9d1 — feat(2d): tile palette — multi-tile painting
 CURRENT PHASE: 8.0 / 2D Game Engine — PHASE F, SYSTEM 4 (Tilemap)
 CURRENT FEATURE: Tile palette — multi-tile painting
 COMPLETED THIS SESSION:
