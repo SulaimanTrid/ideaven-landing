@@ -5,6 +5,7 @@ import { imageUrl } from "@/lib/api";
 import { createRuntime, screenOf, type ScreenRuntime } from "@/lib/project-model/runtime";
 import { RuntimeNode } from "@/components/runtime/runtime-node";
 import { SceneStage } from "@/components/runtime/scene-stage";
+import { Viewport3D } from "@/components/runtime/viewport-3d";
 import { viewportSize, ViewportFrame, type ViewportDevice, type ViewportOrientation } from "@/components/builder/viewport";
 import { isSceneScreen } from "@/lib/project-model/scene";
 import { useI18n } from "@/lib/i18n/i18n";
@@ -292,7 +293,16 @@ export function PreviewMode() {
                     : "#ffffff",
             }}
           >
-            {isScene && screen ? (
+            {isScene && screen && model.type === "3d" ? (
+              <Viewport3D
+                key={runId}
+                model={model}
+                screen={screen}
+                mode="runtime"
+                runtimeEmit={emit}
+                getProps={(id) => runtimeRef.current?.getComponentProps(id)}
+              />
+            ) : isScene && screen ? (
               <SceneStage
                 key={runId}
                 screen={screen}

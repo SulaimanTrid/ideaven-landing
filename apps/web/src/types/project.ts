@@ -10,6 +10,7 @@
 export type ProjectType =
   | "app"
   | "game"
+  | "3d"
   | "website"
   | "backend"
   | "api"
@@ -52,6 +53,30 @@ export interface ProjectModel {
   assets: { id: string; kind: string; name: string }[];
 }
 
+/**
+ * A named rendering layer (TASK 15): entities on higher layers draw in front
+ * of lower ones; `order` sorts within a layer. Optional on a screen — absent
+ * means the default layer set applies. Entities reference layers by NAME.
+ */
+export interface ProjectModelSortingLayer {
+  name: string;
+  order: number;
+}
+
+/**
+ * One abstract input action (input abstraction system): gameplay reasons
+ * about action IDs, never physical keys. `keys` are lowercase key names
+ * ("arrowleft", "a", " ") — the binding list is the only place a device
+ * appears. Optional on a screen; absent means the default set applies
+ * (the IDs the built-in player controls consume).
+ */
+export interface ProjectModelInputAction {
+  id: string;
+  name: string;
+  keys: string[];
+  enabled: boolean;
+}
+
 export interface ProjectModelScreen {
   id: string;
   name: string;
@@ -60,6 +85,19 @@ export interface ProjectModelScreen {
   styles?: PropsMap;
   /** Event handlers as structured block programs — optional in v1. */
   logic?: ProjectModelLogic;
+  /**
+   * Named rendering layers for the 2D scene (TASK 15) — optional; when
+   * absent the editor and runtimes apply the default layer set. Entities
+   * reference a layer by name; the Layer Manager remaps on rename/delete.
+   */
+  sortingLayers?: ProjectModelSortingLayer[];
+  /**
+   * Abstract input actions for this scene — optional; when absent the
+   * default set applies (identical to the previous hardcoded keys, so
+   * existing projects behave exactly the same). The built-in player
+   * controls consume the reserved IDs "move-left", "move-right", "jump".
+   */
+  inputActions?: ProjectModelInputAction[];
   /**
    * Custom source for this screen: authoritative code the platform does not
    * (yet) represent as blocks. Generation never overwrites it.

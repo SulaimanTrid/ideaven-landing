@@ -90,7 +90,7 @@ export function SiteHeader() {
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-colors duration-300 ${
+      className={`fixed inset-x-0 top-0 z-50 transition-colors duration-standard ${
         scrolled || open
           ? "border-b border-line bg-canvas/85 backdrop-blur-md"
           : "border-b border-transparent bg-transparent"

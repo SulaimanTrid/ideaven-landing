@@ -80,17 +80,39 @@ export class ApiError extends Error {
   readonly code: ApiErrorCode;
   readonly status: number;
   readonly details?: FieldError[];
+  /** Safe machine-readable metadata the API attaches to some errors
+   * (e.g. credit numbers on AI_INSUFFICIENT_CREDITS). */
+  readonly data?: Record<string, unknown>;
 
-  constructor(code: ApiErrorCode, message: string, status = 0, details?: FieldError[]) {
+  constructor(
+    code: ApiErrorCode,
+    message: string,
+    status = 0,
+    details?: FieldError[],
+    data?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
     this.details = details;
+    this.data = data;
   }
 
   /** Field-level message from validation details, if present. */
   fieldError(field: string): string | undefined {
     return this.details?.find((detail) => detail.field === field)?.message;
+  }
+
+  /** Numeric field from error metadata, if present. */
+  dataNumber(field: string): number | undefined {
+    const value = this.data?.[field];
+    return typeof value === "number" ? value : undefined;
+  }
+
+  /** Boolean field from error metadata, if present. */
+  dataBoolean(field: string): boolean | undefined {
+    const value = this.data?.[field];
+    return typeof value === "boolean" ? value : undefined;
   }
 }

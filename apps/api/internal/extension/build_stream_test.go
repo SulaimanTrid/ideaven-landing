@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -269,10 +270,16 @@ func TestBuildStreamCancelRecordsCancelled(t *testing.T) {
 	id, _ := ext["id"].(string)
 
 	// A worker that hangs until it is killed — the process-group kill is
-	// what makes cancellation real.
+	// what makes cancellation real. Windows cannot exec a POSIX script, so
+	// the hanging worker is a batch file there.
 	dir := t.TempDir()
 	script := filepath.Join(dir, "slow-worker.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+	worker := []byte("#!/bin/sh\nsleep 30\n")
+	if runtime.GOOS == "windows" {
+		script = filepath.Join(dir, "slow-worker.bat")
+		worker = []byte("@echo off\r\nping -n 31 127.0.0.1 > nul\r\n")
+	}
+	if err := os.WriteFile(script, worker, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("EXT_BUILD_BIN", script)

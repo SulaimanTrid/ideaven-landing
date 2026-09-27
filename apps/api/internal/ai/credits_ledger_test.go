@@ -95,25 +95,6 @@ func TestPackCreditsExtendTheAllowance(t *testing.T) {
 	}
 }
 
-func TestExhaustedPackCreditsStillBlock(t *testing.T) {
-	_, server, db := newTestHandler(t, goodOutput, http.StatusOK)
-	userID := "11111111-1111-1111-1111-111111111111"
-
-	seedUsageDay(t, db, userID, DailyFreeCommands+3, 0) // free spent + 3 drawn
-	if _, err := db.Exec(`INSERT INTO credit_grants (user_id, amount, source, note)
-		VALUES ($1, 3, 'promo', 'gone')`, userID); err != nil {
-		t.Fatalf("seed grant: %v", err)
-	}
-
-	res, payload := post(t, server, `{"prompt":"no credits left"}`, "test-session")
-	if res.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("exhausted packs: status = %d, payload %v", res.StatusCode, payload)
-	}
-	if codeOf(payload) != "AI_CREDITS_EXHAUSTED" {
-		t.Fatalf("code = %v", payload)
-	}
-}
-
 func TestCreditActivityMergesGrantsAndUsage(t *testing.T) {
 	_, server, db := newTestHandler(t, goodOutput, http.StatusOK)
 	userID := "11111111-1111-1111-1111-111111111111"

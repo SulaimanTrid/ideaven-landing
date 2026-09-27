@@ -18,7 +18,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"ideaven/apps/api/internal/extsrc"
@@ -280,13 +279,20 @@ func resolveWorker() []string {
 // never executes untrusted code (structural analysis only), but isolation
 // starts with not handing the build process the server's full environment.
 func workerEnv() []string {
-	keep := []string{"PATH", "HOME", "GOCACHE", "GOPATH", "GOPROXY", "GOTOOLCHAIN", "GOMODCACHE", "TMPDIR"}
+	// TMP/TEMP/SystemRoot/COMSPEC matter only on Windows (the toolchain needs
+	// them for work dirs and process spawning); LocalAppData/AppData/UserProfile
+	// are how the Windows toolchain locates its default GOCACHE, GOENV and
+	// GOPATH when those are unset. On Unix the extra names are absent from
+	// os.Environ() and the keep list matches exactly as before. Windows stores
+	// names in mixed case (SystemRoot, ComSpec, LocalAppData…), so matching is
+	// case-insensitive — on Unix names are already exact.
+	keep := []string{"PATH", "HOME", "GOCACHE", "GOPATH", "GOPROXY", "GOTOOLCHAIN", "GOMODCACHE", "TMPDIR", "TMP", "TEMP", "SystemRoot", "COMSPEC", "LocalAppData", "AppData", "UserProfile"}
 	env := os.Environ()
 	out := make([]string, 0, len(keep))
 	for _, entry := range env {
 		name, _, _ := strings.Cut(entry, "=")
 		for _, k := range keep {
-			if name == k {
+			if strings.EqualFold(name, k) {
 				out = append(out, entry)
 				break
 			}
@@ -313,15 +319,14 @@ func startWorker(ctx context.Context, job []byte) (*exec.Cmd, context.CancelFunc
 		}
 	}
 	cmd.Env = workerEnv()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Platform-specific isolation: on Unix the worker gets its own process
+	// group so cancel can kill the whole tree (the go-run fallback spawns
+	// children); see worker_posix.go / worker_windows.go.
+	setProcessGroup(cmd)
 	cmd.WaitDelay = 5 * time.Second
-	// Kill the whole process group on timeout/cancellation.
-	cmd.Cancel = func() error {
-		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
-		return ctxTimeout.Err()
-	}
+	// Cancel kills the worker (and its group on Unix); WaitDelay reaps
+	// stragglers, and the 120s bound caps every run.
+	cmd.Cancel = killWorkerGroup(cmd, ctxTimeout.Err)
 	stderr := &bytes.Buffer{}
 	cmd.Stderr = stderr
 	pipe, err := cmd.StdoutPipe()

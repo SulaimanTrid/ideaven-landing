@@ -2,8 +2,10 @@ import type {
   ProjectModel,
   ProjectModelComponent,
   ProjectModelHandler,
+  ProjectModelInputAction,
   ProjectModelLogic,
   ProjectModelScreen,
+  ProjectModelSortingLayer,
   PropsMap,
 } from "@/types/project";
 import { getDef } from "./registry";
@@ -180,6 +182,139 @@ export function duplicateComponent(model: ProjectModel, id: string): ProjectMode
   return next;
 }
 
+// ---- 3D hierarchy (TASK 53) -----------------------------------------------------
+// The canonical relationship is `component.props.parentId`; child lists are
+// derived. These ops keep the semantics explicit and guarded.
+
+/** All 3D entities (transform-bearing components) of one screen, flat. */
+function screen3DEntities(model: ProjectModel, screenId: string): Component[] {
+  const screen = findScreen(model, screenId);
+  if (!screen) return [];
+  const out: Component[] = [];
+  const visit = (nodes: Component[]) => {
+    for (const node of nodes) {
+      if (typeof node.props?.px === "number") out.push(node);
+      visit(node.children ?? []);
+    }
+  };
+  visit(screen.components);
+  return out;
+}
+
+/** Reparents a 3D entity. Guards: entity exists, parent exists (or null),
+ * not self, not a descendant — cycles are impossible through this op. */
+export function setParent3D(
+  model: ProjectModel,
+  screenId: string,
+  id: string,
+  parentId: string | null,
+): ProjectModel {
+  const entities = screen3DEntities(model, screenId);
+  const entity = entities.find((c) => c.id === id);
+  if (!entity) return model;
+  if (parentId === id) return model;
+  if (parentId !== null && !entities.some((c) => c.id === parentId)) return model;
+  if (parentId !== null) {
+    // Walk the proposed parent's chain — reaching `id` would create a cycle.
+    let cursor: string | null = parentId;
+    const seen = new Set<string>();
+    while (cursor) {
+      if (cursor === id) return model;
+      if (seen.has(cursor)) return model;
+      seen.add(cursor);
+      const parent = entities.find((c) => c.id === cursor);
+      const raw = parent?.props?.parentId;
+      cursor = typeof raw === "string" && raw !== "" ? raw : null;
+    }
+  }
+  const next = clone(model);
+  const screen = findScreen(next, screenId);
+  const target = screen ? locateComponent(next, id) : undefined;
+  if (!screen || !target) return model;
+  target.node.props = { ...(target.node.props ?? {}), parentId: parentId ?? "" };
+  if (!parentId) delete target.node.props.parentId;
+  return next;
+}
+
+/**
+ * Duplicates a 3D entity WITH its descendant subtree (parentId-based): every
+ * clone gets a fresh id and parent references are remapped to the clones, so
+ * the copied hierarchy is internally identical. Clones are appended at the
+ * root level; the clone of the duplicated entity keeps the original's
+ * parentId?? No — clones are roots (the copy is standalone).
+ */
+export function duplicateHierarchy3D(
+  model: ProjectModel,
+  screenId: string,
+  id: string,
+): ProjectModel {
+  const entities = screen3DEntities(model, screenId);
+  const entity = entities.find((c) => c.id === id);
+  if (!entity) return model;
+  // Collect the subtree (entity + descendants, cycle-safe).
+  const subtreeIds = new Set<string>([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const candidate of entities) {
+      const raw = candidate.props?.parentId;
+      const parent = typeof raw === "string" ? raw : "";
+      if (subtreeIds.has(parent) && !subtreeIds.has(candidate.id)) {
+        subtreeIds.add(candidate.id);
+        grew = true;
+      }
+    }
+  }
+  const next = clone(model);
+  const screen = findScreen(next, screenId);
+  if (!screen) return model;
+  const idRemap = new Map<string, string>();
+  for (const source of entities.filter((e) => subtreeIds.has(e.id))) {
+    idRemap.set(source.id, genId(`c-${source.type}`));
+  }
+  for (const source of entities.filter((e) => subtreeIds.has(e.id))) {
+    const props = { ...(source.props ?? {}) };
+    const rawParent = typeof props.parentId === "string" ? props.parentId : "";
+    // Remap parents inside the subtree; the duplicated root becomes a root.
+    props.parentId = idRemap.has(rawParent) ? idRemap.get(rawParent)! : "";
+    screen.components.push({
+      id: idRemap.get(source.id)!,
+      type: source.type,
+      props,
+      styles: source.styles ? { ...source.styles } : undefined,
+      children: undefined,
+    });
+  }
+  return next;
+}
+
+/**
+ * Deletes a 3D entity: its children are REPARENTED to the deleted entity's
+ * parent (never orphaned, never silently destroyed) — the explicit,
+ * documented delete behavior for the 3D hierarchy.
+ */
+export function removeComponent3D(model: ProjectModel, screenId: string, id: string): ProjectModel {
+  const entities = screen3DEntities(model, screenId);
+  const entity = entities.find((c) => c.id === id);
+  if (!entity) return model;
+  const rawParent = entity.props?.parentId;
+  const grandparentId = typeof rawParent === "string" && rawParent !== "" ? rawParent : "";
+  const next = clone(model);
+  const screen = findScreen(next, screenId);
+  if (!screen) return model;
+  const reparent = (nodes: Component[]) => {
+    for (const node of nodes) {
+      if (typeof node.props?.parentId === "string" && node.props.parentId === id) {
+        node.props = { ...node.props, parentId: grandparentId };
+      }
+      reparent(node.children ?? []);
+    }
+  };
+  reparent(screen.components);
+  screen.components = screen.components.filter((c) => c.id !== id);
+  return next;
+}
+
 export interface ComponentUpdate {
   props?: PropsPatch;
   styles?: PropsPatch;
@@ -276,6 +411,71 @@ export function setScreenCode(model: ProjectModel, screenId: string, code: strin
   if (!screen) return model;
   if (code === null) delete screen.code;
   else screen.code = code;
+  return next;
+}
+
+/**
+ * Rewrite the screen's named rendering layers (TASK 15). The Layer Manager
+ * commits the WHOLE list per edit — add, rename (with reference remap),
+ * delete (guard at the UI: a layer in use cannot be deleted), or reorder —
+ * so every change is exactly one undoable step. Rename remaps every entity
+ * on the screen that referenced the old name in the same commit, so no
+ * entity is ever left pointing at a missing layer.
+ */
+export function updateSortingLayers(
+  model: ProjectModel,
+  screenId: string,
+  layers: ProjectModelSortingLayer[],
+  previousLayers?: ProjectModelSortingLayer[],
+): ProjectModel {
+  const next = clone(model);
+  const screen = findScreen(next, screenId);
+  if (!screen) return model;
+  // Renames: a previous layer whose name vanished but whose order survives
+  // under a new name is a rename — remap its references.
+  if (previousLayers?.length) {
+    const renamed = new Map<string, string>();
+    for (const prev of previousLayers) {
+      if (layers.some((l) => l.name === prev.name)) continue;
+      const at = previousLayers.indexOf(prev);
+      const replacement = layers[at] ?? layers.find((l) => l.order === prev.order);
+      if (replacement && replacement.name !== prev.name) renamed.set(prev.name, replacement.name);
+    }
+    if (renamed.size > 0) {
+      const remap = (nodes: ProjectModelComponent[]) => {
+        for (const node of nodes) {
+          const current = node.props?.sortingLayer;
+          if (typeof current === "string" && renamed.has(current)) {
+            node.props = { ...(node.props ?? {}), sortingLayer: renamed.get(current)! };
+          }
+          if (node.children) remap(node.children);
+        }
+      };
+      remap(screen.components);
+    }
+  }
+  if (layers.length > 0) screen.sortingLayers = layers;
+  else delete screen.sortingLayers;
+  return next;
+}
+
+/**
+ * Rewrite the screen's abstract input actions (input abstraction system) as
+ * ONE commit. An empty list deletes the field, which restores the default
+ * set (same convention as the Layer Manager) — the UI explains this.
+ * Action IDs are the stable interface the runtime consumes; renaming the
+ * display name never remaps anything.
+ */
+export function updateInputActions(
+  model: ProjectModel,
+  screenId: string,
+  actions: ProjectModelInputAction[],
+): ProjectModel {
+  const next = clone(model);
+  const screen = findScreen(next, screenId);
+  if (!screen) return model;
+  if (actions.length > 0) screen.inputActions = actions;
+  else delete screen.inputActions;
   return next;
 }
 

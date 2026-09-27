@@ -20,6 +20,7 @@ import (
 	"ideaven/apps/api/internal/auth"
 	"ideaven/apps/api/internal/config"
 	"ideaven/apps/api/internal/community"
+	"ideaven/apps/api/internal/credits"
 	"ideaven/apps/api/internal/extension"
 	"ideaven/apps/api/internal/handler"
 	"ideaven/apps/api/internal/httpx"
@@ -150,11 +151,16 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	// The AI provider (when configured) also powers the extension build
 	// fixer, sharing one credit allowance and one usage ledger.
 	aiProvider := ai.LoadProvider(os.Getenv, nil)
+	// Task 12: the payment provider boundary — nil until a PAYMENT_PROVIDER
+	// adapter ships, in which case the purchase flow stays honestly
+	// "coming soon" instead of faking checkout.
+	paymentProvider := credits.LoadPaymentProvider(os.Getenv)
+	purchaseService := credits.NewService(db, paymentProvider, cfg.AppURL)
 	extensionHandler := extension.NewHandler(extensionService, authService.Authenticate,
 		config.CookieConfig{Name: cfg.Cookie.Name},
 		extension.WithFixProvider(aiProvider),
-		extension.WithFixGate(func(ctx context.Context, userID string) bool {
-			return ai.Exhausted(db, userID)
+		extension.WithFixGate(func(ctx context.Context, userID string) *httpx.Error {
+			return ai.GateError(ctx, db, userID, purchaseService.PurchaseAvailable())
 		}),
 		extension.WithUsageRecorder(func(userID, provider, model string, promptChars, outputChars int, ok bool) {
 			ai.RecordUsage(db, userID, provider, model, promptChars, outputChars, ok)
@@ -199,11 +205,23 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 
 	// Phase 3: Ask AI. Provider comes from AI_* env vars; without them the
 	// endpoint reports AI_NOT_CONFIGURED honestly. Keys never leave the server.
-	aiHandler := ai.NewHandler(aiProvider, authService.Authenticate, db, ai.CookieConfig{Name: cfg.Cookie.Name})
+	aiHandler := ai.NewHandler(aiProvider, authService.Authenticate, db, ai.CookieConfig{Name: cfg.Cookie.Name},
+		ai.WithPurchaseAvailability(purchaseService.PurchaseAvailable))
 	aiLimiter := middleware.NewRateLimiter(10, time.Minute)
 	route(mux, http.MethodPost, "/api/ai/command", middleware.Chain(http.HandlerFunc(aiHandler.Command), aiLimiter.Middleware))
 	route(mux, http.MethodGet, "/api/ai/credits", http.HandlerFunc(aiHandler.Credits))
 	route(mux, http.MethodGet, "/api/ai/credits/activity", http.HandlerFunc(aiHandler.CreditActivity))
+
+	// Task 12: credit packs + contextual purchase. Packages are public
+	// product data (single server-authoritative definition); purchases and
+	// the webhook are session/provider-scoped.
+	creditsHandler := credits.NewHandler(purchaseService, authService.Authenticate, credits.CookieConfig{Name: cfg.Cookie.Name})
+	route(mux, http.MethodGet, "/api/credits/packages", http.HandlerFunc(creditsHandler.Packages))
+	route(mux, http.MethodPost, "/api/credits/purchases", http.HandlerFunc(creditsHandler.CreatePurchase))
+	route(mux, http.MethodGet, "/api/credits/purchases/{id}", http.HandlerFunc(creditsHandler.GetPurchase))
+	// Provider callbacks authenticate inside the provider boundary (Verify);
+	// the endpoint itself is deliberately not session-scoped.
+	route(mux, http.MethodPost, "/api/credits/webhook/{provider}", http.HandlerFunc(creditsHandler.Webhook))
 
 	// Phase 3b: per-project media assets. Ownership rides the project — the
 	// authorizer reuses the project service's owner-scoped lookup, so an

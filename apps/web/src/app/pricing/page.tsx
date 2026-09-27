@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { API_BASE_URL, type CreditPackage } from "@/lib/api";
 
 /**
- * Pricing (roadmap 23): the free tier is real and derived from the usage
- * ledger (every successful AI command counts, outages never drain it).
- * Credit packs are described honestly: the ledger and operator-grant CLI
- * exist; the payment provider integration does not, and this page says so.
+ * Pricing (roadmap 23 + TASK 12): the free tier is real and derived from the
+ * usage ledger. Credit packs are the SINGLE server-authoritative package
+ * definition (the same rows the contextual purchase modal offers) — this
+ * page never hardcodes a second copy. When the payment provider is not
+ * integrated yet, the packs are shown as designed-but-not-sold, honestly.
  */
 
 export const metadata: Metadata = {
@@ -15,28 +17,51 @@ export const metadata: Metadata = {
 
 const FREE_PER_DAY = 20;
 
-const PACKS = [
-  {
-    name: "Starter pack",
-    credits: 100,
-    price: "$2",
-    note: "Small top-up when a build day runs long.",
-  },
-  {
-    name: "Builder pack",
-    credits: 600,
-    price: "$10",
-    note: "The everyday pack for active projects.",
-  },
-  {
-    name: "Studio pack",
-    credits: 2000,
-    price: "$30",
-    note: "For heavy sessions and long AI-assisted builds.",
-  },
-];
+async function loadPricing(): Promise<{ packages: CreditPackage[]; purchaseAvailable: boolean } | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/credits/packages`, {
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as { packages: CreditPackage[]; purchaseAvailable: boolean };
+  } catch {
+    return null;
+  }
+}
 
-export default function PricingPage() {
+function formatPrice(price: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      currencyDisplay: "narrowSymbol",
+      maximumFractionDigits: price % 100 === 0 ? 0 : 2,
+    }).format(price / 100);
+  } catch {
+    return `${currency} ${price / 100}`;
+  }
+}
+
+/** Effective price per credit in major units — kept honest with up to four
+ * decimals instead of rounding a fraction of a cent up to a whole one. */
+function formatPerCredit(price: number, credits: number, currency: string): string {
+  const value = price / credits / 100;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      currencyDisplay: "narrowSymbol",
+      maximumFractionDigits: 4,
+    }).format(value);
+  } catch {
+    return `${currency} ${value}`;
+  }
+}
+
+export default async function PricingPage() {
+  const pricing = await loadPricing();
+  const packages = pricing?.packages ?? [];
+
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-16">
       <p className="font-mono text-[11px] tracking-[0.16em] text-mist uppercase">Pricing</p>
@@ -71,24 +96,37 @@ export default function PricingPage() {
       </section>
 
       <section className="mt-10">
-        <h2 className="text-lg font-semibold text-ink">Credit packs — designed, not yet sold</h2>
+        <h2 className="text-lg font-semibold text-ink">
+          {pricing?.purchaseAvailable ? "Credit packs" : "Credit packs — designed, not yet sold"}
+        </h2>
         <p className="mt-2 max-w-xl text-[13.5px] leading-6 text-fog">
-          These are the planned packs. The credit ledger behind them already
-          works end to end (awards, expiry, per-day draw tracking), but the
-          payment provider is not integrated yet — so nothing is for sale on
-          this page. When the integration ships, these cards become live
-          checkouts and this note disappears.
+          {pricing?.purchaseAvailable
+            ? "Buy credits as one-time packs — no subscription. When an AI action runs out of credits, the builder offers these packs in place so you can continue right away."
+            : "These are the configured packs, served by the same API that powers the builder's contextual purchase modal. The credit ledger behind them already works end to end (awards, expiry, per-day draw tracking, purchase records), but the payment provider is not integrated yet — so nothing is for sale on this page. When the integration ships, these cards become live checkouts and this note disappears."}
         </p>
-        <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {PACKS.map((pack) => (
-            <li key={pack.name} className="flex h-full flex-col rounded-2xl border border-line bg-card p-5">
-              <h3 className="text-[15px] font-semibold text-ink">{pack.name}</h3>
-              <p className="mt-2 text-2xl font-semibold text-violet">{pack.credits} credits</p>
-              <p className="mt-1 text-[13px] text-fog">{pack.price} — {pack.note}</p>
-              <span className="mt-auto pt-4 text-[11.5px] text-mist">Unavailable — payment integration pending</span>
-            </li>
-          ))}
-        </ul>
+        {pricing === null ? (
+          <p className="mt-6 rounded-xl border border-line bg-card px-4 py-3 text-[13px] text-fog">
+            The pack list is temporarily unavailable — it comes live from the
+            Ideaven service. Please check back shortly.
+          </p>
+        ) : (
+          <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {packages.map((pkg) => (
+              <li key={pkg.id} className="flex h-full flex-col rounded-2xl border border-line bg-card p-5">
+                <h3 className="text-[15px] font-semibold text-ink">{pkg.name}</h3>
+                <p className="mt-2 text-2xl font-semibold text-violet">{pkg.credits.toLocaleString("en-US")} credits</p>
+                <p className="mt-1 text-[13px] text-fog">
+                  {formatPrice(pkg.price, pkg.currency)} — {pkg.tagline}
+                </p>
+                <span className="mt-auto pt-4 text-[11.5px] text-mist">
+                  {pricing.purchaseAvailable
+                    ? `Buy in the builder — ${formatPerCredit(pkg.price, pkg.credits, pkg.currency)} per credit`
+                    : "Unavailable — payment integration pending"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="mt-10 rounded-2xl border border-line bg-card p-8">
@@ -97,7 +135,7 @@ export default function PricingPage() {
           {[
             ["Only success counts", "A command is drawn from the ledger only when the AI provider answered completely."],
             ["Derived balance", "Your balance is computed from the ledger, never stored — it cannot drift from what happened."],
-            ["Snapshots for AI changes", "Every applied AI change snapshots your project first and is labelled in History."],
+            ["One-time packs, never subscriptions", "Credits arrive as individually purchased packs; a grant is written only after the payment provider's result is verified server-side."],
             ["Visible history", "Settings → Account shows the merged award/consumption feed with your current balance."],
           ].map(([term, detail]) => (
             <div key={term} className="bg-panel px-4 py-3">

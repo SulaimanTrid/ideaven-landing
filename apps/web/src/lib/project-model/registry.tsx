@@ -1,4 +1,4 @@
-import type { ComponentType, SVGProps } from "react";
+﻿import type { ComponentType, SVGProps } from "react";
 import { CATEGORY_LABELS } from "./blocks";
 import type { PropsMap } from "@/types/project";
 
@@ -17,17 +17,20 @@ export type ComponentCategory =
   | "connectivity"
   | "sensors"
   | "media"
-  | "game";
+  | "game"
+  | "3d";
 
 /** Field descriptor for one editable property or style key. */
 export interface FieldDef {
   key: string;
   label: string;
-  type: "text" | "textarea" | "number" | "color" | "select" | "boolean";
+  type: "text" | "textarea" | "number" | "color" | "select" | "boolean" | "entity" | "sorting-layer";
   options?: { value: string; label: string }[];
   placeholder?: string;
   min?: number;
   max?: number;
+  /** Number fields keep integer values unless this is set. */
+  decimals?: boolean;
   /** Placeholder shown for empty color fields. */
   defaultHint?: string;
 }
@@ -100,8 +103,8 @@ const f = {
   textarea: (key: string, label: string, placeholder?: string): FieldDef => ({
     key, label, type: "textarea", placeholder,
   }),
-  number: (key: string, label: string, min = 0, max = 999): FieldDef => ({
-    key, label, type: "number", min, max, placeholder: "px",
+  number: (key: string, label: string, min = 0, max = 999, decimals = false): FieldDef => ({
+    key, label, type: "number", min, max, decimals, placeholder: "px",
   }),
   color: (key: string, label: string, hint: string): FieldDef => ({
     key, label, type: "color", defaultHint: hint,
@@ -115,8 +118,22 @@ const f = {
 };
 
 // Shared style groups (compose per component; beginners see them in order).
-const typography = [
-  f.color("color", "Text color", "#0b0e16"),
+
+/** TASK 51: the canonical 3D transform fields — one source of truth for
+ * position/rotation/scale across all 3D primitives (degrees for rotation). */
+const transform3dFields = (): FieldDef[] => [
+  f.number("px", "Position X", -1000, 1000, true),
+  f.number("py", "Position Y", -1000, 1000, true),
+  f.number("pz", "Position Z", -1000, 1000, true),
+  f.number("rx", "Rotation X (°)", -360, 360),
+  f.number("ry", "Rotation Y (°)", -360, 360),
+  f.number("rz", "Rotation Z (°)", -360, 360),
+  f.number("sx", "Scale X", 0.1, 100, true),
+  f.number("sy", "Scale Y", 0.1, 100, true),
+  f.number("sz", "Scale Z", 0.1, 100, true),
+];
+
+const typography = [  f.color("color", "Text color", "#0b0e16"),
   f.number("fontSize", "Font size", 8, 96),
   f.select("fontWeight", "Weight", [["400", "Regular"], ["500", "Medium"], ["600", "Semibold"], ["700", "Bold"]]),
   f.select("textAlign", "Align", [["left", "Left"], ["center", "Center"], ["right", "Right"]]),
@@ -499,6 +516,10 @@ const entityFields = (extra: FieldDef[] = []): FieldDef[] => [
   f.boolean("visible", "Visible"),
   f.boolean("collider", "Collider"),
   f.text("layer", "Collision layer", "default"),
+  // TASK 15: render order. The layer picker resolves the screen's named
+  // layers; Order sorts within a layer (higher = drawn in front).
+  { key: "sortingLayer", label: "Sorting layer", type: "sorting-layer" },
+  f.number("sortingOrder", "Order in layer", -1000, 1000),
   ...extra,
 ];
 
@@ -546,7 +567,7 @@ COMPONENT_DEFS.push(
   {
     type: "tilemap", label: "Tilemap", category: "game", container: false,
     glyph: glyph("M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"),
-    defaultProps: { name: "Tilemap", x: 0, y: 620, width: 390, height: 224, cellSize: 32, cols: 12, rows: 7, tiles: "0,6:1;1,6:1;2,6:1;3,6:1", palette: "1:#2a3348;2:#8f7bff;3:#46e3b4;4:#f0b429", color: "#2a3348", visible: true, collider: true, layer: "solid" },
+    defaultProps: { name: "Tilemap", x: 0, y: 620, width: 390, height: 224, cellSize: 32, cols: 12, rows: 7, tiles: "0,6:1;1,6:1;2,6:1;3,6:1", palette: "1:#2a3348;2:#8f7bff;3:#46e3b4;4:#f0b429", color: "#2a3348", visible: true, collider: true, layer: "solid", autoTile: true },
     defaultStyles: {},
     propFields: entityFields([
       f.number("cellSize", "Cell size", 8, 128),
@@ -555,6 +576,7 @@ COMPONENT_DEFS.push(
       f.text("tiles", "Tiles (col,row:tile;…)"),
       f.text("palette", "Tile palette (value:#hex;…)"),
       f.color("tileColor", "Tile color", "#2a3348"),
+      f.boolean("autoTile", "Auto-tile edges"),
     ]),
     styleFields: [],
   },
@@ -566,11 +588,197 @@ COMPONENT_DEFS.push(
     propFields: entityFields(),
     styleFields: [],
   },
+  {
+    // TASK 14: the runtime camera is a real entity in the canonical model.
+    // Its rect (x/y/width/height) is the viewport it frames on the design
+    // stage; follow/smoothing/bounds/shake drive the runtime cameras in the
+    // preview, published pages, and the export — one configuration, every
+    // surface. Runtime camera POSITION is never written back to the model.
+    type: "camera", label: "Camera", category: "game", container: false,
+    glyph: glyph("M4 8.5h3.2l1.3-2h6.9l1.3 2H20a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Zm8 8.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"),
+    defaultProps: {
+      name: "Camera", x: 0, y: 0, width: 390, height: 844,
+      followEnabled: true, followTarget: "", smoothing: 0.12,
+      boundsEnabled: true, minX: 0, minY: 0, maxX: 2000, maxY: 1200,
+      shakeDuration: 0.25, shakeStrength: 8,
+    },
+    defaultStyles: {},
+    propFields: [
+      f.text("name", "Name"),
+      f.number("x", "X", 0, 4096),
+      f.number("y", "Y", 0, 4096),
+      f.number("width", "Viewport width", 80, 4096),
+      f.number("height", "Viewport height", 80, 4096),
+      f.boolean("followEnabled", "Follow target"),
+      { key: "followTarget", label: "Target entity", type: "entity" },
+      f.number("smoothing", "Smoothing (0–0.95)", 0, 0.95, true),
+      f.boolean("boundsEnabled", "Clamp to world bounds"),
+      f.number("minX", "Bounds min X", -8192, 8192),
+      f.number("minY", "Bounds min Y", -8192, 8192),
+      f.number("maxX", "Bounds max X", -8192, 8192),
+      f.number("maxY", "Bounds max Y", -8192, 8192),
+      f.number("shakeDuration", "Shake duration (s)", 0.05, 5, true),
+      f.number("shakeStrength", "Shake strength (px)", 0, 64),
+    ],
+    styleFields: [],
+  },
+  {
+    // SYSTEM 5: the point light is stage-selectable configuration — position
+    // from the transform, no rotation/second transform. The runtime composites
+    // its illumination over the world; the design canvas draws a gizmo.
+    type: "light", label: "Light", category: "game", container: false,
+    glyph: glyph("M12 2a7 7 0 0 1 4 12.7c-.8.6-1 1.6-1 2.3v1h-6v-1c0-.7-.2-1.7-1-2.3A7 7 0 0 1 12 2ZM10 20h4v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1Z"),
+    defaultProps: {
+      name: "Light", x: 150, y: 300, width: 48, height: 48,
+      enabled: true, color: "#ffd9a0", intensity: 1, radius: 140,
+      visible: true,
+    },
+    defaultStyles: {},
+    propFields: [
+      f.text("name", "Name"),
+      f.number("x", "X", 0, 4096),
+      f.number("y", "Y", 0, 4096),
+      f.boolean("enabled", "Enabled"),
+      f.color("color", "Light color", "#ffd9a0"),
+      f.number("intensity", "Intensity (0–5)", 0, 5, true),
+      f.number("radius", "Radius", 8, 2000),
+    ],
+    styleFields: [],
+  },
+  {
+    // SYSTEM 18: the particle emitter is configuration — position from the
+    // transform, simulated by the bounded runtime particle system.
+    type: "emitter", label: "Particle Emitter", category: "game", container: false,
+    glyph: glyph("M12 3v4M5.6 5.6l2.8 2.8M18.4 5.6l-2.8 2.8M4 13h4M16 13h4M12 10a2 2 0 0 1 2 2v6h-4v-6a2 2 0 0 1 2-2ZM9 21h6"),
+    defaultProps: {
+      name: "Particles", x: 150, y: 420, width: 48, height: 48,
+      enabled: true, emissionRate: 20, lifetime: 1, speed: 80, direction: 0, spread: 30,
+      startSize: 8, endSize: 2, startOpacity: 1, endOpacity: 0, gravity: 0,
+      color: "#ffd9a0", maxParticles: 120, loop: true, burstCount: 0, texture: "",
+      visible: true,
+    },
+    defaultStyles: {},
+    propFields: [
+      f.text("name", "Name"),
+      f.number("x", "X", 0, 4096),
+      f.number("y", "Y", 0, 4096),
+      f.boolean("enabled", "Enabled"),
+      f.number("emissionRate", "Emission rate (0–500/s)", 0, 500),
+      f.number("lifetime", "Lifetime (0.05–30s)", 0.05, 30, true),
+      f.number("speed", "Speed (0–2000)", 0, 2000),
+      f.number("direction", "Direction ° (0 = up)", -360, 360),
+      f.number("spread", "Spread °", 0, 360),
+      f.number("startSize", "Start size", 0, 500),
+      f.number("endSize", "End size", 0, 500),
+      f.number("startOpacity", "Start opacity", 0, 1, true),
+      f.number("endOpacity", "End opacity", 0, 1, true),
+      f.number("gravity", "Gravity (−2000–2000)", -2000, 2000),
+      f.color("color", "Particle color", "#ffd9a0"),
+      f.number("maxParticles", "Max particles (1–1000)", 1, 1000),
+      f.boolean("loop", "Continuous (loop)"),
+      f.number("burstCount", "Burst count", 0, 1000),
+      f.text("texture", "Texture (asset:<id> or URL)"),
+    ],
+    styleFields: [],
+  },
+  {
+    // TASK 51: 3D foundation — primitives with canonical scalar transforms
+    // (px/py/pz, rx/ry/rz degrees, sx/sy/sz). Rendered by the 3D viewport in
+    // 3D projects; invisible to the 2D pipeline. The `color` prop IS the
+    // canonical material baseColor (TASK 55) — roughness/metalness are not
+    // implemented by the flat-fill rasterizer and are never shown as UI.
+    type: "cube3d", label: "Cube", category: "3d", container: false,
+    glyph: glyph("M4 8l8-4 8 4v8l-8 4-8-4V8Zm8 12V12m8-4-8 4m-8-4 8 4"),
+    defaultProps: {
+      name: "Cube", px: 0, py: 0.5, pz: 0, rx: 0, ry: 0, rz: 0, sx: 1, sy: 1, sz: 1,
+      color: "#58c7f0", visible: true,
+    },
+    defaultStyles: {},
+    propFields: [...transform3dFields(), f.boolean("visible", "Visible")],
+    styleFields: [],
+  },
+  {
+    type: "sphere3d", label: "Sphere", category: "3d", container: false,
+    glyph: glyph("M12 4a8 8 0 1 1 0 16 8 8 0 0 1 0-16Zm0 2.5a5.5 5.5 0 0 0 0 11 5.5 5.5 0 0 0 0-11Z"),
+    defaultProps: {
+      name: "Sphere", px: 2, py: 0.5, pz: 0, rx: 0, ry: 0, rz: 0, sx: 1, sy: 1, sz: 1,
+      color: "#46e3b4", visible: true,
+    },
+    defaultStyles: {},
+    propFields: [...transform3dFields(), f.boolean("visible", "Visible")],
+    styleFields: [],
+  },
+  {
+    type: "plane3d", label: "Plane", category: "3d", container: false,
+    glyph: glyph("M3 17l9-10 9 10H3Z"),
+    defaultProps: {
+      name: "Plane", px: 0, py: -0.5, pz: 0, rx: 0, ry: 0, rz: 0, sx: 8, sy: 1, sz: 8,
+      color: "#2a3348", visible: true,
+    },
+    defaultStyles: {},
+    propFields: [...transform3dFields(), f.boolean("visible", "Visible")],
+    styleFields: [],
+  },
+  {
+    type: "camera3d", label: "Camera", category: "3d", container: false,
+    glyph: glyph("M4 8.5h3.2l1.3-2h6.9l1.3 2H20a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Zm8 8.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"),
+    defaultProps: {
+      name: "Camera", px: 0, py: 2, pz: 5, rx: -20, ry: 0, rz: 0,
+      fov: 60, near: 0.1, far: 2000, active: true, visible: true,
+    },
+    defaultStyles: {},
+    propFields: [
+      f.text("name", "Name"),
+      f.number("px", "Position X", -1000, 1000, true),
+      f.number("py", "Position Y", -1000, 1000, true),
+      f.number("pz", "Position Z", -1000, 1000, true),
+      f.number("rx", "Rotation X (pitch)", -89, 89, true),
+      f.number("ry", "Rotation Y (yaw)", -180, 180),
+      f.number("fov", "Field of view (20–120)", 20, 120),
+      f.number("near", "Near clip", 0.01, 100, true),
+      f.number("far", "Far clip", 10, 100000),
+      f.boolean("active", "Active camera"),
+    ],
+    styleFields: [],
+  },
+  {
+    // TASK 55: the 3D light — configuration, not an object. Uses the SAME
+    // transform system (position; rotation = emission direction for
+    // directional) and participates in the Task 53 hierarchy. Explicitly
+    // non-physics: no collider, no body, never a physics participant.
+    type: "light3d", label: "Light", category: "3d", container: false,
+    glyph: glyph("M12 3v2m0 14v2M4.2 5.6l1.4 1.4m12.8-1.4-1.4 1.4M3 12h2m14 0h2M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm0 11v2"),
+    defaultProps: {
+      name: "Light", px: 2, py: 3, pz: 2, rx: -45, ry: 0, rz: 0,
+      type: "point", enabled: true, color: "#ffd9a0", intensity: 1, radius: 12, visible: true,
+    },
+    defaultStyles: {},
+    propFields: [
+      f.text("name", "Name"),
+      f.number("px", "Position X", -1000, 1000, true),
+      f.number("py", "Position Y", -1000, 1000, true),
+      f.number("pz", "Position Z", -1000, 1000, true),
+      f.number("rx", "Rotation X (°)", -360, 360),
+      f.number("ry", "Rotation Y (°)", -360, 360),
+      f.number("rz", "Rotation Z (°)", -360, 360),
+      f.select("type", "Type", [["point", "Point"], ["directional", "Directional"]]),
+      f.boolean("enabled", "Enabled"),
+      f.color("color", "Light color", "#ffd9a0"),
+      f.number("intensity", "Intensity (0–5)", 0, 5, true),
+      f.number("radius", "Radius (0.1–1000)", 0.1, 1000, true),
+    ],
+    styleFields: [],
+  },
 );
 
-/** Component types that behave as scene entities (TASK 08). */
+/** Component types that behave as scene entities (TASK 08). The camera is a
+ * scene entity (it lives on the stage and is selectable) but never collides
+ * or fires touch events — the runtime skips it in every physics pass. The
+ * light (SYSTEM 5) and the 3D light (TASK 55) follow the same pattern:
+ * stage-selectable configuration, not physical objects. */
 export const ENTITY_TYPES: ReadonlySet<string> = new Set([
-  "player", "platform", "coin", "enemy", "trigger", "sprite", "tilemap",
+  "player", "platform", "coin", "enemy", "trigger", "sprite", "tilemap", "camera", "light", "emitter",
+  "cube3d", "sphere3d", "plane3d", "camera3d", "light3d",
 ]);
 
 /**
@@ -601,6 +809,7 @@ export function translatedCategoryLabel(category: string, t: (key: string) => st
 
 /** Label for any event name, including dynamic scene touch events. */
 export function eventLabel(event: string): string {
+  if (event.startsWith("action-pressed-")) return "When action pressed"; // action name resolved by the UI
   if (event.startsWith("touches-exit-")) return "Stops touching";
   if (event.startsWith("touching-")) return "While touching";
   if (event.startsWith("touches-")) return "Touches"; // target resolved by the UI
@@ -610,6 +819,7 @@ export function eventLabel(event: string): string {
 /** Category display order and labels. */
 export const CATEGORY_ORDER: { id: ComponentCategory; label: string }[] = [
   { id: "game", label: "Game Entities" },
+  { id: "3d", label: "3D Objects" },
   { id: "ui", label: "User Interface" },
   { id: "layout", label: "Layout" },
   { id: "storage", label: "Storage & Database" },

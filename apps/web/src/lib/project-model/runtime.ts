@@ -44,6 +44,28 @@ interface ComponentState {
   props: PropsMap;
 }
 
+/**
+ * A runtime→stage camera command (TASK 14). The camera's configuration lives
+ * in the model (camera entity props), but shake is transient runtime state —
+ * block logic pushes a command, the game loop's camera drains it once per
+ * frame. Nothing here ever writes to the model.
+ */
+export type CameraCommand = { kind: "shake"; duration: number; strength: number };
+
+/**
+ * A runtime→stage animation command (SLICE 2/3): block logic pushes play/
+ * pause/restart/stop (and state-machine parameter set/trigger) for one
+ * component; the game loop drains them against the component's animation
+ * playback state — runtime-local, never the model.
+ */
+export type AnimationCommand = {
+  componentId: string;
+  op: "play" | "pause" | "restart" | "stop" | "param" | "trigger";
+  clipId?: string;
+  name?: string;
+  value?: boolean | number;
+};
+
 export interface ScreenRuntime {
   /** Re-reads the model (e.g. after an edit while previewing). */
   model: ProjectModel;
@@ -52,8 +74,19 @@ export interface ScreenRuntime {
   getComponentProps: (componentId: string) => PropsMap | undefined;
   /** Fire a UI event from the preview renderer. */
   emit: (componentId: string | null, event: string) => void;
+  /** Input abstraction: dispatch `action-pressed-<id>` for one just-pressed
+   * edge — screen-level handlers of the live screen first, then component
+   * handlers in model order. Called once per edge by the scene loop; key
+   * repeat can never reach here (edges only). Returns handlers run. */
+  dispatchActionPressed: (actionId: string) => number;
   /** Stop timers/sensor listeners for this run (call before replacing it). */
   dispose: () => void;
+  /** Camera commands queued by block logic, drained by the scene game loop. */
+  cameraCommands: CameraCommand[];
+  /** Animation commands queued by block logic, drained by the scene loop. */
+  animationCommands: AnimationCommand[];
+  /** Particle burst requests queued by block logic (SYSTEM 18). */
+  particleCommands: { componentId: string; count: number }[];
 }
 
 /** Handlers flattened with the screen they belong to (for navigation-safe dispatch). */
@@ -83,11 +116,25 @@ export function createRuntime(
     seed(screen.components);
   }
 
+  // Shake is transient: block logic queues a command, the scene game loop
+  // drains it once per frame. Nothing here ever writes to the model.
+  const cameraCommands: CameraCommand[] = [];
+  // Animation playback commands: same pattern (SLICE 2) — queued by block
+  // logic, drained by the scene loop against runtime-local playback state.
+  const animationCommands: AnimationCommand[] = [];
+  // Particle burst requests (SYSTEM 18): queued by block logic, drained by
+  // the scene loop against runtime particle sims.
+  const particleCommands: { componentId: string; count: number }[] = [];
+
   const runtime: ScreenRuntime = {
     model,
     currentScreenId: startScreenId,
     getComponentProps: (componentId) => componentState.get(componentId)?.props,
     emit: (componentId, event) => dispatch(componentId, event),
+    dispatchActionPressed: (actionId) => dispatchActionPressed(actionId),
+    cameraCommands,
+    animationCommands,
+    particleCommands,
     dispose: () => {
       for (const handle of timers) window.clearInterval(handle);
       timers.length = 0;
@@ -98,6 +145,36 @@ export function createRuntime(
   const isTruthy = (value: unknown): boolean =>
     value === true || value === "true" || (typeof value === "number" && value !== 0) ||
     (typeof value === "string" && value !== "");
+
+  // ---- camera (TASK 14) --------------------------------------------------------
+  // Retargeting writes the camera entity's runtime props (follow target /
+  // smoothing / bounds), which the scene loop reads live — the model is
+  // never touched by a run.
+  const cameraComponentIds = (): string[] => {
+    const ids: string[] = [];
+    for (const screen of model.screens) {
+      const visit = (nodes: ProjectModelComponent[]) => {
+        for (const node of nodes) {
+          if (node.type === "camera") ids.push(node.id);
+          if (node.children) visit(node.children);
+        }
+      };
+      visit(screen.components);
+    }
+    return ids;
+  };
+
+  const shakeCamera = (duration: number, strength: number) => {
+    cameraCommands.push({
+      kind: "shake",
+      duration: Number.isFinite(duration) && duration > 0 ? duration : 0.25,
+      strength: Number.isFinite(strength) && strength >= 0 ? strength : 8,
+    });
+  };
+
+  const setCameraTarget = (componentId: string) => {
+    for (const id of cameraComponentIds()) setComponentProps(id, { followTarget: componentId });
+  };
 
   // ---- audio -----------------------------------------------------------------
   // play-sound resolves real project media: an `asset:<id>` reference, a name
@@ -336,13 +413,15 @@ export function createRuntime(
       });
   };
 
-  /** All handlers bound to this event, across every screen. */
+  /** All handlers bound to this event, across every screen. Screen-level
+   * handlers arrive from the wire with componentId OMITTED (Go omitempty),
+   * so undefined normalizes to null before matching. */
   function handlersFor(componentId: string | null, event: string): BoundHandler[] {
     const bound: BoundHandler[] = [];
     for (const screen of model.screens) {
       for (const handler of screen.logic?.handlers ?? []) {
-        if (handler.componentId === componentId && handler.event === event) {
-          bound.push({ screenId: screen.id, componentId: handler.componentId, event, body: handler.body });
+        if ((handler.componentId ?? null) === componentId && handler.event === event) {
+          bound.push({ screenId: screen.id, componentId: handler.componentId ?? null, event, body: handler.body });
         }
       }
     }
@@ -357,6 +436,44 @@ export function createRuntime(
     for (const handler of handlers) {
       executeBody(handler.body);
     }
+    return handlers.length;
+  }
+
+  /**
+   * Input abstraction: dispatch `action-pressed-<id>` for one just-pressed
+   * edge. A global action fans out to per-component handlers: the live
+   * screen's screen-level handlers first, then component handlers in model
+   * order (nested components included) — deterministic, one dispatch per
+   * edge, and only components that actually carry a matching handler are
+   * visited so zero-handler components never spam the trace. Returns the
+   * number of handlers that ran.
+   */
+  function dispatchActionPressed(actionId: string): number {
+    const event = `action-pressed-${actionId}`;
+    const screen = model.screens.find((s) => s.id === runtime.currentScreenId);
+    if (!screen) return 0;
+    let ran = 0;
+    for (const handler of screen.logic?.handlers ?? []) {
+      if ((handler.componentId ?? null) === null && handler.event === event) {
+        options.onTrace?.(`event screen:${event} → action handler`);
+        executeBody(handler.body);
+        ran += 1;
+      }
+    }
+    const withHandler = new Set<string>();
+    for (const anyScreen of model.screens) {
+      for (const handler of anyScreen.logic?.handlers ?? []) {
+        if (handler.componentId !== null && handler.event === event) withHandler.add(handler.componentId);
+      }
+    }
+    const visit = (nodes: ProjectModelComponent[]) => {
+      for (const node of nodes) {
+        if (withHandler.has(node.id)) ran += dispatch(node.id, event);
+        if (node.children) visit(node.children);
+      }
+    };
+    visit(screen.components);
+    return ran;
   }
 
   function executeBody(body: ProjectModelBlock[]) {
@@ -382,6 +499,59 @@ export function createRuntime(
         const current = Number(variables.get(name));
         const delta = Number(evalExpression(block.slots?.amount));
         variables.set(name, (Number.isFinite(current) ? current : 0) + (Number.isFinite(delta) ? delta : 0));
+        return;
+      }
+      case "play-animation": {
+        // Transient playback command — the scene loop applies it to runtime
+        // animation state; nothing here writes to the model.
+        const componentId = str(block.inputs?.componentId);
+        const clipId = str(block.inputs?.animationId);
+        if (componentId) {
+          animationCommands.push({ componentId, op: "play", clipId: clipId || undefined });
+        }
+        return;
+      }
+      case "stop-animation": {
+        const componentId = str(block.inputs?.componentId);
+        if (componentId) {
+          animationCommands.push({ componentId, op: "stop" });
+        }
+        return;
+      }
+      case "set-animation-param": {
+        // SLICE 3: feeds the component's state machine parameters (runtime
+        // values only — the machine configuration lives in the model).
+        const componentId = str(block.inputs?.componentId);
+        const name = str(block.inputs?.name);
+        if (componentId && name) {
+          const value = evalExpression(block.slots?.value);
+          animationCommands.push({
+            componentId,
+            op: "param",
+            name,
+            value: typeof value === "boolean" || typeof value === "number" ? value : Number(value),
+          });
+        }
+        return;
+      }
+      case "trigger-animation-param": {
+        const componentId = str(block.inputs?.componentId);
+        const name = str(block.inputs?.name);
+        if (componentId && name) {
+          animationCommands.push({ componentId, op: "trigger", name });
+        }
+        return;
+      }
+      case "burst-particle": {
+        // SYSTEM 18: burst request — the scene loop spawns real particles on
+        // the emitter's bounded sim. Runtime-only; nothing hits the model.
+        const componentId = str(block.inputs?.componentId);
+        if (componentId) {
+          particleCommands.push({
+            componentId,
+            count: typeof block.inputs?.count === "number" ? block.inputs.count : 10,
+          });
+        }
         return;
       }
       case "play-sound":
@@ -437,6 +607,15 @@ export function createRuntime(
       }
       case "show-message":
         options.onMessage(String(evalExpression(block.slots?.message) ?? ""));
+        return;
+      case "camera-shake": {
+        const duration = typeof block.inputs?.duration === "number" ? block.inputs.duration : Number(block.inputs?.duration) || 0.25;
+        const strength = typeof block.inputs?.strength === "number" ? block.inputs.strength : Number(block.inputs?.strength) || 8;
+        shakeCamera(duration, strength);
+        return;
+      }
+      case "camera-set-target":
+        setCameraTarget(str(block.inputs?.componentId));
         return;
       case "navigate": {
         const target = str(block.inputs?.screenId);

@@ -389,7 +389,7 @@ function TypeCard({
     <button
       type="button"
       onClick={onSelect}
-      className="group flex flex-col items-start gap-3 rounded-2xl border border-line bg-card p-6 text-left transition-all hover:border-violet/50 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+      className="group flex flex-col items-start gap-3 rounded-2xl border border-line bg-card p-6 text-left transition-colors hover:border-violet/50 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
     >
       <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-deep/20 text-violet transition-colors group-hover:bg-violet-deep/30">
         {icon}
@@ -430,7 +430,7 @@ function MethodCard({
       onClick={onSelect}
       disabled={!enabled}
       aria-pressed={selected}
-      className={`flex items-center gap-4 rounded-2xl border border-line bg-card p-5 text-left transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${interactive}`}
+      className={`flex items-center gap-4 rounded-2xl border border-line bg-card p-5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${interactive}`}
     >
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface text-fog">
         {icon}

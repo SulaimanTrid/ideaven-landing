@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/theme/theme-toggle";
 import { useI18n } from "@/lib/i18n/i18n";
+import { aiApi, type AICredits } from "@/lib/api";
+import { CREDITS_UPDATED_EVENT } from "@/components/credits/credit-purchase-modal";
 import { Logo } from "@ideaven/ui";
 import { useBuilder } from "./builder-context";
 import { PublishButton } from "./publish-button";
@@ -13,11 +16,14 @@ import { projectTypeLabel } from "@/lib/project-meta";
 /**
  * Builder top bar: identity (back, logo, project, type), the Design/Blocks/
  * Code mode switcher (all three operate on the same Project Model), and
- * history + save controls.
+ * history + save controls. The Ask AI control carries the user's current
+ * credit balance subtly; when the balance is empty it stays clickable and
+ * opens the contextual purchase modal instead of the panel.
  */
 export function BuilderTopBar({
   aiOpen,
   onToggleAI,
+  onOpenPurchase,
   assetsOpen,
   onToggleAssets,
   historyOpen,
@@ -25,6 +31,7 @@ export function BuilderTopBar({
 }: {
   aiOpen: boolean;
   onToggleAI: () => void;
+  onOpenPurchase: () => void;
   assetsOpen: boolean;
   onToggleAssets: () => void;
   historyOpen: boolean;
@@ -32,6 +39,29 @@ export function BuilderTopBar({
 }) {
   const { project, saveState, lastSavedError, actions, saveNow, mode, setMode } = useBuilder();
   const { t: tTop } = useI18n();
+  const [credits, setCredits] = useState<AICredits | null>(null);
+
+  // Subtle balance (TASK 12): the AI control shows the live derived balance,
+  // refreshed whenever a verified purchase lands.
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      aiApi
+        .credits()
+        .then((res) => {
+          if (alive) setCredits(res.credits);
+        })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener(CREDITS_UPDATED_EVENT, load);
+    return () => {
+      alive = false;
+      window.removeEventListener(CREDITS_UPDATED_EVENT, load);
+    };
+  }, []);
+
+  const creditsEmpty = credits !== null && credits.remaining === 0;
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 overflow-x-auto border-b border-line bg-panel px-3 [scrollbar-width:none] sm:px-4 [&::-webkit-scrollbar]:hidden">
@@ -102,12 +132,25 @@ export function BuilderTopBar({
         </button>
         <button
           type="button"
-          onClick={onToggleAI}
-          aria-pressed={aiOpen}
-          className="flex h-9 items-center gap-1.5 rounded-lg border border-violet/40 bg-violet/10 px-3 text-[13px] font-medium text-violet transition-colors hover:bg-violet/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+          onClick={creditsEmpty ? onOpenPurchase : onToggleAI}
+          aria-pressed={creditsEmpty ? undefined : aiOpen}
+          aria-label={
+            creditsEmpty ? tTop("credits.emptyAriaLabel") : undefined
+          }
+          className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+            creditsEmpty
+              ? "border-rose/40 bg-rose/10 text-rose hover:bg-rose/20"
+              : "border-violet/40 bg-violet/10 text-violet hover:bg-violet/20"
+          }`}
         >
           <IconSparkle size={14} />
-          <span className="hidden sm:inline">{tTop("builder.askAI")}</span>
+          <span className="hidden sm:inline">
+            {creditsEmpty
+              ? tTop("credits.emptyShort")
+              : credits
+                ? `${credits.remaining} ${tTop("credits.creditsUnit")}`
+                : tTop("builder.askAI")}
+          </span>
         </button>
         <IconButton
           label="Undo"

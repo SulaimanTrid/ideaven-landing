@@ -59,13 +59,38 @@ type PreviewSettings struct {
 // is the screen's custom source: the authoritative code for this screen that
 // the platform does not (yet) represent as blocks. It must never be
 // overwritten by code generation — clearing it is an explicit user action.
+// SortingLayers (TASK 15) holds the scene's named rendering layers —
+// optional; when absent the default layer set applies. Entities reference a
+// layer by name. InputActions (input abstraction system) holds the scene's
+// abstract actions with their key bindings — optional; when absent the
+// default set applies (identical to the previously hardcoded keys).
 type Screen struct {
-	ID         string         `json:"id"`
-	Name       string         `json:"name"`
-	Components []Component    `json:"components"`
-	Styles     map[string]any `json:"styles,omitempty"`
-	Logic      *Logic         `json:"logic,omitempty"`
-	Code       *string        `json:"code,omitempty"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Components    []Component    `json:"components"`
+	Styles        map[string]any `json:"styles,omitempty"`
+	Logic         *Logic         `json:"logic,omitempty"`
+	SortingLayers []SortingLayer `json:"sortingLayers,omitempty"`
+	InputActions  []InputAction  `json:"inputActions,omitempty"`
+	Code          *string        `json:"code,omitempty"`
+}
+
+// SortingLayer is one named rendering layer (TASK 15): entities on higher
+// layers draw in front of lower ones; Order sorts within a layer.
+type SortingLayer struct {
+	Name  string `json:"name"`
+	Order int    `json:"order"`
+}
+
+// InputAction is one abstract input action (input abstraction system):
+// gameplay reasons about action IDs, never physical keys. Keys are lowercase
+// key names — the binding list is the only place a device appears. Enabled
+// is always marshaled (false is a meaningful state, not an absence).
+type InputAction struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Keys    []string `json:"keys,omitempty"`
+	Enabled bool     `json:"enabled"`
 }
 
 // Logic is a screen's event-handler collection. Handlers reference
@@ -147,15 +172,17 @@ type Asset struct {
 
 // Project types. The universal vocabulary (7.0 M7) extends the original
 // app/game pair; unknown-but-valid types behave as screen-based projects
-// (InitialModel gives them a Home screen).
+// (InitialModel gives them a Home screen). "3d" is the TASK 51 3D path: its
+// screens render through the 3D viewport/runtime.
 const (
 	TypeApp  = "app"
 	TypeGame = "game"
+	Type3D   = "3d"
 )
 
 // typeVocabulary is the closed set of project types (mirrors migration 017).
 var typeVocabulary = map[string]bool{
-	TypeApp: true, TypeGame: true,
+	TypeApp: true, TypeGame: true, Type3D: true,
 	"website": true, "backend": true, "api": true, "database": true,
 	"experience": true, "extension": true, "tool": true, "education": true,
 }
@@ -164,7 +191,7 @@ var typeVocabulary = map[string]bool{
 // given type: one empty screen so preview and editor always have a target.
 func InitialModel(projectType string) Model {
 	screen := Screen{ID: "screen-home", Name: "Home", Components: []Component{}}
-	if projectType == TypeGame {
+	if projectType == TypeGame || projectType == Type3D {
 		screen = Screen{ID: "screen-scene-1", Name: "Scene 1", Components: []Component{}}
 	}
 	return Model{
@@ -189,7 +216,7 @@ func ValidateModel(m *Model) error {
 		return invalidModel(fmt.Sprintf("Unsupported project model schema version %d (supported: %d).", m.SchemaVersion, ModelSchemaVersion))
 	}
 	if !typeVocabulary[m.Type] {
-		return invalidModel("The project model type must be one of: app, game, website, backend, api, database, experience, extension, tool, education.")
+		return invalidModel("The project model type must be one of: app, game, 3d, website, backend, api, database, experience, extension, tool, education.")
 	}
 	if len(m.Screens) == 0 {
 		return invalidModel("The project needs at least one screen.")

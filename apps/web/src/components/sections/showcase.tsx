@@ -94,9 +94,9 @@ export function Showcase() {
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {PROJECTS.map((project, index) => (
             <Reveal key={project.name} delay={(index % 3) * 80}>
-              <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-card transition-all duration-300 hover:-translate-y-1 hover:border-white/15">
+              <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-card transition-[transform,border-color] duration-standard ease-enter hover:-translate-y-1 hover:border-white/15">
                 <div className="relative aspect-[16/10] overflow-hidden border-b border-line">
-                  <div className="absolute inset-0 transition-transform duration-500 group-hover:scale-[1.05]">
+                  <div className="absolute inset-0 transition-transform duration-deliberate ease-enter group-hover:scale-[1.05]">
                     <MiniArt variant={project.art} />
                   </div>
                   <span className="absolute top-3 left-3">

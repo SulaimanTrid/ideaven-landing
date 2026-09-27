@@ -355,7 +355,7 @@ export function ExportButton() {
                   ) : stage.state === "failed" ? (
                     <span className="text-[12px] text-rose">✕</span>
                   ) : stage.state === "running" ? (
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-violet" />
+                    <span className="anim-pulse-dot h-2 w-2 rounded-full bg-violet" />
                   ) : (
                     <span className="h-1.5 w-1.5 rounded-full border border-line" />
                   )}
@@ -375,7 +375,7 @@ export function ExportButton() {
                   </span>
                   {stage.id === "compile" && stage.state === "running" ? (
                     <span className="mt-1 block h-1.5 w-full overflow-hidden rounded-full bg-surface">
-                      <span className="block h-full w-1/3 animate-pulse rounded-full bg-violet" />
+                      <span className="anim-progress-x block h-full w-full rounded-full bg-violet" />
                     </span>
                   ) : null}
                   {stage.id === "package" && stage.state === "running" ? (

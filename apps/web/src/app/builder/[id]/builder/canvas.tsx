@@ -7,6 +7,7 @@ import { DeviceFrame } from "@/components/builder/device-frame";
 import { findScreen } from "@/lib/project-model/ops";
 import { isSceneScreen, tileColorAt, tilemapPaletteValues } from "@/lib/project-model/scene";
 import { SceneEditor, type SceneTool } from "./scene-canvas";
+import { Viewport3D } from "@/components/runtime/viewport-3d";
 import { viewportSize, ViewportFrame, type ViewportDevice, type ViewportOrientation } from "@/components/builder/viewport";
 import { useI18n } from "@/lib/i18n/i18n";
 
@@ -29,10 +30,14 @@ export function BuilderCanvas() {
   const { t } = useI18n();
   /** Game projects design against a dark SCENE stage, not a white device. */
   const isGame = model.type === "game";
+  /** TASK 51: 3D projects design in the real 3D viewport. */
+  const is3d = model.type === "3d";
   const [snap, setSnap] = useState(true);
   // Tilemap painting tools (SYSTEM 4): active while a tilemap is selected.
   const [sceneTool, setSceneTool] = useState<SceneTool>("select");
   const [activeTile, setActiveTile] = useState(1);
+  // TASK 15: depth debugging — overlay each entity's layer name + order.
+  const [showSorting, setShowSorting] = useState(false);
   const saved = model.settings.preview;
   const [device, setDevice] = useState<ViewportDevice>(saved?.device ?? "phone");
   const [orientation, setOrientation] = useState<ViewportOrientation>(saved?.orientation ?? "portrait");
@@ -180,6 +185,17 @@ export function BuilderCanvas() {
                 }`}
               >
                 ⌗ {snap ? t("builder.snapOn") : t("builder.snapOff")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSorting((value) => !value)}
+                aria-pressed={showSorting}
+                title="Show each entity's rendering layer and order (back-to-front)"
+                className={`mr-2 h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                  showSorting ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
+                }`}
+              >
+                ⇅ {t("builder.sortingOrder")}
               </button>
               {tilemapSelected ? (
                 <div
@@ -341,7 +357,7 @@ export function BuilderCanvas() {
                   {t("builder.dragComponents")}
                 </div>
               ) : isScene ? (
-                <SceneEditor screen={screen} scale={scale} snap={snap} tool={sceneTool} activeTile={safeActiveTile} />
+                <SceneEditor screen={screen} scale={scale} snap={snap} tool={sceneTool} activeTile={safeActiveTile} showSorting={showSorting} />
               ) : (
                 screen.components.map((child) => (
                   <ComponentNode
@@ -356,6 +372,27 @@ export function BuilderCanvas() {
               <DropLine containerId={null} screenId={screen.id} />
             </div>
           );
+
+          if (is3d) {
+            // TASK 51/53: 3D projects design in the real 3D viewport (canvas
+            // renderer, orbit navigation, click-select, hierarchy panel). The
+            // palette stays the insertion path; the inspector edits canonical
+            // transforms; hierarchy ops go through the canonical ops.
+            return (
+              <div data-viewport-3d-shell="true" className="relative h-full w-full" onDragOver={onRootDragOver} onDrop={onRootDrop}>
+                <Viewport3D
+                  model={model}
+                  screen={screen}
+                  mode="editor"
+                  selectedId={selectedId ?? null}
+                  onSelect={(id) => select(id)}
+                  onDelete={(id) => actions.removeComponent3D(activeScreenId, id)}
+                  onDuplicate={(id) => actions.duplicateHierarchy3D(activeScreenId, id)}
+                  onTransform={(id, patch) => actions.updateProps(id, patch)}
+                />
+              </div>
+            );
+          }
 
           if (isGame) {
             // The universal game viewport (TASK 11): dark shell + corner

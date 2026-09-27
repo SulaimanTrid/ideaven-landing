@@ -81,13 +81,14 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (!response.ok) {
-    const err = (payload as { error?: { code?: string; message?: string; details?: [] } } | null)
+    const err = (payload as { error?: { code?: string; message?: string; details?: []; data?: Record<string, unknown> } } | null)
       ?.error;
     throw new ApiError(
       err?.code ?? "INTERNAL_ERROR",
       err?.message ?? "Something went wrong. Try again shortly.",
       response.status,
       err?.details,
+      err?.data,
     );
   }
   return payload as T;
@@ -493,6 +494,87 @@ export const aiApi = {
    */
   creditActivity(): Promise<{ entries: AICreditActivityEntry[] }> {
     return request<{ entries: AICreditActivityEntry[] }>("/api/ai/credits/activity");
+  },
+};
+
+/**
+ * Stable error code the server returns (HTTP 402) when an AI action is
+ * blocked by an empty/insufficient credit balance. The error carries safe
+ * numeric metadata (`InsufficientCreditsData`) so the UI can explain the
+ * situation and open the contextual purchase modal immediately.
+ */
+export const AI_INSUFFICIENT_CREDITS = "AI_INSUFFICIENT_CREDITS";
+
+export interface InsufficientCreditsData {
+  /** Spendable credits right now (0 when empty). */
+  remaining: number;
+  /** Credits the attempted AI action needs. */
+  required: number;
+  /** Pack-credit part of `remaining`. */
+  packBalance: number;
+  /** Daily-allowance part of `remaining`. */
+  freeRemaining: number;
+  /** Whether credit packs can actually be purchased yet. */
+  purchaseAvailable: boolean;
+}
+
+export interface CreditPackage {
+  id: string;
+  name: string;
+  credits: number;
+  /** ISO 4217 code. */
+  currency: string;
+  /** Price in minor units of `currency`. */
+  price: number;
+  tagline: string;
+  /** Rendered only when genuinely configured server-side. */
+  popular: boolean;
+}
+
+export type CreditPurchaseStatus = "pending" | "succeeded" | "failed" | "cancelled";
+
+export interface CreditPurchase {
+  id: string;
+  packageId: string;
+  credits: number;
+  currency: string;
+  amount: number;
+  status: CreditPurchaseStatus;
+  checkoutUrl?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+/**
+ * Credit pack commerce. Package data, prices, and credit amounts are
+ * resolved server-side; the client sends only a package id — never money
+ * or credit numbers — and payment results are only ever verified
+ * server-side (webhook).
+ */
+export const creditApi = {
+  /** The server-authoritative pack list (single definition for pricing page + modal). */
+  packages(): Promise<{ packages: CreditPackage[]; purchaseAvailable: boolean }> {
+    return request<{ packages: CreditPackage[]; purchaseAvailable: boolean }>(
+      "/api/credits/packages",
+    );
+  },
+
+  /**
+   * Starts one purchase: returns a hosted-checkout URL. The client never
+   * determines price, currency, or credits.
+   */
+  createPurchase(packageId: string, returnPath: string): Promise<{ purchase: CreditPurchase }> {
+    return request<{ purchase: CreditPurchase }>("/api/credits/purchases", {
+      method: "POST",
+      body: { packageId, returnPath },
+    });
+  },
+
+  /** Owner-scoped purchase status, polled after hosted-checkout returns. */
+  purchase(id: string): Promise<{ purchase: CreditPurchase }> {
+    return request<{ purchase: CreditPurchase }>(
+      `/api/credits/purchases/${encodeURIComponent(id)}`,
+    );
   },
 };
 

@@ -85,7 +85,7 @@ func TestCommandCountsTowardQuota(t *testing.T) {
 	}
 }
 
-func TestQuotaExhaustionBlocksCommands(t *testing.T) {
+func TestQuotaExhaustionBlocksCommandsWithStructured402(t *testing.T) {
 	_, server, db := newTestHandler(t, goodOutput, http.StatusOK)
 
 	// Seed a full day of successful completions directly: the loop is what
@@ -98,11 +98,19 @@ func TestQuotaExhaustionBlocksCommands(t *testing.T) {
 	}
 
 	res, payload := post(t, server, `{"prompt":"one too many"}`, "test-session")
-	if res.StatusCode != http.StatusTooManyRequests {
+	if res.StatusCode != http.StatusPaymentRequired {
 		t.Fatalf("exhausted command: status = %d, payload %v", res.StatusCode, payload)
 	}
-	if codeOf(payload) != "AI_CREDITS_EXHAUSTED" {
+	if codeOf(payload) != CodeInsufficientCredits {
 		t.Fatalf("code = %v", payload)
+	}
+	// The 402 carries the safe numbers the contextual purchase modal needs.
+	data := errDataOf(t, payload)
+	if data["remaining"] != float64(0) || data["required"] != float64(1) {
+		t.Fatalf("402 data = %v", data)
+	}
+	if data["packBalance"] != float64(0) || data["purchaseAvailable"] != false {
+		t.Fatalf("402 data = %v", data)
 	}
 
 	res, payload = getJSON(t, server, "/api/ai/credits", "test-session")
@@ -110,6 +118,59 @@ func TestQuotaExhaustionBlocksCommands(t *testing.T) {
 	if credits["remaining"] != float64(0) {
 		t.Fatalf("exhausted credits = %v", credits)
 	}
+}
+
+func TestExhaustedPackCreditsStillBlock(t *testing.T) {
+	_, server, db := newTestHandler(t, goodOutput, http.StatusOK)
+	userID := "11111111-1111-1111-1111-111111111111"
+
+	seedUsageDay(t, db, userID, DailyFreeCommands+3, 0) // free spent + 3 drawn
+	if _, err := db.Exec(`INSERT INTO credit_grants (user_id, amount, source, note)
+		VALUES ($1, 3, 'promo', 'gone')`, userID); err != nil {
+		t.Fatalf("seed grant: %v", err)
+	}
+
+	res, payload := post(t, server, `{"prompt":"no credits left"}`, "test-session")
+	if res.StatusCode != http.StatusPaymentRequired {
+		t.Fatalf("exhausted packs: status = %d, payload %v", res.StatusCode, payload)
+	}
+	if codeOf(payload) != CodeInsufficientCredits {
+		t.Fatalf("code = %v", payload)
+	}
+	data := errDataOf(t, payload)
+	if data["remaining"] != float64(0) || data["packBalance"] != float64(0) {
+		t.Fatalf("402 data = %v", data)
+	}
+}
+
+// With no credits purchase surface wired in the test (purchaseAvailable
+// defaults to false), the 402 must still be truthful about it.
+func TestInsufficientCreditsReportsPurchaseUnavailableByDefault(t *testing.T) {
+	_, server, db := newTestHandler(t, goodOutput, http.StatusOK)
+	userID := "11111111-1111-1111-1111-111111111111"
+
+	seedUsageDay(t, db, userID, DailyFreeCommands, 0)
+	res, payload := post(t, server, `{"prompt":"blocked"}`, "test-session")
+	if res.StatusCode != http.StatusPaymentRequired {
+		t.Fatalf("status = %d, payload %v", res.StatusCode, payload)
+	}
+	data := errDataOf(t, payload)
+	if data["purchaseAvailable"] != false {
+		t.Fatalf("purchaseAvailable = %v, want false", data["purchaseAvailable"])
+	}
+}
+
+func errDataOf(t *testing.T, payload map[string]any) map[string]any {
+	t.Helper()
+	errObj, _ := payload["error"].(map[string]any)
+	if errObj == nil {
+		t.Fatalf("no error envelope: %v", payload)
+	}
+	data, _ := errObj["data"].(map[string]any)
+	if data == nil {
+		t.Fatalf("no data on error: %v", payload)
+	}
+	return data
 }
 
 func TestFailedProviderCallsDoNotDrainQuota(t *testing.T) {

@@ -6,6 +6,8 @@ import type {
   ProjectModelBlock,
   ProjectModelComponent,
   ProjectModelHandler,
+  ProjectModelInputAction,
+  ProjectModelSortingLayer,
 } from "@/types/project";
 import type { PropsPatch } from "@/lib/project-model/ops";
 import type { StackTarget } from "@/lib/project-model/blocks";
@@ -98,6 +100,15 @@ export interface BuilderContextValue {
     setStartScreen: (screenId: string) => void;
     updateScreenStyles: (screenId: string, patch: PropsPatch) => void;
     updatePreviewSettings: (patch: NonNullable<ProjectModel["settings"]["preview"]>) => void;
+    /** TASK 15: rewrite the screen's rendering layers (one undoable commit). */
+    updateSortingLayers: (screenId: string, layers: ProjectModelSortingLayer[], previousLayers?: ProjectModelSortingLayer[]) => void;
+    /** Input abstraction: rewrite the screen's input actions (one undoable commit). */
+    updateInputActions: (screenId: string, actions: ProjectModelInputAction[]) => void;
+    /** TASK 53: 3D hierarchy ops — reparent, duplicate subtree, delete with
+     * child reparenting. Each is one undoable commit on the canonical model. */
+    setParent3D: (screenId: string, id: string, parentId: string | null) => void;
+    duplicateHierarchy3D: (screenId: string, id: string) => void;
+    removeComponent3D: (screenId: string, id: string) => void;
     // Code ↔ model sync.
     applyCodeSync: (screenId: string, handlers: ProjectModelHandler[]) => void;
     setScreenCode: (screenId: string, code: string | null) => void;

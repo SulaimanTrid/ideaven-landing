@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createRuntime, screenOf, type ScreenRuntime } from "@/lib/project-model/runtime";
 import { RuntimeNode } from "@/components/runtime/runtime-node";
 import { SceneStage } from "@/components/runtime/scene-stage";
+import { Viewport3D } from "@/components/runtime/viewport-3d";
 import { ViewportFrame } from "@/components/builder/viewport";
 import { isSceneScreen } from "@/lib/project-model/scene";
 import type { ProjectModel, PropsMap } from "@/types/project";
@@ -101,7 +102,15 @@ export function LiveApp({ model }: { model: ProjectModel }) {
             : "#ffffff",
         }}
       >
-        {isScene && screen ? (
+        {isScene && screen && model.type === "3d" ? (
+          <Viewport3D
+            model={model}
+            screen={screen}
+            mode="runtime"
+            runtimeEmit={emit}
+            getProps={(id) => runtimeRef.current?.getComponentProps(id)}
+          />
+        ) : isScene && screen ? (
           <SceneStage
             key={runId}
             screen={screen}

@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { extensionApi } from "@/lib/api";
+import {
+  AI_INSUFFICIENT_CREDITS,
+  extensionApi,
+  type InsufficientCreditsData,
+} from "@/lib/api";
 import type {
   BuildEvent,
   BuildLogLine,
@@ -11,6 +15,8 @@ import type {
   VersionConflict,
 } from "@/types/extension";
 import { ApiError } from "@/types/auth";
+import { useI18n } from "@/lib/i18n/i18n";
+import { CreditPurchaseModal } from "@/components/credits/credit-purchase-modal";
 
 /**
  * The Build tab (Task 06): the real pipeline over SSE — every state and log
@@ -112,6 +118,7 @@ export interface BuildPanelProps {
 export function BuildPanel({
   id, slug, currentVersion, onOpenTab, onApplyFix, onBuildSuccess, onVersionBuilt,
 }: BuildPanelProps) {
+  const { t } = useI18n();
   const [buildVersion, setBuildVersion] = useState("");
   const [changelog, setChangelog] = useState("");
   const [state, setState] = useState<BuildState>("idle");
@@ -128,6 +135,10 @@ export function BuildPanel({
   const [fixing, setFixing] = useState(false);
   const [proposal, setProposal] = useState<FixProposal | null>(null);
   const [applied, setApplied] = useState<{ target: "manifest" | "source"; previous: string } | null>(null);
+
+  // Contextual credit purchase (TASK 12): opens on the server's 402.
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseInfo, setPurchaseInfo] = useState<InsufficientCreditsData | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const versionInputRef = useRef<HTMLInputElement | null>(null);
@@ -261,7 +272,22 @@ export function BuildPanel({
         setNotice("The AI proposal did not pass validation — it is shown for review only and cannot be applied.");
       }
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : "Could not request a fix. Try again shortly.");
+      if (err instanceof ApiError && err.code === AI_INSUFFICIENT_CREDITS) {
+        // The server blocked the fix on empty credits: open the contextual
+        // purchase modal with the safe numbers it attached. Nothing was
+        // consumed; the fix reruns only via "Continue with AI".
+        setPurchaseInfo({
+          remaining: err.dataNumber("remaining") ?? 0,
+          required: err.dataNumber("required") ?? 1,
+          packBalance: err.dataNumber("packBalance") ?? 0,
+          freeRemaining: err.dataNumber("freeRemaining") ?? 0,
+          purchaseAvailable: err.dataBoolean("purchaseAvailable") ?? false,
+        });
+        setPurchaseOpen(true);
+        setNotice(t("credits.blockedTurn"));
+      } else {
+        setNotice(err instanceof ApiError ? err.message : "Could not request a fix. Try again shortly.");
+      }
     } finally {
       setFixing(false);
     }
@@ -715,6 +741,15 @@ export function BuildPanel({
           Every row is a real worker run against {slug} — successes, failures, and cancellations alike.
         </p>
       </section>
+
+      {/* Contextual credit purchase (TASK 12): continues the interrupted fix
+          only after the user explicitly confirms. */}
+      <CreditPurchaseModal
+        open={purchaseOpen}
+        onClose={() => setPurchaseOpen(false)}
+        info={purchaseInfo}
+        onContinue={() => void requestFix()}
+      />
     </div>
   );
 }

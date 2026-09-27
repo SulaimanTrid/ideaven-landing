@@ -18,7 +18,10 @@ import (
 type Authenticator func(ctx context.Context, token string) (*user.User, error)
 
 // FixGate guards the AI fix endpoint with the shared AI credit allowance.
-type FixGate func(ctx context.Context, userID string) bool
+// nil return = allowed; non-nil = the structured error to write (the ai
+// package's 402 with credit metadata, so the client can open the contextual
+// purchase modal from the extension surface too).
+type FixGate func(ctx context.Context, userID string) *httpx.Error
 
 // UsageRecorder logs one AI-assisted request for credits accounting.
 type UsageRecorder func(userID, provider, model string, promptChars, outputChars int, ok bool)
@@ -436,10 +439,11 @@ func (h *Handler) Fix(w http.ResponseWriter, r *http.Request) {
 			"AI is not configured on this server. Set AI_PROVIDER, AI_API_KEY and AI_MODEL to enable Fix with AI."))
 		return
 	}
-	if h.fixGate != nil && h.fixGate(r.Context(), current.ID) {
-		httpx.WriteError(w, httpx.Errorf(http.StatusTooManyRequests, "AI_CREDITS_EXHAUSTED",
-			"You have used all of today's free AI commands. The allowance resets at midnight."))
-		return
+	if h.fixGate != nil {
+		if blocked := h.fixGate(r.Context(), current.ID); blocked != nil {
+			httpx.WriteError(w, blocked)
+			return
+		}
 	}
 	var body struct {
 		BuildID string `json:"buildId"`

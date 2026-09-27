@@ -1,7 +1,7 @@
 // Command grant-credits awards AI pack credits to a user by writing a row
 // in the credit_grants ledger. Operator tooling only — there is no
-// self-service endpoint (that would be a faucet). Paid top-ups will write
-// the same rows once payments exist (roadmap 42).
+// self-service endpoint (that would be a faucet). Paid top-ups now write
+// the same rows through internal/credits after a verified payment (TASK 12).
 //
 // Usage:
 //

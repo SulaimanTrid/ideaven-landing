@@ -130,6 +130,68 @@ export const STATEMENT_DEFS: BlockDef[] = [
       { key: "color", kind: "text", label: "color" },
     ],
   },
+  {
+    // TASK 14: camera blocks map to real runtime semantics — shake queues a
+    // bounded envelope on the runtime camera; the target retargets the
+    // camera entity's live followTarget. Nothing here is decorative.
+    type: "camera-shake", kind: "statement", category: "media",
+    label: "shake camera for {duration}s with strength {strength}",
+    inputs: [
+      { key: "duration", kind: "number", label: "seconds" },
+      { key: "strength", kind: "number", label: "px" },
+    ],
+  },
+  {
+    type: "camera-set-target", kind: "statement", category: "media",
+    label: "set camera target to {componentId}",
+    inputs: [{ key: "componentId", kind: "component", label: "target" }],
+  },
+  {
+    // SLICE 2: animation blocks map to real playback commands — the scene
+    // loop drains them against the component's runtime animation state.
+    // "play" (re)starts the named clip from frame 0; the clip id is the
+    // entity's canonical animation id (see the sprite's Inspector).
+    type: "play-animation", kind: "statement", category: "media",
+    label: "play animation {animationId} on {componentId}",
+    inputs: [
+      { key: "animationId", kind: "text", label: "clip id" },
+      { key: "componentId", kind: "component", label: "target" },
+    ],
+  },
+  {
+    type: "stop-animation", kind: "statement", category: "media",
+    label: "stop animation on {componentId}",
+    inputs: [{ key: "componentId", kind: "component", label: "target" }],
+  },
+  {
+    // SLICE 3: state-machine parameter blocks — set feeds a bool/number
+    // parameter every call; trigger fires an edge the machine consumes.
+    type: "set-animation-param", kind: "statement", category: "media",
+    label: "set animation parameter {name} of {componentId} to {value}",
+    inputs: [
+      { key: "name", kind: "text", label: "parameter" },
+      { key: "componentId", kind: "component", label: "target" },
+    ],
+    slots: [{ key: "value", label: "value" }],
+  },
+  {
+    type: "trigger-animation-param", kind: "statement", category: "media",
+    label: "trigger animation parameter {name} of {componentId}",
+    inputs: [
+      { key: "name", kind: "text", label: "parameter" },
+      { key: "componentId", kind: "component", label: "target" },
+    ],
+  },
+  {
+    // SYSTEM 18: burst request — spawns real runtime particles on the
+    // emitter, bounded by its maxParticles.
+    type: "burst-particle", kind: "statement", category: "media",
+    label: "burst {count} particles on {componentId}",
+    inputs: [
+      { key: "count", kind: "number", label: "count" },
+      { key: "componentId", kind: "component", label: "emitter" },
+    ],
+  },
 ];
 
 export const EXPRESSION_DEFS: BlockDef[] = [

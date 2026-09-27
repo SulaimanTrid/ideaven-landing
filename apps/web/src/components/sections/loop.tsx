@@ -98,7 +98,7 @@ function LoopScreen({ step }: { step: number }) {
                     <li
                       key={option.key}
                       className={cn(
-                        "flex items-center justify-between rounded-lg border px-3 py-2 text-[13px] transition-colors duration-300",
+                        "flex items-center justify-between rounded-lg border px-3 py-2 text-[13px] transition-colors duration-standard",
                         selected
                           ? "border-mint/50 bg-mint/[0.08] text-mint"
                           : "border-line bg-white/[0.02] text-fog",

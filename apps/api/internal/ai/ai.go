@@ -44,11 +44,30 @@ type Handler struct {
 	db       *sql.DB
 	cookie   CookieConfig
 	dedupe   *commandDeduper
+	// purchaseAvailable reports whether credit purchase is live, so the
+	// insufficient-credit response can tell the client whether to offer packs.
+	purchaseAvailable func() bool
+}
+
+// HandlerOption customizes the AI handler.
+type HandlerOption func(*Handler)
+
+// WithPurchaseAvailability reports whether credit purchase is live.
+func WithPurchaseAvailability(fn func() bool) HandlerOption {
+	return func(h *Handler) {
+		if fn != nil {
+			h.purchaseAvailable = fn
+		}
+	}
 }
 
 // NewHandler builds the AI handler. provider may be nil (AI not configured).
-func NewHandler(provider Provider, auth AuthenticateFunc, db *sql.DB, cookie CookieConfig) *Handler {
-	return &Handler{provider: provider, auth: auth, usage: &usageStore{db: db}, db: db, cookie: cookie, dedupe: newCommandDeduper()}
+func NewHandler(provider Provider, auth AuthenticateFunc, db *sql.DB, cookie CookieConfig, opts ...HandlerOption) *Handler {
+	h := &Handler{provider: provider, auth: auth, usage: &usageStore{db: db}, db: db, cookie: cookie, dedupe: newCommandDeduper()}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // projectRules loads the caller's durable project rules (5.0 M5). The JOIN
@@ -161,11 +180,12 @@ func (h *Handler) Command(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Free-credit gate (roadmap: usage & cost control): the derived daily
-	// allowance is checked before the provider is ever touched.
-	if h.creditsExhausted(r.Context(), current.ID) {
-		httpx.WriteError(w, httpx.Errorf(http.StatusTooManyRequests, "AI_CREDITS_EXHAUSTED",
-			"You have used all of today's free AI commands. The allowance resets at midnight."))
+	// Credit gate (roadmap: usage & cost control): the derived daily
+	// allowance and pack balance are checked before the provider is ever
+	// touched. Blocking answers are a structured 402 carrying safe credit
+	// metadata so the client can open the contextual purchase modal.
+	if blocked := h.creditGate(r.Context(), current.ID); blocked != nil {
+		httpx.WriteError(w, blocked)
 		return
 	}
 

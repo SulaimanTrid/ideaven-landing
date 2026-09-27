@@ -18,6 +18,10 @@ import { InsightsMode } from "./insights-mode";
 import { AskAIPanel } from "./ask-ai-panel";
 import { AssetsPanel } from "./assets-panel";
 import { HistoryPanel } from "./history-panel";
+import {
+  CreditPurchaseModal,
+} from "@/components/credits/credit-purchase-modal";
+import type { InsufficientCreditsData } from "@/lib/api";
 import type { SyncDiagnostic } from "@/lib/project-model/code-sync";
 import {
   BuilderContext,
@@ -44,8 +48,13 @@ import {
   setScreenCode,
   setStartScreen,
   updateComponent,
-  updateScreenStyles,
+  updateInputActions,
   updatePreviewSettings,
+  updateScreenStyles,
+  updateSortingLayers,
+  setParent3D,
+  duplicateHierarchy3D,
+  removeComponent3D,
 } from "@/lib/project-model/ops";
 import {
   addHandler,
@@ -192,8 +201,33 @@ function BuilderSession({
   // A prompt seeded from elsewhere in the builder (Auto-Fix): Ask AI runs it
   // once on open, then the seed is released.
   const [aiSeed, setAiSeed] = useState<string | null>(null);
+  // Task 12: the contextual credit purchase modal. It opens automatically
+  // when the server blocks an AI action with a structured 402, or directly
+  // from the top bar when the balance is empty, or after a hosted-checkout
+  // return (?purchase=…) to resume the verified result.
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseInfo, setPurchaseInfo] = useState<InsufficientCreditsData | null>(null);
+  const [purchaseResumeId, setPurchaseResumeId] = useState<string | null>(null);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Hosted-checkout return: the provider sends the user back with the
+  // purchase id; the modal polls the server-verified status from there. The
+  // query is stripped so a refresh never replays the resume.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const purchaseId = params.get("purchase");
+    if (!purchaseId) return;
+    params.delete("purchase");
+    const rest = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${rest ? `?${rest}` : ""}`,
+    );
+    setPurchaseResumeId(purchaseId);
+    setPurchaseOpen(true);
+  }, []);
 
   const draggingRef = useRef<DragPayload | null>(null);
   const lastSavedRef = useRef<ProjectModel>(initialModel);
@@ -409,6 +443,16 @@ function BuilderSession({
         commit(updateScreenStyles(modelRef.current, screenId, patch)),
       updatePreviewSettings: (patch) =>
         commit(updatePreviewSettings(modelRef.current, patch)),
+      updateSortingLayers: (screenId, layers, previousLayers) =>
+        commit(updateSortingLayers(modelRef.current, screenId, layers, previousLayers)),
+      updateInputActions: (screenId, actions) =>
+        commit(updateInputActions(modelRef.current, screenId, actions)),
+      setParent3D: (screenId, id, parentId) =>
+        commit(setParent3D(modelRef.current, screenId, id, parentId)),
+      duplicateHierarchy3D: (screenId, id) =>
+        commit(duplicateHierarchy3D(modelRef.current, screenId, id)),
+      removeComponent3D: (screenId, id) =>
+        commit(removeComponent3D(modelRef.current, screenId, id)),
       // Code ↔ model sync.
       applyCodeSync: (screenId, handlers) => {
         const next = applyCodeSync(modelRef.current, screenId, handlers);
@@ -561,6 +605,11 @@ function BuilderSession({
         <BuilderTopBar
           aiOpen={aiOpen}
           onToggleAI={() => setAiOpen((v) => !v)}
+          onOpenPurchase={() => {
+            setPurchaseInfo(null);
+            setPurchaseResumeId(null);
+            setPurchaseOpen(true);
+          }}
           assetsOpen={assetsOpen}
           onToggleAssets={() => setAssetsOpen((v) => !v)}
           historyOpen={historyOpen}
@@ -632,10 +681,23 @@ function BuilderSession({
             onClose={() => setAiOpen(false)}
             seedPrompt={aiSeed}
             onSeedConsumed={() => setAiSeed(null)}
+            onInsufficientCredits={(info) => {
+              setPurchaseInfo(info);
+              setPurchaseResumeId(null);
+              setPurchaseOpen(true);
+            }}
           />
         ) : null}
         {assetsOpen ? <AssetsPanel onClose={() => setAssetsOpen(false)} /> : null}
         {historyOpen ? <HistoryPanel onClose={() => setHistoryOpen(false)} /> : null}
+
+        {/* Contextual credit purchase modal (TASK 12) */}
+        <CreditPurchaseModal
+          open={purchaseOpen}
+          onClose={() => setPurchaseOpen(false)}
+          info={purchaseInfo}
+          initialPurchaseId={purchaseResumeId}
+        />
       </div>
     </BuilderContext.Provider>
   );

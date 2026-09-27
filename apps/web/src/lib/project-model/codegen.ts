@@ -159,6 +159,46 @@ function emitStatement(
         blockId: block.id,
       });
       return;
+    case "camera-shake": {
+      const duration = typeof block.inputs?.duration === "number" ? block.inputs.duration : 0.25;
+      const strength = typeof block.inputs?.strength === "number" ? block.inputs.strength : 8;
+      push(`${pad}api.shakeCamera(${duration}, ${strength});`, { blockId: block.id });
+      return;
+    }
+    case "camera-set-target":
+      push(`${pad}api.setCameraTarget(${JSON.stringify(str(block.inputs?.componentId))});`, {
+        blockId: block.id,
+      });
+      return;
+    case "play-animation":
+      push(
+        `${pad}api.playAnimation(${JSON.stringify(str(block.inputs?.componentId))}, ${JSON.stringify(str(block.inputs?.animationId))});`,
+        { blockId: block.id },
+      );
+      return;
+    case "stop-animation":
+      push(`${pad}api.stopAnimation(${JSON.stringify(str(block.inputs?.componentId))});`, {
+        blockId: block.id,
+      });
+      return;
+    case "set-animation-param":
+      push(
+        `${pad}api.setAnimationParam(${JSON.stringify(str(block.inputs?.componentId))}, ${JSON.stringify(str(block.inputs?.name))}, ${emitExpression(push, model, block.slots?.value)});`,
+        { blockId: block.id },
+      );
+      return;
+    case "trigger-animation-param":
+      push(
+        `${pad}api.triggerAnimationParam(${JSON.stringify(str(block.inputs?.componentId))}, ${JSON.stringify(str(block.inputs?.name))});`,
+        { blockId: block.id },
+      );
+      return;
+    case "burst-particle":
+      push(
+        `${pad}api.burstParticle(${JSON.stringify(str(block.inputs?.componentId))}, ${JSON.stringify(typeof block.inputs?.count === "number" ? block.inputs.count : 10)});`,
+        { blockId: block.id },
+      );
+      return;
     case "navigate":
       push(`${pad}api.navigate(${JSON.stringify(str(block.inputs?.screenId))});`, {
         blockId: block.id,

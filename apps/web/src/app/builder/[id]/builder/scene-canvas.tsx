@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useBuilder, componentLabel } from "@/app/builder/[id]/builder/builder-context";
-import { entityRect, entitiesOf, entityVisible, tileColorAt, tilemapCellSize, tilemapGrid, tilesToMap, tilesToString, type EntityRect } from "@/lib/project-model/scene";
+import { autoTileFactor, cameraConfig, cellColorFor, entityRect, entitiesOf, entityVisible, shadeHex, sortedRenderOrder, tileColorAt, tilemapCellSize, tilemapGrid, tilesToMap, tilesToString, type EntityRect } from "@/lib/project-model/scene";
 import type { ProjectModelComponent, ProjectModelScreen } from "@/types/project";
 import { imageUrl } from "@/lib/api";
 
@@ -30,6 +30,7 @@ export function SceneEditor({
   snap,
   tool = "select",
   activeTile = 1,
+  showSorting = false,
 }: {
   screen: ProjectModelScreen;
   scale: number;
@@ -37,10 +38,17 @@ export function SceneEditor({
   tool?: SceneTool;
   /** Tile value the Paint tool writes (from the toolbar's palette swatches). */
   activeTile?: number;
+  /** TASK 15: overlay each entity's layer name + order (depth debugging). */
+  showSorting?: boolean;
 }) {
   const { selectedId, select, actions } = useBuilder();
   const entities = entitiesOf(screen);
+  // TASK 15: one deterministic render-order pipeline (layer → order → model
+  // index) shared with the runtimes. Memoized — sorting never runs per frame.
+  const sortedEntities = useMemo(() => sortedRenderOrder(screen), [screen]);
   const [live, setLive] = useState<Record<string, EntityRect>>({});
+  // The cell the paint cursor is over (Paint/Erase feedback before commit).
+  const [hoverCell, setHoverCell] = useState<{ id: string; col: number; row: number } | null>(null);
   const dragRef = useRef<{
     id: string;
     kind: "move" | "resize";
@@ -190,16 +198,99 @@ export function SceneEditor({
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>
-      {entities.map((component) => {
+      {/* Camera framing (TASK 14): the camera entity's rect is the viewport it
+          frames; when bounds are on, the world rectangle shows too — one quiet
+          overlay, not visual noise. Derived from the same camera props the
+          runtime reads. */}
+      {entities.filter((e) => e.type === "camera").map((camera) => {
+        const cfg = cameraConfig(camera.props);
+        return (
+          <div key={`camera-overlay-${camera.id}`} aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+            {cfg.boundsEnabled ? (
+              <div
+                data-camera-bounds="true"
+                style={{
+                  position: "absolute",
+                  left: cfg.minX,
+                  top: cfg.minY,
+                  width: Math.max(1, cfg.maxX - cfg.minX),
+                  height: Math.max(1, cfg.maxY - cfg.minY),
+                  border: "2px dashed rgb(143 123 255 / 0.4)",
+                  borderRadius: 8,
+                }}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+      {/* SYSTEM 5: light gizmos — radius rings reflecting the real configured
+          radius, editor-only (pointer-events none, never exported). */}
+      {entities
+        .filter((e) => e.type === "light" && e.props?.enabled !== false)
+        .map((light) => {
+          const rect = rectOf(light);
+          const radius = typeof light.props?.radius === "number" && Number.isFinite(light.props.radius) && light.props.radius >= 8 ? light.props.radius : 140;
+          const color = typeof light.props?.color === "string" ? light.props.color : "#ffd9a0";
+          const cx = rect.x + rect.width / 2;
+          const cy = rect.y + rect.height / 2;
+          return (
+            <div
+              key={`light-gizmo-${light.id}`}
+              data-light-gizmo="true"
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left: cx - radius,
+                top: cy - radius,
+                width: radius * 2,
+                height: radius * 2,
+                borderRadius: "50%",
+                border: `1.5px dashed ${color}66`,
+                background: `radial-gradient(circle, ${color}14 0%, rgba(0,0,0,0) 70%)`,
+                pointerEvents: "none",
+              }}
+            />
+          );
+        })}
+      {/* TASK 15: the design canvas renders in the SAME deterministic order
+          as the runtime (layer → order → model index) — the editor never
+          lies about what will be in front. */}
+      {sortedEntities.map((component) => {
         const rect = rectOf(component);
         const rotation = rotationOf(component);
         const visible = entityVisible(component.props);
         const selected = selectedId === component.id;
+        const layerName = String(component.props?.sortingLayer ?? "") || "World";
         return (
           <div
             key={component.id}
             data-node-id={component.id}
+            data-sorting-layer={layerName}
             onPointerDown={(event) => onPointerDown(event, component, "move")}
+            onPointerMove={
+              tool !== "select" && component.type === "tilemap"
+                ? (event) => {
+                    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                    const grid = tilemapGrid(component.props);
+                    const col = Math.floor((event.clientX - box.left) / scale / tilemapCellSize(component.props));
+                    const row = Math.floor((event.clientY - box.top) / scale / tilemapCellSize(component.props));
+                    if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) {
+                      setHoverCell(null);
+                      return;
+                    }
+                    setHoverCell((current) =>
+                      current?.id === component.id && current.col === col && current.row === row
+                        ? current
+                        : { id: component.id, col, row },
+                    );
+                  }
+                : undefined
+            }
+            onPointerLeave={
+              tool !== "select" && component.type === "tilemap"
+                ? () => setHoverCell(null)
+                : undefined
+            }
             onClick={(event) => event.stopPropagation()}
             style={{
               position: "absolute",
@@ -214,9 +305,60 @@ export function SceneEditor({
               borderRadius: 6,
               cursor: tool !== "select" && component.type === "tilemap" ? "crosshair" : "move",
               touchAction: "none",
+              // The camera's viewport spans the whole stage: it must never
+              // intercept clicks meant for the entities it frames. Its label
+              // chip (below) is the drag/select handle.
+              pointerEvents: component.type === "camera" ? "none" : undefined,
             }}
           >
             <EntityGlyph component={component} rect={rect} />
+            {showSorting ? (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  top: -8,
+                  left: 4,
+                  padding: "0 4px",
+                  borderRadius: 3,
+                  background: "rgb(10 12 18 / 0.78)",
+                  color: "#a9b0c2",
+                  fontSize: 8.5,
+                  fontFamily: "var(--font-mono, monospace)",
+                  letterSpacing: 0.5,
+                  whiteSpace: "nowrap",
+                  pointerEvents: "none",
+                }}
+              >
+                {layerName} · {typeof component.props?.sortingOrder === "number" ? component.props.sortingOrder : 0}
+              </span>
+            ) : null}
+            {component.type === "camera" ? (
+              // The camera's only hit area: its name chip. The viewport itself
+              // must stay click-through (see pointerEvents above), so the chip
+              // re-enables pointer events for select/drag.
+              <span
+                data-camera-handle="true"
+                style={{
+                  position: "absolute",
+                  top: -10,
+                  left: 4,
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  background: "rgb(10 12 18 / 0.82)",
+                  border: `1px solid ${typeof component.props?.color === "string" ? component.props.color : "#58c7f0"}`,
+                  color: typeof component.props?.color === "string" ? component.props.color : "#58c7f0",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                  whiteSpace: "nowrap",
+                  pointerEvents: "auto",
+                  cursor: "move",
+                }}
+              >
+                ⌗ {typeof component.props?.name === "string" && component.props.name.trim() !== "" ? component.props.name : "Camera"}
+              </span>
+            ) : null}
             {selected ? (
               <>
                 {/* Scale handle */}
@@ -267,6 +409,40 @@ export function SceneEditor({
           </div>
         );
       })}
+
+      {/* Paint/Erase hover feedback: the exact cell the stroke will touch,
+          shaded by the same auto-tile rule that will render it. */}
+      {hoverCell
+        ? (() => {
+            const component = entities.find((e) => e.id === hoverCell.id);
+            if (!component) return null;
+            const rect = rectOf(component);
+            const cell = tilemapCellSize(component.props);
+            const painted = tilesToMap(String(component.props?.tiles ?? ""));
+            const willPaint = tool === "paint";
+            const color = willPaint
+              ? shadeHex(tileColorAt(component.props, activeTile), component.props?.autoTile === true ? autoTileFactor((c, r) => painted.has(`${c},${r}`), hoverCell.col, hoverCell.row) : 1)
+              : "#f43f5e";
+            return (
+              <div
+                aria-hidden="true"
+                data-hover-cell={`${hoverCell.col},${hoverCell.row}`}
+                style={{
+                  position: "absolute",
+                  left: rect.x + hoverCell.col * cell,
+                  top: rect.y + hoverCell.row * cell,
+                  width: cell,
+                  height: cell,
+                  background: willPaint ? color : "transparent",
+                  outline: `2px solid ${color}`,
+                  outlineOffset: -2,
+                  opacity: 0.7,
+                  pointerEvents: "none",
+                }}
+              />
+            );
+          })()
+        : null}
     </div>
   );
 }
@@ -288,6 +464,66 @@ function EntityGlyph({ component, rect }: { component: ProjectModelComponent; re
     );
   }
   switch (component.type) {
+    case "camera":
+      // The camera frames the world; on the design stage it renders as a
+      // viewport outline with a corner viewfinder mark, not a solid shape.
+      return (
+        <div
+          title={label}
+          data-camera-viewport="true"
+          style={{
+            width: "100%",
+            height: "100%",
+            border: `2px dashed ${color}`,
+            borderRadius: 8,
+            background: `${color}08`,
+            display: "flex",
+            alignItems: "flex-end",
+            padding: 4,
+          }}
+        >
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, color, opacity: 0.85 }}>
+            ⌗ {typeof component.props?.name === "string" ? component.props.name : "CAMERA"}
+          </span>
+        </div>
+      );
+    case "light":
+      // SYSTEM 5: the light's stage handle — a glowing dot; the radius ring
+      // around it comes from the gizmo overlay above.
+      return (
+        <div
+          title={label}
+          style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <span
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: color,
+              boxShadow: `0 0 12px ${color}`,
+              border: "2px solid rgb(255 255 255 / 0.7)",
+            }}
+          />
+        </div>
+      );
+    case "emitter":
+      // SYSTEM 18: emitter stage handle — a cone pointing along the emission
+      // direction (0° = up).
+      return (
+        <div title={label} style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: "50% 50% 50% 0",
+              background: "#ffd9a0",
+              border: "2px solid rgb(255 255 255 / 0.7)",
+              transform: `rotate(${(typeof component.props?.direction === "number" ? component.props.direction : 0) - 45}deg)`,
+            }}
+          />
+        </div>
+      );
     case "player":
       return (
         <div title={label} style={{ width: "100%", height: "100%", borderRadius: 9, background: color, boxShadow: "inset -4px -4px 0 rgb(0 0 0 / 0.18)" }} />
@@ -301,6 +537,8 @@ function EntityGlyph({ component, rect }: { component: ProjectModelComponent; re
     case "tilemap": {
       const cell = tilemapCellSize(component.props);
       const tiles = String(component.props?.tiles ?? "");
+      const painted = tilesToMap(tiles);
+      const isPainted = (c: number, r: number) => painted.has(`${c},${r}`);
       const cells: React.ReactNode[] = [];
       tiles.split(";").forEach((seg) => {
         const [pos, tile] = seg.trim().split(":");
@@ -315,7 +553,7 @@ function EntityGlyph({ component, rect }: { component: ProjectModelComponent; re
             key={`${col}-${row}`}
             data-cell={`${col},${row}`}
             data-tile={Number.isFinite(tileNum) ? tileNum : 1}
-            style={{ position: "absolute", left: col * cell, top: row * cell, width: cell, height: cell, background: tileColorAt(component.props, Number.isFinite(tileNum) ? tileNum : 1), boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.06)" }}
+            style={{ position: "absolute", left: col * cell, top: row * cell, width: cell, height: cell, background: cellColorFor(component.props, col, row, isPainted, Number.isFinite(tileNum) ? tileNum : 1), boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.06)" }}
           />,
         );
       });

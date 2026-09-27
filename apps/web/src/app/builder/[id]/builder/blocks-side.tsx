@@ -11,7 +11,7 @@ import {
   isExtensionBlock,
 } from "@/lib/project-model/block-registry";
 import { eventsFor, getDef, EVENT_LABELS, SCREEN_EVENTS, ENTITY_TYPES, eventLabel, translatedBlockLabel, translatedEventLabel, translatedCategoryLabel } from "@/lib/project-model/registry";
-import { entitiesOf, touchEventFor, targetOfTouchEvent } from "@/lib/project-model/scene";
+import { entitiesOf, inputActionsOf, isSceneScreen, touchEventFor, targetOfTouchEvent } from "@/lib/project-model/scene";
 import { useI18n } from "@/lib/i18n/i18n";
 import { useBuilder, componentLabel } from "./builder-context";
 import { useBlocksDnd } from "./blocks-dnd";
@@ -62,17 +62,38 @@ function HandlersPanel() {
           .filter((e) => e.id !== target.id)
           .flatMap((e) => [touchEventFor(e.id), `touching-${e.id}`, `touches-exit-${e.id}`])
       : [];
+  // Input abstraction: "when <action> pressed" events exist for every enabled
+  // action of this scene — on the screen or on any entity (the event is
+  // global; the fan-out is the runtime's job). Actions come from the same
+  // screen.inputActions data the Input Actions panel edits.
+  const actionEvents =
+    screen && isSceneScreen(screen)
+      ? inputActionsOf(screen)
+          .filter((a) => a.enabled)
+          .map((a) => `action-pressed-${a.id}`)
+      : [];
   const availableEvents = [
     ...(target ? eventsFor(target.type) : [...SCREEN_EVENTS]),
     ...touchEvents,
+    ...actionEvents,
   ];
-  /** Human label for any event, resolving scene touch targets by name. */
+  /** Human label for any event, resolving scene touch targets and input
+   * actions by name. */
   const eventDisplayName = (name: string): string => {
+    if (name.startsWith("action-pressed-")) {
+      const id = name.slice("action-pressed-".length);
+      const action = (screen ? inputActionsOf(screen) : []).find((a) => a.id === id);
+      return t("block.event.action-pressed-named").replace(
+        "{action}",
+        action ? action.name : `“${id}” (deleted)`,
+      );
+    }
     const touched = targetOfTouchEvent(name);
     if (touched === null) return translatedEventLabel(name, t as unknown as (key: string) => string);
     const other = sceneEntities.find((e) => e.id === touched);
     return `Touches ${other ? componentLabel(other) : "a missing entity"}`;
   };
+  const isActionEvent = (name: string) => name.startsWith("action-pressed-");
 
   const submit = () => {
     const componentId = target ? target.id : null;
@@ -112,12 +133,14 @@ function HandlersPanel() {
             ? components.find((c) => c.id === handler.componentId)
             : null;
           const selected = handler.id === selectedHandlerId;
-          const eventText = eventLabel(handler.event) === "Touches"
+          const eventText = isActionEvent(handler.event) || eventLabel(handler.event) === "Touches"
             ? eventDisplayName(handler.event)
             : translatedEventLabel(handler.event, t as unknown as (key: string) => string);
           const label =
             handler.componentId === null
-              ? `${t("block.when")} Screen ${translatedEventLabel(handler.event, t as unknown as (key: string) => string)}`
+              ? isActionEvent(handler.event)
+                ? `${t("block.when")} ${eventText}`
+                : `${t("block.when")} Screen ${translatedEventLabel(handler.event, t as unknown as (key: string) => string)}`
               : component
                 ? `${componentLabel(component)} ${eventText}`
                 : `Missing component ${translatedEventLabel(handler.event, t as unknown as (key: string) => string)}`;

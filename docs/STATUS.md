@@ -2650,3 +2650,1152 @@ multiple tile types, palette-driven, end to end.
 
 Rule tiles (auto-tiling on paint) or the camera-behaviors slice
 (SYSTEM 8: follow/smoothing/bounds/shake) per the priority order.
+
+## 49. Session 42 (resumed on a new machine â?? untracked sessions verified, worker env fixed)
+
+The repository moved to a NEW machine mid-flight (old: C:\Users\ACER\tools,
+node 22 / go 1.26.7 / pg 17.4; new: ideaven-v7\tools, node 24.21.0 /
+go 1.27.1 / PostgreSQL 16.9, playwright 1.63.0 + chromium-1243 in
+%LOCALAPPDATA%\ms-playwright via tools\e2e-runner). The working tree held
+several completed-but-unrecorded sessions on top of the docs commit e91459a
+(tile palette, cf1d9d1): TASK 12 (credit purchase flow) and TASK 14 (camera
+behaviors) were recorded in IDEAVEN_PROGRESS.md only, while RULE TILES
+(auto-tiling) and SORTING LAYERS (SYSTEM 9, TASK 15) existed in code with
+no record at all — the sorting session was cut off mid-edit. Session 42
+verified all of it end to end on the new machine.
+
+- **Worker env fix (real bug, found by the migration)**: the extension build
+  worker's env whitelist (internal/extension/build.go workerEnv) dropped
+  `LocalAppData`, which is how the Windows Go toolchain locates its default
+  GOCACHE — so TestExtensionBuildPipelineAndInstall and
+  TestBuildStreamSuccessConflictFailureRetry failed with "build cache is
+  required, but could not be located". Matching is now case-insensitive
+  (Windows ships mixed-case names: SystemRoot, ComSpec, LocalAppData) and
+  LocalAppData/AppData/UserProfile are kept. On Unix nothing changes (the
+  extra names are simply absent from os.Environ()).
+- **Sorting layers (SYSTEM 9) verified**: scripts/e2e-sorting.mjs (19 checks)
+  drives the real UI — sorted editor order against a deliberately wrong model
+  order, the "Show order" overlay, the Layer Manager (5 layers back-to-front,
+  delete protection for used layers, reorder with undo), order-within-layer
+  and stable model-index tie-breaks, the dangling-layer diagnostic with a
+  World fallback that never breaks the runtime, then persistence, preview
+  parity, published-page parity, and the export pipeline. 0 console errors.
+- **Rule tiles verified end to end**: e2e-tilemap-paint.mjs now 29/29 — the
+  3×3 block assertion proves interior (4 neighbors) shades darkest, edges
+  (3) intermediate, corners (≤2) keep the base palette color, identical on
+  the design canvas AND in preview (cellColorFor in scene.ts =
+  autoTileColor in export.go).
+- **Camera handle completion**: the cut-off session had made the camera
+  viewport click-through (pointerEvents none — correct: a 390×844 viewport
+  must not swallow clicks for the entities it frames) but left an invisible
+  8×8 hit chip. Completed into a visible name-chip handle
+  (data-camera-handle="true", re-enables pointer events, select/drag only
+  via the chip) and retargeted e2e-camera.mjs to click it.
+- **E2E on this machine**: PLAYWRIGHT_MODULE must be a RELATIVE specifier
+  (ESM dynamic import rejects C:\ paths):
+  `../../tools/e2e-runner/node_modules/playwright/index.js`. The API runs
+  on :8090 for E2E (env var beats apps/api/.env's :8081) against the
+  portable PostgreSQL in tools\pgdata.
+
+### Verified (session 42)
+
+- `tsc --noEmit` clean; production `next build` green (dev stopped first,
+  .next removed).
+- `go vet ./...` clean; full `go test -count=1 ./...` green (12/12 packages
+  with tests) against live PostgreSQL — including internal/extension after
+  the workerEnv fix.
+- E2E: e2e-sorting 19/19 (NEW), e2e-tilemap-paint 29/29, e2e-camera 34/34,
+  e2e-scene-gameplay 21/21. 0 console/page errors across all four.
+- Machine migration documented in docs/LOCAL-DEV-WINDOWS.md.
+
+### Honest notes (session 42)
+
+- **No git binary on this machine**: everything since docs commit e91459a
+  (tile palette session 41) — TASK 12, TASK 14, rule tiles, sorting layers,
+  this session's fixes — is UNCOMMITTED in the working tree. Install git
+  (or restore PATH) and commit as one feature batch; a suggested message is
+  in IDEAVEN_PROGRESS_STATE.md.
+- The camera acceptance scene's player sits INSIDE the camera viewport, so
+  the click-through change is load-bearing there: clicking the player now
+  selects the player, not the camera (previously the camera swallowed it).
+- Lighting (SYSTEM 5), sprite shape (6) and pixel-perfect camera (7) have
+  no code yet; the tilemap still has no fill tool, per-value collision
+  flags, or multiple layers; palette editing is still a text field.
+
+### Next exact task
+
+Lighting (SYSTEM 5) per the 2D engine priority order — the next
+not-started system after camera behaviors (8) and sorting layers (9).
+
+## 50. Rule tiles / neighbor-aware auto-tiling — the requested TASK 15 slice (completed)
+
+Requested as a continuation ("do NOT rebuild the tilemap system"). Inspection
+found a rule-tile implementation ALREADY in place from the cut-off session
+verified in §49 — so this slice verified the architecture against the task's
+requirements and completed the genuinely missing parts instead of building a
+second system. (Numbering note: the repo's internal "TASK 15" is sorting
+layers; this entry covers the user-requested rule-tiles task.)
+
+- **Implementation status**: COMPLETE via the existing derived-shading
+  architecture. The canonical model already holds the rule configuration
+  (`autoTile` boolean prop, registry default true) and the base tile values
+  (`tiles` "col,row:tile;…"); the rendered variant is a PURE FUNCTION of the
+  canonical state — `autoTileFactor`/`shadeHex`/`cellColorFor` in
+  `apps/web/src/lib/project-model/scene.ts`, mirrored by `autoTileColor` in
+  `apps/api/internal/project/export.go`. No baked variants, no cascade
+  commits, no second architecture.
+- **Decision — derive, don't bake**: the task allows "canonical resolved tile
+  data when compatible with the existing architecture". Deriving at render is
+  the compatible form: the model stores base values, every surface resolves
+  identically, save/reload/duplicate/version-restore/publish/export survive
+  by construction (it's plain props), and undo/redo is exact because a paint
+  commits exactly one `tiles` string through `updateProps`. Recomputing
+  "affected cells only" is inherent: each cell's variant is O(1) in its 4
+  neighbors, recomputed only when those change.
+- **Decision — 4-neighbor**: the shipped rule (interior = 4 painted neighbors
+  shades darkest ×0.72, edge = 3 shades ×0.86, ≤2 keeps base) uses the 4
+  orthogonal neighbors; kept as-is per "do not guess blindly / use the
+  existing architecture". 8-neighbor blob auto-tiling remains a future slice.
+- **Files changed**: `apps/web/src/app/builder/[id]/builder/inspector.tsx`
+  (rule-tiles explainer in the component inspector, following the existing
+  camera/sorting explainer convention — the inspector is English-only by
+  existing convention: field labels, both prior explainers);
+  `scripts/e2e-tilemap-paint.mjs` (29 → 44 checks). NO engine, model, or
+  runtime code needed changes.
+- **User-visible changes**: the tilemap inspector now explains rule tiles —
+  which tiles participate (all of them while Auto-tile edges is on), what
+  they react to (4 painted neighbors), and what happens when neighbors change
+  (automatic restyle; base values stay exact). The Auto-tile edges checkbox
+  is proven to work by the E2E (off = all cells render base, on = shading
+  returns).
+- **E2E (44/44, 0 console errors)** — all 29 prior checks kept, 15 added:
+  ≤2-neighbor cells keep base; painting the 3rd neighbor restyles the
+  survivor base→edge; a 1-neighbor cell stays base; the canonical model keeps
+  `autoTile: true` + BASE values (no baked variants); undo restores the exact
+  previous canvas state AND canonical tiles; redo restores the exact
+  resulting state AND tiles; hard-reload persistence of the rule-tiled region
+  with the same variants; erasing a neighbor reverts the survivor (model
+  updated); the Auto-tile edges toggle really controls the rendering; preview
+  renders the restyled cells exactly like the editor.
+- **Gates**: `tsc --noEmit` clean; `next build` green (dev stopped first);
+  `go vet ./...` clean; `go test -count=1 ./...` green (12/12 packages with
+  tests, live PostgreSQL). Regressions: e2e-scene-gameplay 21/21,
+  e2e-camera 34/34, e2e-sorting 19/19.
+- **Browser verification**: the E2E drives real Chromium through the exact
+  requested flow — open project → Scene → Tilemap → select rule tile → paint
+  → paint adjacent tiles → observe automatic variant updates → undo → redo →
+  save → reload → preview → verify gameplay (player lands on painted cells) →
+  zero console errors. Mobile width: not applicable — the builder paint tools
+  are desktop pointer tools and no responsive behavior was touched by this
+  slice.
+- **Known limitations**: the shading vocabulary is 3 variants (interior/
+  edge/base); no per-tile rule variants or 8-neighbor blob auto-tiling; all
+  tile values are solid (no per-value collision flags); no fill tool; no
+  multiple tilemap layers; palette editing is still a text field.
+- **Next exact task**: lighting (SYSTEM 5) per the 2D engine priority order.
+
+## 51. PHASE A — anti-slop integration, design constitution, motion foundation
+
+The master product evolution directive started with PHASE A (anti-slop +
+DESIGN.md + motion foundation + one small vertical slice). Executed as one
+slice on top of the verified TASK 15 state (§50).
+
+- **Anti-slop integrated** (exact method recorded in `docs/ANTI-SLOP.md`):
+  all six skills + `contrast-check.py` installed project-locally in
+  `.agents/skills/` (byte-exact via curl from the upstream repo at main),
+  the workspace scope the running agent documents for project skills AND the
+  cross-tool convention (Codex/Copilot/Antigravity) — chosen over the Codex
+  plugin path because no Codex CLI exists on this machine (the directive's
+  documented fallback). `AGENTS.md` created at the repo root carrying the
+  antislop pointer block plus the repo's own verification-gate rules.
+  Verified: frontmatter intact, no user-scope shadowing, no duplicates;
+  skills become visible to agents from their next session (discovery at
+  session start).
+- **Design constitution** (`docs/DESIGN.md`, rewritten): the landing-focused
+  doc became the full A–O visual constitution grounded in audited code facts
+  — typography hierarchy, spacing rhythm (marketing roomy vs tools dense),
+  surface hierarchy (lightness stepping, not shadow stacking), radius
+  strategy (audited: lg 142 / xl 56 / full 47 / md 29), border semantics
+  (solid = physical, dashed = guide/projection, 2px violet = selection),
+  near-zero shadow strategy, icon treatment, color roles + accent
+  discipline, data-viz language (mono numerals, flat bars, no invented
+  metrics), editor/game-studio visual language, 3D-studio direction (honest:
+  not built yet), responsive behavior (builder stays pointer-first),
+  accessibility constraints, and the ONE motion system below.
+- **Motion foundation** (`apps/web/src/app/globals.css`): motion audit found
+  297 motion references — 226 consistent `transition-colors` utilities but
+  zero tokens (house bezier repeated inline, duration-300/200/500 ad hoc).
+  Now tokens live only in `@theme`: durations instant 0 / micro 90 / quick
+  160 / standard 240 / deliberate 420 / emphasis 700 ms; easings enter
+  (the house settle curve, previously repeated 4×), exit, press, spatial.
+  Tailwind v4 generates `duration-*` / `ease-*` utilities from them, and
+  `--default-transition-duration/timing-function` give all 226 existing
+  hover transitions the house character with zero per-component edits.
+  The existing reveal/skip-link/anim classes were rewired to the tokens
+  (same rendered values). A `.press` class adds fast compression
+  (scale 0.97, micro + press curve) owning one coherent transition list so
+  it composes with color transitions instead of clobbering them.
+- **Vertical slice**: `packages/ui/src/button.tsx` — the shared Button
+  primitive (54 usages product-wide) moved to `duration-quick` + `.press`.
+  One file, whole-product press feedback and tokenized hover.
+- **E2E** (`scripts/e2e-motion.mjs`, NEW, 11 checks, 0 console errors):
+  computed styles prove tokens reach the browser (colors+transform list,
+  0.16s quick hover, 0.09s micro press, house bezier curves); a real
+  pointer press compresses to scale(0.97) and releases cleanly; entrance
+  reveals carry the 700ms emphasis token and are visible; under emulated
+  `prefers-reduced-motion` all durations collapse and reveals render
+  visible immediately.
+
+### Verified (session 44 / PHASE A)
+
+- `tsc --noEmit` clean; production `next build` green (dev stopped first).
+- E2E: e2e-motion 11/11 (NEW); regressions e2e-tilemap-paint 44/44,
+  e2e-scene-gameplay 21/21 — 0 console/page errors.
+- One real bug found and fixed by the E2E during development: a `*/` inside
+  a CSS comment (`duration-*/ease-*`) terminated the comment and broke the
+  globals.css parse — caught as a 500 page, fixed, covered by the suite.
+
+### Honest notes (PHASE A)
+
+- Full UI/copy audit (PHASE B of the directive) has NOT run yet — this
+  slice only established the filter, the constitution, and the motion
+  system it will enforce.
+- Motion coverage is foundation-wide by default (hover transitions) plus
+  the Button primitive; modals/sheets/popovers still carry ad-hoc values
+  and migrate opportunistically as surfaces are touched.
+- Commit still blocked: no git binary on this machine; everything since
+  e91459a remains uncommitted (suggested message in
+  IDEAVEN_PROGRESS_STATE.md).
+
+### Next exact task
+
+PHASE B — full UI/copy audit of the existing product against the anti-slop
+gate + DESIGN.md, producing a prioritized findings list (fix in small
+batches), before continuing 2D engine systems (lighting, SYSTEM 5).
+
+## 52. 2D Engine SLICE 1 — Input Abstraction (model-driven actions) + motion-stray sweep
+
+The advanced-gameplay directive ordered SLICE 1 (Input Abstraction) after
+repository reconciliation. Reconciliation first: SORTING LAYERS (its
+SUBSYSTEM #4) is already complete and verified (§49, e2e-sorting 19/19);
+TRIGGERS/AREAS (#5) substantially exist (trigger entities + per-entity AND
+per-tilemap-cell touch enter/stay/exit, non-solid by definition); a runtime
+TRACE already exists (collision/system traces). None were rebuilt.
+
+- **Model (canonical)**: `ProjectModelInputAction { id, name, keys[], enabled }`
+  added as OPTIONAL `screen.inputActions` — the exact `sortingLayers`
+  convention: absent field means the DEFAULT set applies, and the default set
+  is byte-identical to the previously hardcoded keys (arrowleft/a,
+  arrowright/d, arrowup/w/space), so every existing project behaves exactly
+  as before with zero migration. The built-in player controls consume three
+  reserved, stable IDs: `move-left`, `move-right`, `jump`. Keys are lowercase
+  key names — the binding list is the only place a device appears.
+- **Editor**: the screen inspector (scene screens) gained an "Input actions"
+  panel mirroring the Layer Manager's conventions — name fields, per-action
+  key binding fields (comma-separated, deterministic parsing), enable
+  toggles, delete, add; built-in actions carry a "built-in" badge and their
+  deletion warns in the button title. Empty list deletes the field →
+  defaults restore. Every edit is one undoable commit
+  (`actions.updateInputActions` → `ops.updateInputActions`).
+- **Runtime (preview + published, shared scene-stage)**: device listeners
+  translate keys into ACTION state (`pressed` map + `justPressed` edges); OS
+  key repeat can never re-trigger an edge (the pressed guard absorbs it).
+  The tick is the only consumer: velocity from held actions, jump consumed
+  as a just-pressed edge inside the tick (deterministic, once per press,
+  cleared at tick end), a real input trace ("input: Jump pressed"), and an
+  honest one-time trace when a screen's custom set lacks the movement
+  actions. The on-screen touch buttons now enter through the SAME action
+  layer (§5.4 satisfied): the loop cannot tell a tap from a keydown.
+- **Export parity**: `export.go`'s vanilla engine mirrors the semantics
+  1:1 (DEFAULT_INPUT_ACTIONS + inputActionsOf + inputKeyIndex + pressed/
+  justPressed consumed per tick), reading the actions from the embedded
+  canonical model JSON. The exported Android/Windows runtimes share this
+  template.
+- **Server**: `model.go` gained the typed `Screen.InputActions []InputAction`
+  — REQUIRED, not optional polish: the model PUT round-trips through the Go
+  struct, and without the field every save would silently strip user
+  bindings. `Enabled` marshals always (false is meaningful).
+- **Diagnostics**: a scene with an explicit action set missing/disabling a
+  built-in action warns (attached to the player component); an enabled
+  action with no keys warns; a key bound to multiple actions informs. The
+  default set never warns (it always satisfies the player).
+- **Blocks**: deferred by design, not forgotten — the handler/event system is
+  per-component while actions are scene-global; a "when action pressed"
+  event needs a dispatch decision (emit to every entity carrying such a
+  handler) before it can be real. Recorded as the immediate follow-up with
+  that sketch; no speculative block shipped.
+- **Motion-stray sweep (closing the visual audit)**: 8 ad-hoc values migrated
+  to the motion tokens (site-header, loop, showcase ×2, create-project ×2,
+  blocks-canvas transition-all → transition-[height] duration-micro), the
+  export status dot now uses the house pulse rhythm (`anim-pulse-dot`) and
+  the compile progress uses the house `anim-progress-x` sweep.
+
+### Verified (session 45)
+
+- `tsc --noEmit` clean; `go vet ./...` clean; production `next build` green
+  (dev stopped first).
+- `go test -count=1 ./...` green — 12/12 packages with tests, live
+  PostgreSQL (includes internal/project with the new struct).
+- E2E `scripts/e2e-input-actions.mjs` NEW: 17/17, 0 console errors — panel
+  lists defaults; rebind Jump→j persists in the canonical model; undo
+  restores the default set (field deleted) and redo restores the custom
+  set; rebinding survives hard reload; preview: ArrowRight moves, the
+  rebound j jumps, Space no longer jumps; published page: move-right moves
+  the player; export embeds inputActions + the action engine; deleting a
+  built-in action raises the diagnostic and the model drops it.
+- Regressions: e2e-tilemap-paint 44/44, e2e-scene-gameplay 21/21,
+  e2e-camera 34/34, e2e-motion 11/11 — 0 console/page errors.
+
+### Honest notes (SLICE 1)
+
+- Keyboard bindings only: mouse and touch-as-device bindings are not
+  implemented and nothing in the UI claims them (the on-screen buttons are
+  action sources, which IS the §5.4 contract).
+- The action-event block ("when action pressed") is the named next step;
+  "action held/value" conditions ride the same future dispatch.
+- This machine kills background processes under memory pressure (it
+  terminated the dev server/API/PostgreSQL mid-session several times); all
+  gates above were run to completion across restarts — no gate was skipped.
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+SLICE 1b — the "when [Action] pressed" handler event (global-action →
+per-component dispatch decision + codegen + export dispatch + E2E), then
+SLICE 2 (sprite animation foundation) per the directive's order.
+
+## 53. 2D Engine SLICE 1b — "when [Action] pressed" handler event
+
+The input abstraction's event half: a REAL edge-triggered action event that
+the runtimes dispatch into the existing block/handler architecture. No second
+event bus, no separate registry — the handler lives in the canonical
+`screen.logic.handlers` list exactly like every other event.
+
+- **Event identity**: `action-pressed-<actionId>` — the handler stores the
+  logical ACTION ID, never a physical key, so rebinding Jump from Space to W
+  never touches handlers, and renaming an action never breaks one (ids are
+  stable). Events are offered from the same `screen.inputActions` data the
+  Input Actions panel edits — one source of truth.
+- **Dispatch architecture** (global action → per-component fan-out):
+  `runtime.dispatchActionPressed(actionId)` (runtime.ts) — the live screen's
+  SCREEN-level handlers first, then component handlers in model order
+  (nested components included); only components carrying a matching handler
+  are visited, so zero-handler components never even trace. Returns the
+  handler count. The scene loop calls it once per just-pressed edge, in
+  action-set (model) order, before physics — script dispatch runs before
+  physics per the documented tick order. `export.go` mirrors the same
+  fan-out 1:1 over the embedded model (all three export targets).
+- **Block mode**: the event picker lists "When {action} pressed" for every
+  ENABLED action of the scene, for the screen and for every entity; labels
+  resolve the action's display name (deleted actions render as
+  "When "<id>" (deleted)"); handler-list labels resolve the same way.
+  i18n: `block.event.action-pressed` + `block.event.action-pressed-named`
+  in EN and ID.
+- **REAL BUG FOUND AND FIXED (pre-existing, exposed by this slice)**: Go's
+  `ComponentID *string json:"componentId,omitempty"` OMITS the field for
+  screen-level handlers, so after save+reload the client saw
+  `componentId: undefined` — and `undefined === null` never matched. Any
+  screen-level handler was dead after a round-trip (screen events like
+  initialize silently broken after reload). Fixed by normalizing
+  `(handler.componentId ?? null)` in `handlersFor`, the new dispatcher, and
+  the export mirror. The E2E caught it: the screen-level handler dispatched
+  in the live builder but not after reload.
+- **Diagnostics**: a handler reacting to a DELETED action warns ("will never
+  fire … re-add the action or delete this handler"); a handler reacting to a
+  DISABLED action warns. The handler itself is never erased.
+- **Trace**: the dispatch rides the existing runtime trace
+  ("event screen:action-pressed-jump → action handler", "event
+  p-player:action-pressed-jump → 1 handler") — no second tracing system.
+
+### Verified (session 46)
+
+- E2E `scripts/e2e-input-actions.mjs` extended 17 → 32 checks, 32/32, 0
+  console errors: picker lists the action event from the model; handler
+  created through the REAL UI (undo removes it, redo restores it via the
+  existing history); persisted in the canonical model; ONE press dispatches
+  to BOTH handlers (exactly +2 trace lines) with the visible effect
+  (set-property changed the HUD text); HOLDING fires nothing further (true
+  edge trigger); RELEASING fires nothing (pressed-only); release+press
+  dispatches again (+2); published page: movement AND the handler's visible
+  effect work; export embeds inputActions + the fan-out dispatcher + the
+  handler; deleting a built-in action warns (movement) and deleting the
+  action a handler listens to raises the broken-reference diagnostic while
+  the handler survives.
+- Regressions: e2e-tilemap-paint 44/44, e2e-scene-gameplay 21/21,
+  e2e-camera 34/34, e2e-sorting 19/19, e2e-motion 11/11 (one dev-mode
+  console artifact on the first motion run — a page compiled mid-request —
+  clean on re-run; not a product error).
+- `tsc --noEmit` clean; `go vet ./...` clean; `go test -count=1 ./...` green
+  (12/12 packages with tests, live PostgreSQL); production `next build`
+  green (dev stopped first).
+
+### Honest notes (SLICE 1b)
+
+- Mouse/gamepad bindings still do not exist (nothing claims them); the
+  action event fires for actions from ANY source that enters the action
+  layer (keyboard + the on-screen buttons).
+- "Action held / action value" conditions remain future work; only the
+  pressed edge is a block event today.
+- The screen-level `componentId: undefined` wire quirk is fixed at the three
+  dispatch/matching sites; the diagnostics panel's "where" label still
+  prints "Component undefined" for a reloaded screen-level handler
+  (cosmetic, pre-existing, untouched).
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval. The queued next slice
+remains SLICE 2 (sprite animation foundation).
+
+## 54. 2D Engine SLICE 2 — Sprite Animation Foundation
+
+Sprite animation is now a real runtime capability: a sprite entity can carry
+animation CLIPS (ordered asset-frame refs, fps, loop), the runtimes animate
+the displayed frame by elapsed time, and block/action logic can switch or
+stop clips. No second asset/sprite/animation architecture was created — the
+canonical string-payload convention carries the data.
+
+- **Canonical representation**: per-entity props — `animations`
+  ("id~name~fps~loop~frame1,frame2,…;…" — the same scalar-string convention
+  as tilemap tiles/palette, since PropsMap is scalar-only) and `animation`
+  (the active clip id played on run start). Frames are the entity's OWN
+  asset refs ("asset:<id>" or URL) — identical format to `src`; Asset Studio
+  PNGs become frames without duplicating a byte. Survives
+  save/reload/duplicate/publish/export by construction (props only; the Go
+  side stores props as a free map, so no schema change was needed).
+- **Helpers** (`scene.ts`, one source of truth):
+  parseAnimations/animationsToString (deterministic round-trip, fps clamped
+  1–60), clipFrameIndex (elapsed-seconds × fps; looping clips wrap,
+  non-looping clips CLAMP at the last frame and never silently restart),
+  clipCompleted, activeAnimation (active id or first clip).
+- **Runtime (preview + published, shared scene-stage)**: playback state is a
+  runtime ref map (componentId → {clip, elapsed, paused, done}) seeded at
+  run start; the tick advances `elapsed += dt` and derives the frame index —
+  no per-render advancement, no setInterval. Non-looping clips mark
+  completed and freeze on the last frame. Blocks queue
+  play/pause/restart/stop commands (the camera-shake command pattern);
+  the loop drains them against runtime state only — never the model.
+  EntityView renders the clip's current frame (falling back to the
+  entity's static src when a frame asset is missing — never a crash, never
+  invented data).
+- **Blocks**: real statements `play animation {animationId} on
+  {componentId}` and `stop animation on {componentId}` (blocks.ts registry,
+  runtime executeBlock, codegen `api.playAnimation/api.stopAnimation`,
+  export runBody + tick drain) — full editor representation, canonical IR,
+  codegen, runtime behavior, export behavior.
+- **Editor UX**: the sprite inspector gained an Animation section — clips
+  with name/fps/loop/active-radio, frame thumbnails with reorder
+  (↑/↓) and remove, "add frame from assets…" (the project's real asset
+  library), and an editor-local Play/Pause/Restart preview (rAF at the
+  clip's fps). One undoable commit per edit; preview state never touches
+  the model.
+- **Export**: the exported runtime parses the same clips from the embedded
+  model, seeds playback per scene, advances by dt in sceneTick, swaps the
+  img src only when the frame actually changed (`data-frame-ref` guard),
+  and drains the same play/stop commands (all three export targets — the
+  Android/Windows shells run the same standalone HTML).
+
+### Verified (session 47)
+
+- E2E `scripts/e2e-sprite-animation.mjs` NEW: 18/18, 0 console errors —
+  three REAL PNGs uploaded through the asset API; the animations string
+  survives the model round-trip; the inspector lists both clips with real
+  asset thumbnails; the editor preview cycles frames; a frame added
+  through the panel undoes and redoes (verified against the canonical
+  model); the preview sprite ACTUALLY animates (multiple distinct frame
+  srcs over time); the SLICE 1b action path ("when Jump pressed") switches
+  to the second clip; the non-looping clip completes and STOPS on its last
+  frame; the published page animates; the export embeds clips + playback
+  engine + the play-animation block; a missing frame asset produces no
+  runtime error.
+- Regressions: e2e-input-actions 32/32, e2e-tilemap-paint 44/44,
+  e2e-scene-gameplay 21/21, e2e-camera 34/34, e2e-sorting 19/19,
+  e2e-motion 11/11.
+- `tsc --noEmit` clean; `go vet ./...` clean; `go test -count=1 ./...` green
+  (11/11 packages with tests, live PostgreSQL — correcting earlier reports
+  that said 12: the suite has eleven test-bearing packages); production
+  `next build` green.
+
+### Honest notes (SLICE 2)
+
+- Editor playback state and clip authoring live in the entity inspector;
+  the Asset Studio's localStorage SpriteDoc is UNCHANGED — the bridge to
+  the runtime is the saved frame PNGs (upload → asset ref → clip frames),
+  which is the existing asset pipeline, not a new one.
+- The block vocabulary is play/stop only (pause/restart exist in the
+  runtime command set and inspector preview; block definitions for them
+  were skipped to avoid speculative palette entries — trivial to add on
+  request since the command path already supports them).
+- e2e-motion once flaked on the press-timing check when run last in a
+  6-suite chain under memory pressure; the check now polls for the pressed
+  transform (bounded wait) and is green repeatedly, solo and chained.
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval. Queued: SLICE 3
+(animation state machine) or the remaining 2D systems (lighting, particles)
+per the master priority order.
+
+## 55. 2D Engine SLICE 3 — Sprite Animation State Machine
+
+Animated sprites can now carry a real STATE MACHINE that automatically
+switches between clips from actual game state — no frame manipulation, the
+machine drives the SLICE 2 animation player. No second animation system: the
+machine lives in one more canonical prop and reuses everything from SLICEs
+1b/2.
+
+- **Canonical representation**: the entity's `animator` prop — a
+  deterministic string payload (same scalar-prop convention as
+  animations/tiles) of prefixed entries: `S:<id>~<name>~<clipId>~<speed>`
+  (states reference animation CLIPS by id — no frame duplication),
+  `P:<name>~<type>~<initial>` (parameters: bool | number | trigger),
+  `T:<from>~<to>~<order>~<exitTime>~<conds>` (transitions; `from` may be
+  `*` = Any State; conditions join with `&&`, operators == != > >= < <=),
+  `D:<stateId>` (default state). Survives save/reload/duplicate/publish/
+  export by construction. Current state + parameter values are RUNTIME
+  state, never model writes.
+- **Helpers** (`scene.ts`): parseAnimator/animatorToString (deterministic
+  round-trip; a missing default falls back to the first state),
+  parseAnimatorConditions/animatorConditionsToString,
+  animatorConditionSatisfied, evaluateAnimatorTransitions (pure, explicit
+  priority order → model order tie-break, at most ONE switch per
+  evaluation — no same-tick chains).
+- **Runtime** (preview + published, shared scene-stage): the machine is
+  parsed once per run into the entity's playback state; built-in parameters
+  (`speed`, `isGrounded`) are fed EVERY tick from the player's actual
+  physics (|vx|, grounded) — a machine can condition on them without
+  declaring anything, and no physical key ever appears in the machine.
+  Custom parameters are fed by blocks; triggers reset after each
+  evaluation pass (fire-once semantics). A taken transition drives the
+  SLICE 2 player: switch to the target state's clip, elapsed = 0, and the
+  state's speed multiplies playback. The PlayerView now renders the
+  machine's current frame instead of the color shape.
+- **Blocks**: real statements `set animation parameter {name} of
+  {componentId} to {value}` and `trigger animation parameter {name} of
+  {componentId}` — IR (blocks.ts), runtime executeBlock, codegen
+  (api.setAnimationParam / api.triggerAnimationParam), export runBody, and
+  the tick drain handle them. State switching stays in the machine (no
+  set-state block this slice — it would bypass transitions).
+- **Editor UX**: the sprite/player/enemy inspector gained an "Animation
+  state machine" section — enable flow (creates the machine with a default
+  state), states (name, clip select from the entity's real clips, playback
+  speed, default radio, delete with transition cleanup), parameters
+  (typed, initial values, add/delete), transitions (from incl. Any State
+  with a deleted-state marker, to, priority, exit time 0–1, deterministic
+  condition text like `speed>0 && attack==1`). Every edit is one undoable
+  commit. The panel renders for sprite, player and enemy entities.
+- **Diagnostics**: a state referencing a missing clip; a missing default
+  state (runtime falls back to the first state); transitions referencing
+  deleted states; conditions reading unknown parameters (count as false).
+  The runtime never crashes and never invents replacements.
+- **Export**: the exported runtime parses the same machine from the
+  embedded model, feeds the same built-ins from the real player physics,
+  runs the identical deterministic evaluator, drains the same parameter
+  commands, and applies the state's speed — full parity across all three
+  export targets.
+
+### Verified (session 48)
+
+- E2E `scripts/e2e-animation-state-machine.mjs` NEW: 20/20, 0 console
+  errors — eight real PNGs uploaded (four clips, distinct colors); the
+  machine survives the round-trip; the panel lists states/parameters/
+  transitions; the REAL playable flow: starts in Idle (default) → movement
+  (speed>0) switches to Run → stopping returns to Idle → jumping enters
+  Jump while airborne (Any-transition from Idle/Run) → landing returns to
+  Idle → a dedicated Attack action fires the trigger → Any State → Attack
+  (non-loop) → completion (exit time 1) returns to Idle → all of it again
+  after save + reload → the published page runs the same machine → the
+  export embeds the machine + evaluator + parameter blocks; a state
+  referencing a missing clip raises a diagnostic and the runtime stays
+  error-free.
+- Regressions (7 suites): e2e-input-actions 32/32, e2e-tilemap-paint 44/44,
+  e2e-scene-gameplay 21/21, e2e-camera 34/34, e2e-sorting 19/19,
+  e2e-motion 11/11, e2e-sprite-animation 18/18.
+- `tsc --noEmit` clean; `go vet ./...` clean; `go test -count=1 ./...`
+  green (11/11 packages with tests, live PostgreSQL); production
+  `next build` green.
+
+### Honest notes (SLICE 3)
+
+- Exit time is a progress FRACTION (0–1) of the current clip — seconds-based
+  exit times and cross-fade blending are not represented (documented, not
+  faked). Non-loop completion (exit time 1) works through real clip
+  completion.
+- No "set animation state" block: direct state writes would bypass
+  transition semantics; the machine is the only state authority.
+- The graph visualization is a structured list editor (states, parameters,
+  transition rows) in the existing inspector design — not a node canvas;
+  mobile reflow follows the existing inspector patterns.
+- The parameter-block value slot is an expression; the panel edits
+  initial values as text.
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval. Queued: skeletal
+animation is out of scope until requested; the remaining 2D systems are
+lighting and particles per the master priority order.
+
+## 56. 2D Engine SYSTEM 5 — Real-time 2D Lighting
+
+Lights now actually illuminate the rendered scene: an ambient veil darkens
+the world and point lights brighten it back locally, composited over the
+existing DOM renderer in preview, published, and export alike. No second
+renderer, no WebGL, no decorative gradients — the pass is real compositing
+whose output is the visible brightness of every world object.
+
+- **Canonical representation**: point lights are a proper scene entity —
+  new component type `light` (registry category Game Entities, following the
+  camera's configuration-entity pattern: selectable/movable on the stage,
+  never colliding, never firing touch events). Persisted props: enabled,
+  color (#hex), intensity (0–5), radius (8–2000); position comes from the
+  entity transform (rect center) — no second transform system. AMBIENT
+  light lives in the scene screen's styles: `ambientColor` + `ambientIntensity`
+  (0–1). Both survive save/reload/duplicate/publish/export by construction;
+  the Go side stores props/styles as free maps, so no schema change.
+- **Rendering semantics** (smallest real architecture for the existing DOM
+  renderer): a single world-anchored compositing layer inside the
+  camera-translated world container, offset each frame by the camera origin
+  so it covers exactly the visible region — an ambient veil
+  (screen.styles color at opacity 1 − intensity) plus one radial-gradient
+  disc per enabled point light with `mix-blend-mode: screen`
+  (additive over the veil). Ambient 1 → no veil (normal brightness);
+  ambient 0.25 → the world darkens to 75% and a point light locally lifts
+  and tints it. Everything beneath the veil in the world container is lit:
+  sprites, colored shapes, animated frames, tilemap cells. HUD/preview
+  chrome stays outside the world container → unlit.
+- **Determinism & safety**: all values clamp at parse time (intensity 0–5,
+  radius 8–2000, ambient 0–1, invalid hex colors fall back) — NaN/negative/
+  unbounded light cannot exist. Documented limits: ≤ 8 active point lights,
+  radius ≤ 2000. The layer derives per frame from configuration + camera —
+  no light state is ever persisted, no per-light canvases, no React state
+  churn (the layer re-renders with the existing per-frame tick).
+- **Camera integration**: the layer is world-anchored (offset by the camera
+  origin incl. shake), so lights stay attached to world objects as the
+  camera follows the player. **Sorting untouched** (the layer renders after
+  all entities without reordering anything). **Animation untouched**
+  (lighting is an overlay; frame state is never read or written).
+  **Tilemap**: cells sit inside the lit world container — the same light
+  affects tiles at render time; canonical tile values never change.
+- **Editor**: the Light entity renders in the palette + tree + canvas with a
+  glowing-dot handle and a dashed RADIUS RING gizmo reflecting the real
+  configured radius/color (editor-only, pointer-events none, never
+  exported). The inspector exposes Enabled / Light color / Intensity /
+  Radius via the generic field renderer. The screen inspector's Appearance
+  section gained Ambient color + Ambient intensity (scene screens).
+- **Diagnostics**: light intensity outside 0–5, radius outside 8–2000, a
+  non-hex light color, and ambient intensity outside 0–1 all warn (the
+  runtime clamps; nothing crashes).
+- **Blocks**: none added (§20) — light toggling has no requested gameplay
+  use yet; the command-path pattern from SLICE 2/3 is the obvious extension
+  point when needed.
+
+### Verified (session 49)
+
+- E2E `scripts/e2e-2d-lighting.mjs` NEW: 19/19, 0 console errors — gizmo on
+  the canvas; inspector fields; an intensity edit commits, undoes, and
+  redoes against the canonical model; the lighting layer composites with
+  ambient darkness opacity exactly 1 − intensity (0.75 at 0.25); the point
+  gradient renders at exactly 2×radius in the light's color with screen
+  blending; the layer tracks the moving camera; a disabled light removes
+  only its gradient; the tilemap renders inside the lit world; preview
+  chrome stays unlit outside the container; out-of-range values clamp
+  safely AND raise diagnostics; the published page composites the same
+  layer; the export ships the engine (layer + ambient + point parse).
+- Regressions (8 suites): input-actions 32/32, tilemap 44/44, gameplay
+  21/21, camera 34/34, sorting 19/19, motion 11/11, sprite-animation 18/18,
+  animation-state-machine 20/20.
+- `tsc --noEmit` clean; `go vet ./...` clean; `go test -count=1 ./...` green
+  (11/11 packages with tests, live PostgreSQL); production `next build`
+  green.
+
+### Honest notes (SYSTEM 5)
+
+- Point lights illuminate by compositing (screen blend over an ambient
+  veil) — per-pixel normal-map shading and shadows/occlusion are not
+  represented (nothing blocks light). Documented, not faked.
+- Directional and spot lights intentionally not implemented (different
+  architecture; the directive's smallest-useful set is ambient + point).
+- Lights are excluded from sorting/collision by design; they draw no
+  gameplay presence.
+- The inspector labels follow the inspector's English-only convention
+  (documented since the Input Actions slice).
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval. Queued: particles per
+the master priority order.
+
+## 57. 2D Engine SYSTEM 18 — Real 2D Particle / VFX System
+
+Particles are a real runtime system: a new `emitter` scene entity holds the
+authored configuration; a bounded simulation spawns, ages, and recycles real
+particle instances each tick; the instances render to ONE world-anchored
+canvas (emissive — drawn above the lighting layer). One architecture, shared
+by the runtime, the editor preview, and the export engine.
+
+- **Canonical representation**: the `emitter` entity's props — enabled,
+  emissionRate (0–500/s), lifetime (0.05–30 s), speed (0–2000), direction
+  (degrees, 0 = up), spread (0–360°), startSize/endSize (0–500),
+  startOpacity/endOpacity (0–1), gravity (−2000–2000 px/s², independent of
+  world gravity), color (#hex), maxParticles (1–1000), loop, burstCount,
+  texture (optional asset ref — absent = colored circle; no new binary
+  assets). Survives save/reload/duplicate/publish/export by construction.
+- **Core simulation** (`lib/project-model/particles.ts` — ONE implementation,
+  used by the runtime AND the editor preview, mirrored in vanilla JS for the
+  export): `parseEmitter` (clamped, NaN/Infinity-proof) + `ParticleSim` —
+  continuous emission through a TIME ACCUMULATOR (fractional emission
+  carries across frames; no drift), cone spawning (direction ± spread/2),
+  age += dt, velocity += gravity·dt, position += velocity·dt, size/opacity
+  interpolated start→end over the lifetime, swap-remove recycling at
+  age ≥ lifetime, and a hard bound: arrays never exceed maxParticles (cap
+  1000). loop=false emits for one lifetime window and stops until restarted.
+- **Rendering**: ONE bounded `<canvas data-particle-canvas>` per scene —
+  world-anchored (offset by the camera origin incl. shake), drawn
+  imperatively in the tick (no DOM nodes per particle, no React state per
+  particle, canvas cleared + redrawn per frame), `data-particle-count` for
+  observability. Particles are EMISSIVE: the canvas draws above the
+  lighting layer, so lighting does not darken them (documented decision —
+  sparks/glow are emissive in this renderer).
+- **Blocks**: `burst {count} particles on {emitter}` — IR (blocks.ts),
+  runtime executeBlock → particleCommands, codegen
+  `api.burstParticle(componentId, count)`, export runBody + tick drain.
+  Play/stop blocks skipped: the `enabled` prop covers authoring and no
+  runtime toggle need exists yet (command path ready).
+- **Editor**: the Particle Emitter renders in the palette/tree/canvas with a
+  direction-cone handle gizmo (editor-only, never exported); all properties
+  are inspector fields via the generic renderer.
+- **Diagnostics**: emission rate outside 0–500/s, lifetime outside
+  0.05–30 s, max particles outside 1–1000, non-hex color — warnings; the
+  runtime clamps and stays stable (verified with rate 9999, lifetime −5,
+  maxParticles −20, garbage color).
+
+### Verified (session 50)
+
+- E2E `scripts/e2e-2d-particles.mjs` NEW: 22/22, 0 console errors — emitter
+  config persists; canvas gizmos; inspector fields; rate edit
+  commits/undoes/redoes; continuous emission reaches a spawn/expire
+  EQUILIBRIUM (rate × lifetime); canvas pixel evidence of real drawing;
+  camera movement while particles stay world-anchored; bounded counts;
+  action-event burst spikes the count and expiry drains it; published
+  runtime runs the same system; export embeds config + sim + burst block;
+  invalid configs diagnosed with the runtime stable.
+- Regressions (9 suites): input-actions 32/32, tilemap 44/44, gameplay
+  21/21, camera 34/34, sorting 19/19, motion 11/11, sprite-animation 18/18,
+  animation-state-machine 20/20, lighting 19/19.
+- `tsc --noEmit` clean; `go vet ./...` clean; `go test -count=1 ./...` green
+  (11/11 packages with tests, live PostgreSQL); production `next build`
+  green.
+
+### Honest notes (SYSTEM 18)
+
+- Per-particle rotation is not implemented (no authored field consumes it);
+  textures draw un-tinted (color applies to procedural circles only) —
+  canvas tinting needs offscreen compositing, deferred.
+- Emissive/unlit is the only lighting mode (documented decision from the
+  renderer's capability; light-reactive particles would need a different
+  compositing design).
+- The editor preview reuses the same sim class (Spawn/update math shared);
+  the visual canvas is editor-local.
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval before the next 2D engine
+task.
+
+## 58. TASK 51 — 3D Engine Foundation (real model-driven 3D)
+
+The 3D path moved from "foundation in development" placeholder to a REAL
+vertical slice: a 3d project opens a software-rendered 3D viewport with
+primitives, a canonical camera, inspector transforms, persistence, and
+published/export parity. Full detail in `docs/TASK51_3D_FOUNDATION.md`.
+
+- **Renderer decision**: custom software 3D renderer on Canvas 2D
+  (`lib/render3d.ts` + vanilla mirror in export.go) — perspective camera,
+  near clipping, backface culling, painter's depth sort. No 3D library: the
+  primitives are exactly the software renderer's sweet spot, the export
+  runtime ships inline vanilla JS (no bundling pipeline), and zero bundle
+  weight is added to exported games. REAL 3D: full camera transform and
+  depth behavior — proven by a pixel-sampled occlusion swap (the nearer
+  cube's color wins the overlap; moving it behind the camera plane swaps
+  the winner).
+- **Canonical model**: project type "3d" (web union, Go vocabulary,
+  migration 056 replacing projects_type_check — found because POST /api/
+  projects with type 3d returned 500 against the DB constraint); entities
+  cube3d/sphere3d/plane3d/camera3d with scalar transform props px/py/pz,
+  rx/ry/rz, sx/sy/sz + color/visible; camera3d fov/near/far/active.
+- **Editor**: Viewport3D (orbit navigation, grid, axes, click-select with
+  violet outline) replaces the 2D stage for 3d projects only; the palette
+  gains a "3D Objects" category (Cube/Sphere/Plane/Camera) gated to 3d
+  projects; inspector transforms are generic fields — every edit an
+  undoable commit.
+- **Runtime parity**: preview-mode and live-app (published) mount the SAME
+  Viewport3D in runtime mode with the scene's active camera3d; export.go
+  embeds a vanilla mirror (draw3D/render3DScene over data-3d-canvas).
+- **Diagnostics**: no camera / no active camera (runtime falls back to a
+  default view), FOV outside 20–120, near ≥ far.
+- **Bugs fixed en route**: the DB type constraint (500 on create — migration
+  056); Go fmt-verb escapes (`%%`) and backticks in the template; orbit
+  camera look-at signs.
+
+### Verified (session 51)
+
+- E2E `scripts/e2e-3d-foundation.mjs` 18/18, 0 console errors (depth
+  occlusion + swap, palette insert, inspector transforms, undo/redo,
+  malformed fov/transform stability, preview/published pixel evidence,
+  export markers).
+- Regressions (10 suites): input-actions 32/32, tilemap 44/44, gameplay
+  21/21, camera 34/34, sorting 19/19, motion 11/11, sprite-animation 18/18,
+  animation-state-machine 20/20, lighting 19/19, particles 22/22.
+- tsc clean; go vet clean; go test 11/11 packages; next build green.
+
+### Honest notes
+
+- Status FUNCTIONAL/TESTED, not PRODUCTION READY: no 3D gameplay/physics/
+  lights/materials/animation; painter's algorithm (no z-buffer — separated
+  convex primitives correct, intersecting meshes approximate); no transform
+  gizmo (inspector is the editing path); palette/inspector labels follow the
+  inspector's English-only convention.
+- Android/Windows exports embed the same standalone HTML (3D works there);
+  no native GPU acceleration claim.
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval before TASK 52.
+
+## 59. TASK 53 — 3D Scene Hierarchy + Parenting + Local/World Transform
+
+The structural layer of the 3D editor: entities can be PARENTED
+(`props.parentId`, scalar, canonical — child lists derived), local
+transforms stay the only authored data, and world transforms are DERIVED as
+`parent.world × local` (translation + rotation + scale all compose). Full
+record in `docs/TASK53_3D_HIERARCHY.md`.
+
+- **Evaluation** (`lib/hierarchy3d.ts`): deterministic memoized recursion —
+  cycle/self-parent/missing-parent branches evaluate as ROOTS (stable
+  runtime, model never mutated), hard depth limit 32, issues surfaced as
+  warnings (cycle, self-parent, missing parent, excessive depth).
+- **Renderer**: `Mesh3D.matrix` (world, column-major mat4) consumed by
+  `meshFaces` — the painter's sort/cull/camera pass unchanged. mat4 helpers
+  (identity/multiply/composeTRS/transformPoint) live in render3d.ts.
+- **Editor**: Hierarchy panel inside the 3D viewport (derived tree,
+  expand/collapse, click-select synced with viewport + inspector,
+  duplicate-subtree + delete buttons); inspector "Hierarchy" section with
+  Parent picker (self + descendants excluded — cycles impossible via UI),
+  read-only derived world position, Duplicate subtree, Delete
+  (children reparent to the grandparent — documented semantics). Ops:
+  setParent3D / duplicateHierarchy3D / removeComponent3D — each one
+  undoable commit.
+- **Export**: vanilla mirror of the hierarchy evaluation
+  (`computeWorldMatrices3D`/`meshFaces3DWorld`) over the embedded model —
+  all three web targets carry hierarchy parity (shells run the same HTML).
+- **Playwright E2E** (`scripts/e2e-3d-hierarchy.mjs`) 17/17, 0 console
+  errors — including VISUAL evidence: pixel centroids of the child cube
+  move when the parent moves and re-orbit when the parent rotates 90°; the
+  grandchild renders under a scaled parent; parentId chains persist across
+  save/reload exactly; duplicate subtree remaps ids; delete reparents; a
+  raw-model cycle raises a diagnostic with the runtime error-free.
+- Regressions (11 suites): 3d-foundation 18/18, input-actions 32/32,
+  tilemap 44/44, gameplay 21/21, camera 34/34, sorting 19/19, motion 11/11,
+  sprite-animation 18/18, animation-state-machine 20/20, lighting 19/19,
+  particles 22/22.
+- tsc clean; go vet clean; go test 11/11 packages with tests; production
+  next build green.
+
+### Honest notes
+
+- Exit at this slice: no world→local editing, no DnD reparenting, no
+  parent-child gizmo lines, depth limit 32, painter's algorithm (no
+  z-buffer), English-only inspector labels (convention), commit still
+  blocked (no git on this machine).
+
+### Next exact task
+
+STOP per the directive — await explicit approval before TASK 54.
+
+## 60. TASK 54 — Real 3D Physics Foundation (collider + rigid body + gravity + trigger + collision)
+
+The 3D engine gains real, deterministic, model-driven physics. Entity props
+carry the configuration (`bodyType` none/static/dynamic, `colliderType`
+none/box/sphere, collider size/radius, `isTrigger`, `gravityEnabled`,
+`mass` — all canonical scalar props, no schema change); scene styles carry
+`gravityX/Y/Z` (default 0/−9.81/0, clamped ±100). Collider dimensions
+multiply the entity's world scale — the same convention the editor gizmos
+draw, the web runtime simulates, and the export simulates. Full record in
+`docs/TASK54_3D_PHYSICS_FOUNDATION.md`.
+
+- **Solver** (`lib/physics3d.ts`, new): fixed timestep 1/120 s with ≤ 4
+  catch-up steps; world-aligned box/sphere colliders; box/box
+  minimum-translation, sphere/sphere distance, sphere/box closest-point;
+  positional correction split by **inverse mass** (static = infinite),
+  velocity correction along the normal (no bounce); grounded on upward
+  contacts (ny > 0.5); trigger enter/stay/exit via tracked pairs; bounded
+  limits (64 bodies, gravity ≤ 100, collider ≤ 1000, mass ≤ 10000).
+- **Runtime**: physics seeds once per mount in the mount-stable 3D rAF loop
+  (refs mirror the model — React re-renders never re-seed); dynamic bodies
+  render at simulated positions (translation overridden in the world
+  matrix); trigger events dispatch through the EXISTING `touches-` /
+  `touches-exit-` handler vocabulary — no new event architecture.
+  Observability attributes on the canvas: `data-physics-bodies`,
+  `data-trigger-overlaps`, `data-physics-grounded`.
+- **Export** (`export.go`): vanilla JS mirror of the solver
+  (`overlapBetween` is sphere-aware); `render3DScene` is idempotent per
+  screen (a trigger-handler rerender refreshes meshes/camera only — it can
+  no longer re-seed physics mid-run or stack rAF loops; monotonic run-id
+  stops superseded loops); exported runs reflect `set-property` via
+  runtime props; same observability attributes for identical testability.
+- **Editor**: amber/dashed-mint collider gizmos (editor-only);
+  Physics3DPanel in the inspector (Body, Collider, Size X/Y/Z / radius,
+  Trigger, gravity, Mass); scene gravity X/Y/Z fields; diagnostics for
+  out-of-range mass/collider values.
+- **Real regressions found by the suites and fixed in this task**:
+  (a) the physics restructure had dropped world matrices for non-dynamic
+  meshes (hierarchy broke in preview — caught by e2e-3d-hierarchy pixel
+  centroids); (b) the state-machine panel gating had narrowed to
+  `sprite` only (player/enemy lost the panel — caught by
+  e2e-animation-state-machine); (c) the penetration split was
+  mass-weighted instead of inverse-mass-weighted; (d) export `emit()`
+  rerender could rebuild the 3D canvas mid-run (hang).
+
+### Verified (session 53)
+
+- Playwright E2E `scripts/e2e-3d-physics.mjs` **24/24, 0 console errors** —
+  including the directive's measurable physics evidence: player falls from
+  Y 5 (sampled every 60 ms), lands at y ≈ 0.5 (ground top + half extent)
+  without penetrating (min Y > 0.35, no tunneling), grounded becomes true,
+  rest is stable (no sinking), restart restores py 5 and clears grounded,
+  trigger overlap fires while falling through an elevated band and the
+  `touches-e-zone` handler recolors the player blue→rose (≥ 10 000 exact
+  rose pixels), published runtime lands identically, and the EXPORTED HTML
+  opened from disk runs its own vanilla physics (lands + grounded, no page
+  errors).
+- Regressions (12 suites): 3d-foundation 18/18, 3d-hierarchy 17/17,
+  input-actions 32/32, tilemap 44/44, gameplay 21/21, camera 34/34,
+  sorting 19/19, motion 11/11, sprite-animation 18/18,
+  animation-state-machine 20/20, lighting 19/19, particles 22/22.
+- tsc clean; go vet clean; go test 11/11 packages; production next build
+  green (dev stopped, `.next` removed first).
+
+### Honest notes (TASK 54)
+
+- No rotation in collision response (world-aligned AABBs; rotated
+  colliders approximate their AABB), no rigid-body torque, no
+  friction/restitution, no joints, no raycasts, no character controller.
+- Sphere colliders are true spheres in the solver; rendered spheres are
+  faceted tessellations (radius agrees, tessellation is visual).
+- No physics debug overlay yet (observability attributes only).
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval before TASK 55.
+
+## 61. TASK 55 — Real 3D Material + Lighting Foundation
+
+The 3D engine gains real material and lighting INSIDE the existing software
+rasterizer — no renderer replacement (Task 51's architecture decision
+re-validated during reconnaissance), no DOM overlay, no fake lighting. Full
+record in `docs/TASK55_3D_MATERIAL_LIGHTING.md`.
+
+- **Material** (canonical): baseColor = the mesh's existing `color` prop,
+  hex-validated with safe fallback. Roughness/metalness are UNAVAILABLE in
+  a flat-fill rasterizer → documented and NOT exposed as controls.
+- **Light** (canonical): one new `light3d` entity — type point|directional
+  (both real), enabled, color, intensity 0–5, radius 0.1–1000 (real: the
+  point attenuation range). Uses the EXISTING transform system (rotation =
+  emission direction for directional) and participates in the Task 53
+  hierarchy (world position = parent.world × local). Explicitly
+  non-physics: no collider/body; the physics inspector is gated to meshes.
+- **Shading**: per visible face during rasterization —
+  `base × clamp01(ambient + Σ intensity·atten·max(N·L,0)·lightColor)`;
+  geometric world-space face normals (viewer-oriented, degenerate-safe);
+  point attenuation `1 − dist/radius`; ambient from the existing
+  ambientColor/ambientIntensity scene styles (3D defaults white × 1 →
+  scenes without lights render pixel-identically to before — all exact-
+  color regression assertions unchanged).
+- **Bounded**: max 8 active lights (enforced at resolution and
+  accumulation); excessive count is diagnosed and rendering stays stable.
+- **Editor**: light gizmos (marker + influence ring / direction arrow,
+  dimmed when disabled, editor-only); collider gizmos now draw only for
+  entities that actually have a collider; Material section + Light fields
+  + semantics explainer in the inspector; ambient fallback type-aware.
+- **Export**: vanilla mirror of parsing, hierarchy resolution, and the
+  shading equations (`parseLight3DProps`/`parseAmbient3D`/
+  `resolveLights3D`/`shadeFace3D`); the idempotent `render3DScene` refresh
+  path re-resolves lights/ambient so runtime light edits reach exported
+  pixels.
+
+### Verified (session 54)
+
+- Playwright E2E `scripts/e2e-3d-material-lighting.mjs` **42/42, 0 console
+  errors** with the directive's pixel evidence: (A) exact base-color render
+  then full repaint on a Material edit; (B) light enabled/disabled moves
+  the cube's front-face luminance from the ambient floor to >60 and back;
+  (C) light position changes face illumination (front face 15.5 → 178 when
+  the light drops from above to level); (D) surface-orientation proof —
+  equal-distance light in FRONT of a face lights it while the light BEHIND
+  does not. Plus hierarchy (a parented light keeps the moved cube lit;
+  unattached it would fall to the ambient floor), persistence of every
+  value, undo/redo, malformed-config diagnostics + stability, the 8-light
+  boundary, 390px parity, and the exported HTML run from disk (lit, no
+  errors).
+- Regressions (12 suites): 3d-foundation 18/18, 3d-hierarchy 17/17,
+  3d-physics 24/24, input-actions 32/32, tilemap 44/44, gameplay 21/21,
+  camera 34/34, sorting 19/19, motion 11/11, sprite-animation 18/18,
+  animation-state-machine 20/20, 2d-lighting 19/19, 2d-particles 22/22.
+- tsc clean; go vet clean; go test 11/11 packages; production next build
+  green (dev stopped, `.next` removed first).
+
+### Honest notes (TASK 55)
+
+- Flat per-face shading: a large quad shades uniformly from its center —
+  no per-pixel pools; the cube's top face is a near-invisible sliver at
+  typical camera angles (evidence uses the front face).
+- No shadows/specular/spot/area lights/probes — none claimed in the UI.
+- Builder chrome: pre-existing ~28px scrollWidth artifact at 390px
+  (identical on 2D projects; the 3D builder adds none of it — parity-
+  guarded in the E2E).
+- Inspector labels are English (the established inspector convention);
+  commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval before TASK 56.
+
+## 62. TASK 56 — Real 3D Transform Gizmos (Move / Rotate / Scale)
+
+Selected 3D entities are now manipulable DIRECTLY in the editor viewport
+through real move/rotate/scale gizmos — real ray/pointer interaction, no
+visual fake, no new engine. Full record in
+`docs/TASK56_3D_TRANSFORM_GIZMOS.md`.
+
+- **Math** (`lib/transform-gizmo.ts`, new, pure): exact pointer-ray
+  unprojection through the active camera; MOVE = closest point between the
+  pointer ray and the axis line (no pixel-to-world multiplier), converted to
+  canonical LOCAL via the parent's inverted world matrix (`mat4Invert`, new);
+  ROTATE = ray∩ring-plane → wrap-safe planar delta on the matching canonical
+  Euler axis (rx/ry/rz kept — no quaternions); SCALE = pointer projection on
+  the axis' screen direction, per-axis start values, clamped 0.1–100,
+  NaN-safe. LOCAL/WORLD spaces orient handles on local rotation columns vs
+  world axes.
+- **Interaction**: editor toolbar (Move/Rotate/Scale + Local/World), W/E/R
+  shortcuts, Escape cancels mid-drag (capture-phase, before the builder's
+  Escape-deselect); picking uses the SAME projected geometry as drawing;
+  drags preview hierarchy-aware without touching the model; pointer release
+  commits ONE canonical `updateProps` = ONE undo entry; the camera never
+  orbits while transforming.
+- **Editor-only**: gizmos never render in preview/published/export and never
+  touch project data beyond the canonical transform fields (camera fov/near/
+  far/active and light semantics untouched). Physics (TASK 54) unaffected —
+  editor has no physics world; preview re-seeds deterministically.
+
+### Verified (session 55)
+
+- Playwright E2E `scripts/e2e-3d-transform-gizmos.mjs` **34/34, 0 console
+  errors** — pointer-driven drags at the projected handle positions with
+  model + pixel evidence: move X/Y/Z (px/py/pz change AND the cube's
+  rendered centroid moves), one drag = one undo entry (exact restore to
+  1e-6) + redo, rotate X/Y/Z rings + inspector parity, scale X/Y/Z + pixel
+  growth + extreme-drag clamping, Local/World orientation change (tilted vs
+  horizontal X handle), parent-child (parent move → child world moves; child
+  gizmo → child local changes, parent unchanged), inspector↔gizmo parity
+  both directions, save/reload persistence, Escape cancel.
+- Regressions (13 suites): 3d-foundation 18/18, 3d-hierarchy 17/17,
+  3d-physics 24/24, 3d-material-lighting 42/42, input-actions 32/32,
+  tilemap 44/44, gameplay 21/21, camera 34/34, sorting 19/19, motion 11/11,
+  sprite-animation 18/18, animation-state-machine 20/20, 2d-lighting 19/19,
+  2d-particles 22/22.
+- tsc clean; go vet clean; go test 11/11 packages; production next build
+  green.
+
+### Honest notes (TASK 56)
+
+- Rotate rings map the delta onto the matching LOCAL Euler axis; world-space
+  ring drags on parented objects may visually differ from the ring plane
+  (exact for unparented entities).
+- No depth axis, no snapping, no multi-select (per directive), gizmo draws
+  without mesh occlusion (flat editor overlay; inactive handles dim).
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval before TASK 57.
+
+## 63. TASK 57 — Real 3D Character Controller + Input (Playable 3D Gameplay)
+
+A designated 3D entity becomes the player: WASD/arrows move relative to the
+active camera, Space jumps physics-driven, gravity/landing/walls come from
+the TASK 54 physics — one implementation across Preview, Published, and
+Exported HTML. Ground + Player + physics + input + movement + jump +
+collision = a playable 3D scene. Full record in
+`docs/TASK57_3D_CHARACTER_CONTROLLER.md`.
+
+- **Canonical model**: scalar controller props on the player entity —
+  `controllerEnabled`, `moveSpeed` (0.1–100), `acceleration` (0–200),
+  `deceleration` (0–200), `jumpForce` (0–50), `airControl` (0–1) — clamped at
+  parse; gravity reuses the TASK 54 `gravityEnabled`; runtime state
+  (velocity/grounded/input) is never persisted; `maxSlopeAngle` not
+  implemented and not exposed.
+- **Player designation**: `controllerEnabled` on the entity (no hidden
+  player object); the FIRST enabled controller is honored (deterministic),
+  multiple controllers warn, zero controllers render normally with an info
+  diagnostic.
+- **Input**: the EXISTING input abstraction — five semantic slots
+  (`move-forward`/`move-backward` reuse the established `move-left`/`move-right`/`jump`
+  vocabulary) resolved from the screen's canonical `inputActions`
+  (rebindable in the Input Actions panel) with built-in 3D defaults
+  (W/A/S/D, arrows, Space). Runtime-mode-only pressed-key set; no parallel
+  key system; editor shortcuts untouched.
+- **Movement**: input vector normalized (≤ 1); camera-relative basis from
+  the ACTIVE camera3d rotation (no second camera); velocity-based with
+  acceleration/deceleration × airControl, applied per fixed step (1/120 s)
+  BEFORE the existing `PhysicsWorld.step` — the controller decides
+  velocities, the existing physics integrates/collides/resolves. One world,
+  one timestep, one authority.
+- **Jump**: one physics-driven impulse (`vy = jumpForce`) per press edge
+  while grounded; edges expire per frame — holding Space cannot stack jumps
+  and airborne presses are rejected (all E2E-proven).
+- **Editor**: Controller (3D player) inspector section; diagnostics for
+  multiple controllers, controller-without-dynamic-body, gravity disabled,
+  and every range; observability attributes (`data-3d-player`,
+  `data-controller-enabled/grounded/speed`, `data-physics-bodies` now
+  carries x/y/z — web AND export identical).
+- **Export**: vanilla mirror (`applyController3D` + key listeners installed
+  once per run) with identical math; editor-only UI never leaks (E2E
+  asserts no toolbar/hierarchy/transform-mode in the published runtime).
+
+### Verified (session 56)
+
+- Playwright E2E `scripts/e2e-3d-character-controller.mjs` **35/35, 0 console
+  errors** — real keyboard gameplay: W/S/A/D displacement in the correct
+  camera-relative directions, solo speed ≈ moveSpeed, normalized diagonals,
+  deceleration to rest, gravity fall/land/grounded/stable-rest, jump rise +
+  return + no-held-repeat + airborne rejection, wall blocking at the exact
+  face with no tunneling, restart reset, save/reload persistence, published
+  movement, exported-run-from-disk movement + jump.
+- Regressions (14 suites): 3d-foundation 18/18, 3d-hierarchy 17/17,
+  3d-physics 24/24, 3d-material-lighting 42/42, 3d-transform-gizmos 34/34,
+  input-actions 32/32, tilemap 44/44, gameplay 21/21, camera 34/34,
+  sorting 19/19, motion 11/11, sprite-animation 18/18,
+  animation-state-machine 20/20, 2d-lighting 19/19, 2d-particles 22/22.
+- tsc clean; go vet clean; go test 11/11 packages; production next build
+  green.
+
+### Honest notes (TASK 57)
+
+- NOT IMPLEMENTED / DEFERRED: slopes, stairs, crouch/sprint/prone, ledge
+  climbing, swimming, ladders, double/wall jump, moving platforms, root
+  motion, full third-/first-person camera, ragdoll, navmesh, advanced
+  character animation, capsule colliders, mobile touch controls, 3D camera
+  follow (the authored camera stays fixed).
+- Character collider = the existing supported box (no fake capsule).
+- Commit still blocked: no git binary on this machine.
+
+### Next exact task
+
+STOP per the directive — await explicit approval before TASK 58.
+

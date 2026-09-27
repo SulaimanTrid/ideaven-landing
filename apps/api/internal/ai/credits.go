@@ -12,7 +12,8 @@ import (
 // single source of truth — the balance is computed from it, never stored,
 // so it cannot drift from what actually happened. Only successful
 // completions count: a provider outage must not drain a user's quota.
-// Paid top-ups arrive later on top of this ledger (roadmap: credit packs).
+// Paid top-ups land in the same ledger: a verified purchase writes a
+// credit_grants row via internal/credits (TASK 12).
 const (
 	// DailyFreeCommands is the per-user free AI command allowance per day.
 	DailyFreeCommands = 20
@@ -232,16 +233,74 @@ func (h *Handler) CreditActivity(w http.ResponseWriter, r *http.Request) {
 // spent first, then pack credits. Ledger errors fail open — a counting
 // problem must not lock users out; the request is recorded either way.
 func (h *Handler) creditsExhausted(ctx context.Context, userID string) bool {
+	return h.creditGate(ctx, userID) != nil
+}
+
+// CodeInsufficientCredits is the stable error code clients key the
+// contextual purchase modal on.
+const CodeInsufficientCredits = "AI_INSUFFICIENT_CREDITS"
+
+// CreditsPerCommand is the pack-credit cost of one AI action. Actions draw
+// from the free daily allowance first; pack credits cover the overflow.
+const CreditsPerCommand = 1
+
+// InsufficientCreditsData is the SAFE metadata attached to the 402 so the
+// client can explain the situation and offer packs without a second
+// round-trip. Deliberately numeric and small: no billing internals, no
+// package prices, no session data.
+type InsufficientCreditsData struct {
+	Remaining         int  `json:"remaining"`         // spendable credits right now
+	Required          int  `json:"required"`          // credits the attempted action needs
+	PackBalance       int  `json:"packBalance"`       // pack-credit part of remaining
+	FreeRemaining     int  `json:"freeRemaining"`     // daily-allowance part of remaining
+	PurchaseAvailable bool `json:"purchaseAvailable"` // whether packs can actually be bought yet
+}
+
+// insufficientCreditsError builds the structured 402. HTTP 402 is used over
+// 429 because the situation is solvable with payment — the response IS the
+// offer, not a rate limit.
+func (h *Handler) insufficientCreditsError(pack int) *httpx.Error {
+	freeRemaining := 0
+	remaining := pack
+	if remaining < 0 {
+		remaining = 0
+	}
+	if pack < 0 {
+		pack = 0
+	}
+	available := false
+	if h.purchaseAvailable != nil {
+		available = h.purchaseAvailable()
+	}
+	data := InsufficientCreditsData{
+		Remaining:         remaining,
+		Required:          CreditsPerCommand,
+		PackBalance:       pack,
+		FreeRemaining:     freeRemaining,
+		PurchaseAvailable: available,
+	}
+	return httpx.Errorf(http.StatusPaymentRequired, CodeInsufficientCredits,
+		"You're out of AI credits. The daily free allowance is spent and you have no pack credits left.").
+		WithData(data)
+}
+
+// creditGate evaluates whether one AI action may run. nil means allowed;
+// non-nil is the structured 402 to write. Ledger errors fail open exactly
+// like the previous bool gate — a counting problem must never lock users out.
+func (h *Handler) creditGate(ctx context.Context, userID string) *httpx.Error {
 	used, err := h.usage.usedToday(ctx, userID)
 	if err != nil {
-		return false
+		return nil
 	}
 	if used < DailyFreeCommands {
-		return false
+		return nil
 	}
 	pack, err := h.usage.packBalance(ctx, userID)
 	if err != nil {
-		return false
+		return nil
 	}
-	return pack <= 0
+	if pack >= CreditsPerCommand {
+		return nil
+	}
+	return h.insufficientCreditsError(pack)
 }

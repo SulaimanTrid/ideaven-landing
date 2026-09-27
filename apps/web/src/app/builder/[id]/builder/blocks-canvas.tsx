@@ -1223,7 +1223,7 @@ function DropStrip({
       data-b={branch}
       data-i={index}
       data-last={last ? "" : undefined}
-      className={`relative z-10 w-full min-w-40 transition-all ${active ? "h-5" : showGuides ? "h-3.5" : "h-2.5"} ${
+      className={`relative z-10 w-full min-w-40 transition-[height] duration-micro ${active ? "h-5" : showGuides ? "h-3.5" : "h-2.5"} ${
         showGuides ? "pointer-events-auto" : "pointer-events-none"
       }`}
     >

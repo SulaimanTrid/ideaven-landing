@@ -19,12 +19,16 @@ type FieldError struct {
 }
 
 // Error is an API error with a stable machine-readable code, a safe
-// human-readable message, and optional field-level validation details.
+// human-readable message, optional field-level validation details, and
+// optional safe machine-readable metadata (e.g. credit numbers attached to
+// an insufficient-credit error so clients can explain the situation without
+// a second round-trip). Data must never carry sensitive billing internals.
 type Error struct {
 	Status  int          `json:"-"`
 	Code    string       `json:"code"`
 	Message string       `json:"message"`
 	Details []FieldError `json:"details,omitempty"`
+	Data    any          `json:"data,omitempty"`
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
@@ -56,6 +60,12 @@ func Errorf(status int, code, message string) *Error {
 // WithDetails attaches field errors and returns the same error.
 func (e *Error) WithDetails(details ...FieldError) *Error {
 	e.Details = append(e.Details, details...)
+	return e
+}
+
+// WithData attaches safe machine-readable metadata and returns the same error.
+func (e *Error) WithData(data any) *Error {
+	e.Data = data
 	return e
 }
 

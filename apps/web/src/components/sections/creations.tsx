@@ -75,36 +75,38 @@ function GameArt() {
 
 function AppArt() {
   return (
-    <div className="flex h-full flex-col bg-[#0c0f17] p-6 sm:p-8" role="img" aria-label="Miniature quiz app: a question with three options, one selected, and a progress indicator.">
+    <div className="flex h-full flex-col bg-[#0c0f17] p-6" role="img" aria-label="Miniature quiz app: a question with three options, one selected, and a progress indicator.">
       <div className="flex items-center justify-between">
-        <p className="font-mono text-[10px] tracking-[0.2em] text-mist uppercase">
+        <p className="font-mono text-[10px] tracking-[0.2em] text-[#6f7789] uppercase">
           Daily quiz
         </p>
-        <p className="font-mono text-[10px] text-mist">3 / 5</p>
+        <p className="font-mono text-[10px] text-[#6f7789]">3 / 5</p>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-strong">
+      {/* Fixed dark artwork (like GameArt): literal colors, not theme tokens —
+          the mock keeps its contrast in both themes. */}
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
         <div className="h-full w-3/5 rounded-full bg-violet" />
       </div>
 
-      <p className="mt-6 text-lg font-medium tracking-tight text-ink">
+      <p className="mt-5 text-lg font-medium tracking-tight text-[#f2f1ea]">
         Which block runs first?
       </p>
 
       <ul className="mt-4 flex flex-col gap-2.5">
-        <li className="rounded-lg border border-line bg-white/[0.02] px-3.5 py-2.5 text-[13px] text-fog">
+        <li className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3.5 py-2.5 text-[13px] text-[#a9b0c2]">
           change score by 1
         </li>
         <li className="flex items-center justify-between rounded-lg border border-mint/50 bg-mint/[0.08] px-3.5 py-2.5 text-[13px] text-mint">
           when <span aria-hidden="true">⏵</span> clicked
           <span className="h-2 w-2 rounded-full bg-mint" />
         </li>
-        <li className="rounded-lg border border-line bg-white/[0.02] px-3.5 py-2.5 text-[13px] text-fog">
+        <li className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3.5 py-2.5 text-[13px] text-[#a9b0c2]">
           play sound coin
         </li>
       </ul>
 
-      <div className="mt-auto flex items-center justify-between pt-6">
-        <span className="rounded-full border border-line px-2.5 py-1 font-mono text-[10px] text-fog">
+      <div className="mt-auto flex items-center justify-between pt-4">
+        <span className="rounded-full border border-white/[0.12] px-2.5 py-1 font-mono text-[10px] text-[#a9b0c2]">
           score 2
         </span>
         <span className="rounded-lg bg-violet-deep px-3.5 py-2 text-[13px] font-medium text-white">
@@ -174,10 +176,13 @@ export function Creations() {
 
           <Reveal delay={140}>
             <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-card transition-colors hover:border-white/15">
-              <div className="min-h-[240px] flex-1 border-b border-line">
+              {/* The preview takes ALL remaining card height (the text block
+                  below is not a competing flex-1 child) and clips its own
+                  content, so the quiz can never bleed onto the card text. */}
+              <div className="relative min-h-[240px] flex-1 overflow-hidden border-b border-line">
                 <AppArt />
               </div>
-              <div className="flex flex-1 flex-col p-6">
+              <div className="flex flex-col p-6">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-lg font-semibold tracking-tight text-ink">
                     Apps

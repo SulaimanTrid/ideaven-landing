@@ -63,6 +63,27 @@
     "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "SF Mono",
     Menlo, Consolas, monospace;
+
+  /*
+   * Motion — the ONE motion system (docs/DESIGN.md §Motion). Components use
+   * the generated duration and ease utilities; only these tokens carry values.
+   */
+  --duration-instant: 0ms;
+  --duration-micro: 90ms;
+  --duration-quick: 160ms;
+  --duration-standard: 240ms;
+  --duration-deliberate: 420ms;
+  --duration-emphasis: 700ms;
+
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-press: cubic-bezier(0.2, 0, 0, 1);
+  --ease-spatial: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Every transition-colors (hover) in the product inherits the house
+   * character without per-component values. */
+  --default-transition-duration: var(--duration-quick);
+  --default-transition-timing-function: var(--ease-enter);
 }
 
 @layer base {
@@ -114,8 +135,8 @@
 
 [data-reveal] {
   transition:
-    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--duration-emphasis) var(--ease-enter),
+    transform var(--duration-emphasis) var(--ease-enter);
 }
 
 [data-reveal].is-visible {
@@ -142,7 +163,7 @@
   background: var(--color-violet-deep);
   color: #fff;
   font-size: 0.875rem;
-  transition: transform 0.2s;
+  transition: transform var(--duration-standard) var(--ease-enter);
 }
 
 .skip-link:focus-visible {
@@ -239,7 +260,7 @@
 }
 
 .anim-pop-in {
-  animation: pop-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: pop-in var(--duration-deliberate) var(--ease-enter) both;
 }
 
 .anim-progress-x {
@@ -248,5 +269,25 @@
 }
 
 .anim-rise-in {
-  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: rise-in var(--duration-deliberate) var(--ease-enter) both;
+}
+
+/*
+ * Press feedback (docs/DESIGN.md §Motion): fast compression on press, soft
+ * release on the same curve. Never bouncy; disabled buttons opt out. Owns the
+ * whole transition list (colors at quick/enter + transform at micro/press) so
+ * it composes with — rather than fights — the Tailwind transition utilities.
+ */
+.press {
+  transition:
+    color var(--duration-quick) var(--ease-enter),
+    background-color var(--duration-quick) var(--ease-enter),
+    border-color var(--duration-quick) var(--ease-enter),
+    box-shadow var(--duration-quick) var(--ease-enter),
+    opacity var(--duration-quick) var(--ease-enter),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.press:active:not(:disabled) {
+  transform: scale(0.97);
 }

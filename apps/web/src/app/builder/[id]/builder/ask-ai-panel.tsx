@@ -1,12 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { aiApi, type AICredits } from "@/lib/api";
+import {
+  AI_INSUFFICIENT_CREDITS,
+  aiApi,
+  type AICredits,
+  type InsufficientCreditsData,
+} from "@/lib/api";
 import { applyAIOperations, type AIOperation } from "@/lib/project-model/ai-apply";
 import { collectModelDiagnostics } from "@/lib/project-model/diagnostics";
 import { useBuilder } from "./builder-context";
 import type { ProjectModelComponent, PropsMap } from "@/types/project";
 import { ApiError } from "@/types/auth";
+import { useI18n } from "@/lib/i18n/i18n";
+import { CREDITS_UPDATED_EVENT } from "@/components/credits/credit-purchase-modal";
 import { IconCheck, IconClose, IconSparkle } from "@/components/visuals/icons";
 
 /**
@@ -38,16 +45,24 @@ export function AskAIPanel({
   onClose,
   seedPrompt,
   onSeedConsumed,
+  onInsufficientCredits,
 }: {
   onClose: () => void;
   seedPrompt?: string | null;
   onSeedConsumed?: () => void;
+  /** Called when the server blocks an action with a structured 402 so the
+   * contextual purchase modal opens in place. */
+  onInsufficientCredits?: (info: InsufficientCreditsData) => void;
 }) {
   const { model, project, activeScreenId, selectedId, commitModel, codeDiagnostics } = useBuilder();
+  const { t } = useI18n();
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [credits, setCredits] = useState<AICredits | null>(null);
+  // The request the server blocked on empty credits. It is retried ONLY when
+  // the user explicitly confirms continuation after a verified purchase.
+  const blockedPromptRef = useRef<string | null>(null);
 
   const screen = model.screens.find((s) => s.id === activeScreenId) ?? model.screens[0];
 
@@ -56,6 +71,11 @@ export function AskAIPanel({
   }, []);
   useEffect(() => {
     reloadCredits();
+    // A verified purchase elsewhere (the purchase modal) refreshes the
+    // balance here without a remount.
+    const onUpdated = () => reloadCredits();
+    window.addEventListener(CREDITS_UPDATED_EVENT, onUpdated);
+    return () => window.removeEventListener(CREDITS_UPDATED_EVENT, onUpdated);
   }, [reloadCredits]);
 
   // Structured context (spec §59): compact items, never the whole project.
@@ -122,11 +142,34 @@ export function AskAIPanel({
       setBusy(true);
       try {
         const response = await aiApi.command(project.id, request, buildContext());
+        blockedPromptRef.current = null;
+        // A successful command drew from the ledger — keep the balance badge
+        // honest immediately.
+        reloadCredits();
         setTurns((current) => [
           ...current,
           { role: "ai", text: response.explanation, operations: response.operations, status: "proposed" },
         ]);
       } catch (err) {
+        if (err instanceof ApiError && err.code === AI_INSUFFICIENT_CREDITS) {
+          // The server is authoritative: it blocked the action and attached
+          // the safe numbers the modal needs. Nothing was consumed.
+          blockedPromptRef.current = request;
+          const info: InsufficientCreditsData = {
+            remaining: err.dataNumber("remaining") ?? 0,
+            required: err.dataNumber("required") ?? 1,
+            packBalance: err.dataNumber("packBalance") ?? 0,
+            freeRemaining: err.dataNumber("freeRemaining") ?? 0,
+            purchaseAvailable: err.dataBoolean("purchaseAvailable") ?? false,
+          };
+          onInsufficientCredits?.(info);
+          setTurns((current) => [
+            ...current,
+            { role: "ai", text: t("credits.blockedTurn"), status: "failed" },
+          ]);
+          reloadCredits();
+          return;
+        }
         const message = err instanceof ApiError ? err.message : "The AI request failed.";
         setTurns((current) => [...current, { role: "ai", text: message, status: "failed" }]);
         reloadCredits();
@@ -134,8 +177,22 @@ export function AskAIPanel({
         setBusy(false);
       }
     },
-    [busy, project.id, buildContext, reloadCredits],
+    [busy, project.id, buildContext, reloadCredits, onInsufficientCredits, t],
   );
+
+  // Direct re-try (TASK 12): after a VERIFIED purchase the modal's
+  // "Continue with AI" button dispatches this event — the user's explicit
+  // authorization to run the original request. It is never fired
+  // automatically.
+  useEffect(() => {
+    const onRetry = () => {
+      const request = blockedPromptRef.current;
+      blockedPromptRef.current = null;
+      if (request) void runPrompt(request);
+    };
+    window.addEventListener("ideaven:ai-retry", onRetry);
+    return () => window.removeEventListener("ideaven:ai-retry", onRetry);
+  }, [runPrompt]);
 
   // Auto-Fix entry point: the Diagnostics panel seeds a fix prompt; run it
   // once through the same pipeline, then release the seed.
@@ -219,14 +276,14 @@ export function AskAIPanel({
           <h2 className="text-[14px] font-semibold">Ask AI</h2>
           {credits ? (
             <span
-              title={`Resets ${new Date(credits.resetsAt).toLocaleTimeString()}`}
+              title={`${t("credits.balanceTitle")} · ${t("credits.packBalanceTitle")}: ${credits.packBalance}`}
               className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
                 credits.remaining > 0
                   ? "border-line text-mist"
                   : "border-rose/40 bg-rose/10 text-rose"
               }`}
             >
-              {credits.remaining}/{credits.dailyLimit} free
+              {credits.remaining} {t("credits.creditsUnit")}
             </span>
           ) : null}
         </div>

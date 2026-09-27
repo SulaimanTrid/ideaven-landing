@@ -56,7 +56,13 @@ export function Palette() {
 
   return (
     <div className="flex flex-col gap-4 p-3">
-      {CATEGORY_ORDER.filter((category) => category.id !== "game" || model.type === "game").map((category) => (
+      {CATEGORY_ORDER.filter((category) =>
+        category.id === "game"
+          ? model.type === "game"
+          : category.id === "3d"
+            ? model.type === "3d"
+            : true,
+      ).map((category) => (
         <section key={category.id} aria-label={category.label}>
           <h3 className="px-1 pb-1.5 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
             {category.label}
