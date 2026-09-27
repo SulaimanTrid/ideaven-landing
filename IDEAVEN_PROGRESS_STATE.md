@@ -31,24 +31,25 @@ FILES / MODULES TO CONTINUE FROM:
 > The repository is the source of truth; this file only points at it.
 
 CURRENT_DATE: 2026-09-27
-CURRENT_COMMIT: e91459a (docs: record commit cf1d9d1 in the progress handoff)
+CURRENT_COMMIT: 500d922 (feat: AI credit purchase, 2D input abstraction + action events, sprite animation + state machine, 2D lighting + particles, rule tiles + sorting layers, 3D foundation + hierarchy + physics + material/lighting + transform gizmos + character controller; anti-slop + DESIGN.md + motion foundation; Windows build-worker env fix)
 CURRENT_BRANCH: main
+REMOTE: https://github.com/SulaimanTrid/ideaven-landing.git (origin; remote is 5 commits behind local main — push pending authentication)
 
-âš ï¸ NO GIT BINARY ON THIS MACHINE: the working tree is AHEAD of e91459a with
-several completed sessions uncommitted (TASK 12 credit purchase, TASK 14
-camera behaviors, rule tiles, sorting layers SYSTEM 9, sessions 42â€“44
-(verification + rule tiles + PHASE A), 45 SLICE 1 input abstraction,
-46 SLICE 1b action events, 47 SLICE 2 sprite animation, 48 SLICE 3 state
-machine, 49 SYSTEM 5 lighting, 50 SYSTEM 18 particles, 51 TASK 51 3D
-foundation, 52 TASK 53 3D hierarchy, 53 TASK 54 3D physics, 54 TASK 55 3D
-material + lighting, 55 TASK 56 3D transform gizmos, 56 TASK 57 3D character
-controller). Install git or restore
-PATH, then commit as one batch or per-slice. Suggested batch message:
-“feat: AI credit purchase flow, 2D camera behaviors, input abstraction +
-action events, rule tiles, sorting layers, sprite animation + state
-machine, 2D lighting + particles, 3D foundation + hierarchy + physics +
-material/lighting + transform gizmos; anti-slop + DESIGN.md + motion
-foundation; fix Windows build-worker env”
+GIT RESTORED (2026-09-27): MinGit 2.47.1 portable at ideaven-v7\tools\mingit
+(add tools\mingit\cmd to PATH). The full uncommitted batch (sessions 42–56)
+is committed as 500d922 on main. Push to origin requires GitHub credentials
+(PAT) and is the only remaining step.
+
+âš ï¸ GIT RESTORED: MinGit 2.47.1 portable lives at ideaven-v7\tools\mingit
+(put tools\mingit\cmd on PATH). Committer identity: Ideaven Dev
+<dev@ideaven.local>. The previously uncommitted batch (TASK 12 credit
+purchase, TASK 14 camera behaviors, rule tiles, sorting layers, sessions
+42â€“56: input abstraction, action events, sprite animation, state machine,
+2D lighting, particles, 3D foundation/hierarchy/physics/material-lighting/
+gizmos/character-controller, anti-slop + DESIGN.md + motion) is COMMITTED
+as 500d922 on main (104 files, +21,577). Push to
+https://github.com/SulaimanTrid/ideaven-landing.git (origin/main, public,
+5 commits behind) is the only remaining step and needs a GitHub PAT.
 
 CURRENT_OBJECTIVE:
 TASK 57 (Real 3D Character Controller + Input) is COMPLETE and verified
