@@ -31,14 +31,15 @@ FILES / MODULES TO CONTINUE FROM:
 > The repository is the source of truth; this file only points at it.
 
 CURRENT_DATE: 2026-09-27
-CURRENT_COMMIT: 500d922 (feat: AI credit purchase, 2D input abstraction + action events, sprite animation + state machine, 2D lighting + particles, rule tiles + sorting layers, 3D foundation + hierarchy + physics + material/lighting + transform gizmos + character controller; anti-slop + DESIGN.md + motion foundation; Windows build-worker env fix)
+CURRENT_COMMIT: 190a3f4 (docs: record commit 500d922 in the progress handoff; git restored via portable MinGit)
+PUSHED: YES — origin/main = 190a3f4 (https://github.com/SulaimanTrid/ideaven-landing.git), fully up to date as of 2026-09-27.
 CURRENT_BRANCH: main
-REMOTE: https://github.com/SulaimanTrid/ideaven-landing.git (origin; remote is 5 commits behind local main — push pending authentication)
 
 GIT RESTORED (2026-09-27): MinGit 2.47.1 portable at ideaven-v7\tools\mingit
 (add tools\mingit\cmd to PATH). The full uncommitted batch (sessions 42–56)
-is committed as 500d922 on main. Push to origin requires GitHub credentials
-(PAT) and is the only remaining step.
+is committed as 500d922 and PUSHED to origin together with the four older
+unpushed commits (35fd4a1, ef32e75, cf1d9d1, e91459a) and this handoff
+update (190a3f4).
 
 âš ï¸ GIT RESTORED: MinGit 2.47.1 portable lives at ideaven-v7\tools\mingit
 (put tools\mingit\cmd on PATH). Committer identity: Ideaven Dev
@@ -47,9 +48,9 @@ purchase, TASK 14 camera behaviors, rule tiles, sorting layers, sessions
 42â€“56: input abstraction, action events, sprite animation, state machine,
 2D lighting, particles, 3D foundation/hierarchy/physics/material-lighting/
 gizmos/character-controller, anti-slop + DESIGN.md + motion) is COMMITTED
-as 500d922 on main (104 files, +21,577). Push to
-https://github.com/SulaimanTrid/ideaven-landing.git (origin/main, public,
-5 commits behind) is the only remaining step and needs a GitHub PAT.
+(500d922, 104 files, +21,577) and PUSHED to
+https://github.com/SulaimanTrid/ideaven-landing.git — origin/main is up to
+date (190a3f4). No pending commits remain.
 
 CURRENT_OBJECTIVE:
 TASK 57 (Real 3D Character Controller + Input) is COMPLETE and verified
