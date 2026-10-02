@@ -8,23 +8,36 @@
     "build": "next build",
     "start": "next start",
     "check": "tsc --noEmit",
-    "clean": "rm -rf .next"
+    "clean": "rm -rf .next",
+    "dev:vinext": "vinext dev --port 3001",
+    "build:vinext": "vinext build",
+    "start:vinext": "wrangler dev --config dist/server/wrangler.json",
+    "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json"
   },
   "dependencies": {
     "@ideaven/ui": "workspace:*",
     "@monaco-editor/react": "4.7.0",
+    "@vinext/cloudflare": "1.0.0-beta.10",
     "next": "^15.3.0",
     "qrcode": "^1.5.4",
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-server-dom-webpack": "^19.3.0",
+    "vinext": "1.0.0-beta.12"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.60.2",
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.15.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-rsc": "^0.5.35",
     "tailwindcss": "^4.1.0",
-    "typescript": "^5.9.2"
-  }
+    "typescript": "^5.9.2",
+    "vite": "^8.3.1",
+    "wrangler": "^4.141.0"
+  },
+  "type": "module"
 }

@@ -3,5 +3,9 @@ packages:
   - "packages/*"
 
 # sharp's native build is unnecessary for this project (no next/image usage).
+# esbuild + workerd build scripts are required for the vinext/Vite Cloudflare
+# toolchain (vite build + wrangler dev/deploy).
 allowBuilds:
+  esbuild: true
   sharp: false
+  workerd: true

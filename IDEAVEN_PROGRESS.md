@@ -844,3 +844,46 @@ providers, i18n coverage expansion, accessibility audit.
   animation, capsule colliders, touch controls, 3D camera follow. Box
   character collider (no fake capsule).
 - STOP per directive — awaiting approval before TASK 58.
+
+## Session 57 addition (Cloudflare Workers Web Deployment — Phase 1B)
+
+- The Cloudflare failure (`npm error Unsupported URL Type "workspace:"`) came
+  from automatic framework detection running npm against the pnpm workspace.
+  Fixed WITHOUT touching the monorepo: an explicit, toolchain-generated
+  Workers configuration inside apps/web so Cloudflare never runs detection
+  again.
+- `pnpm dlx vinext check` → 87% compatible, no blockers (partials documented:
+  next/font/google CDN fonts; App Router strict-mode wrapping).
+- `pnpm dlx vinext init --platform=cloudflare` generated: `apps/web/
+  wrangler.jsonc` (Worker `web`, main = vinext/server/fetch-handler,
+  nodejs_compat, assets dist/client, IMAGES binding), `apps/web/
+  vite.config.ts` (vinext + @cloudflare/vite-plugin, rsc/ssr environments),
+  `apps/web/.gitignore` (dist/.vinext/.wrangler), and scripts
+  `dev:vinext`/`build:vinext`/`start:vinext`/`deploy:vinext` — existing
+  dev/build/start/check untouched. react/react-dom 19.1.0→19.3.0 (vinext
+  RSC requirement; next dev/build verified green on 19.3.0); "type":
+  "module" added. `pnpm-workspace.yaml` allowBuilds placeholders completed
+  (esbuild: true, workerd: true — sharp: false kept).
+- workspace safety: `@ideaven/ui = workspace:*` INTACT; no duplication, no
+  flattening; pnpm install from the repo root works.
+- Verification: `build:vinext` exit 0 (32 routes); Workers preview
+  (`start:vinext`, wrangler dev on :8787) verified in a real browser —
+  scripts/verify-cf-preview.mjs 12/12 (landing/login/register/pricing/
+  explore/docs render, header nav, builder route falls back without a
+  backend, ZERO pageerror + ZERO hydration errors; the only console errors
+  are API connection refusals — expected, the Go API is intentionally not
+  deployed for Workers); `wrangler deploy --dry-run` exit 0.
+- Full regression after the change: 15 E2E suites green (3D controller 35,
+  material-lighting 42, gizmos 34, physics 24, foundation 18, hierarchy 17;
+  2D: tilemap 44, input-actions 32, camera 34, particles 22, state-machine
+  20, lighting 19, sprite 18, gameplay 21, sorting 19, motion 11); tsc
+  clean; go vet clean; go test 11/11; next build exit 0 (Vercel untouched
+  and authoritative).
+- Also: created a manual test account via the auth API for the owner to try
+  the 3D features (credentials shared in chat only — not committed).
+- Honest: the Workers deployment has NO backend yet (auth flows fail there
+  until the Go API phase — not faked); vinext 1.0.0-beta; real dashboard
+  deploy pending Cloudflare account auth (deploy command: pnpm run
+  deploy:vinext, root dir apps/web, no detection overrides). Rollback
+  procedure in docs/CLOUDFLARE_WEB_DEPLOYMENT.md §12.
+- STOP per directive — awaiting approval before Cloudflare Phase 2.

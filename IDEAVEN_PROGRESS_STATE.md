@@ -1,30 +1,24 @@
 NEXT_TASK:
-STOP — awaiting explicit approval per the TASK 57 directive. Queued:
-TASK 58 onward (3D deepening or the next master-priority system).
+STOP — awaiting explicit approval per the Cloudflare Phase 1B directive.
+Queued: Cloudflare dashboard deploy (needs account auth) or TASK 58 onward.
 
 FILES / MODULES TO CONTINUE FROM:
-- apps/web/src/lib/character3d.ts (TASK 57: parseController3D,
-  resolveControllerKeys, inputVector, cameraBasis, controllerVelocity)
+- apps/web/wrangler.jsonc + apps/web/vite.config.ts (CF Phase 1B generated
+  config — source of truth for Workers deploy)
+- apps/web/package.json (scripts dev:vinext/build:vinext/start:vinext/
+  deploy:vinext; react 19.3.0; type: module; vinext/wrangler/vite deps)
+- pnpm-workspace.yaml (allowBuilds: esbuild true, workerd true, sharp false)
+- scripts/verify-cf-preview.mjs (12-check Workers preview verification)
+- docs/CLOUDFLARE_WEB_DEPLOYMENT.md (Phase 1B record + dashboard checklist
+  + rollback)
+- apps/web/src/lib/character3d.ts (TASK 57 controller)
 - apps/web/src/lib/transform-gizmo.ts (TASK 56 gizmo math)
 - apps/web/src/lib/render3d.ts (renderer + shading + gizmos + mat4Invert)
-- apps/web/src/components/runtime/viewport-3d.tsx (physics seed/loop +
-  controller application + gizmos + observability attrs)
-- apps/api/internal/project/export.go (vanilla mirrors: physics + lights +
-  shadeFace3D + applyController3D + idempotent render3DScene)
-- apps/web/src/app/builder/[id]/builder/inspector.tsx (Controller3DPanel,
-  Physics3DPanel, Material3DPanel, T3D splits)
-- apps/web/src/lib/project-model/diagnostics.ts (controller/light/physics
-  diagnostics)
-- apps/web/src/lib/project-model/scene.ts (PLAYER_ACTION_* +
-  DEFAULT_INPUT_ACTIONS — 2D defaults; 3D defaults live in character3d.ts)
-- scripts/e2e-3d-character-controller.mjs (35 checks — the controller gate)
-- docs/TASK51_3D_FOUNDATION.md + docs/TASK53_3D_HIERARCHY.md +
-  docs/TASK54_3D_PHYSICS_FOUNDATION.md + docs/TASK55_3D_MATERIAL_LIGHTING.md
-  + docs/TASK56_3D_TRANSFORM_GIZMOS.md + docs/TASK57_3D_CHARACTER_CONTROLLER.md
+- apps/web/src/components/runtime/viewport-3d.tsx (physics/controller/gizmos)
+- apps/api/internal/project/export.go (vanilla mirrors)
+- scripts/e2e-3d-character-controller.mjs (35 checks)
+- docs/TASK51..57 + docs/CLOUDFLARE_WEB_DEPLOYMENT.md
 - docs/DESIGN.md (the visual constitution — read before any UI/copy work)
-- scripts/e2e-3d-foundation.mjs (18), e2e-3d-hierarchy.mjs (17),
-  e2e-3d-physics.mjs (24), e2e-3d-material-lighting.mjs (42),
-  e2e-3d-transform-gizmos.mjs (34)
 # IDEAVEN PROGRESS STATE â€” portable development handoff
 
 > Regenerate/update this file at the END of every implementation session.
@@ -53,21 +47,22 @@ https://github.com/SulaimanTrid/ideaven-landing.git — origin/main is up to
 date (190a3f4). No pending commits remain.
 
 CURRENT_OBJECTIVE:
-TASK 57 (Real 3D Character Controller + Input) is COMPLETE and verified
-(session 56): canonical controller props on the player entity
-(controllerEnabled/moveSpeed/acceleration/deceleration/jumpForce/airControl),
-designation = the FIRST enabled controller (diagnostics for multiples and
-none), input through the EXISTING inputActions abstraction (5 semantic
-slots, 3D defaults W/A/S/D + arrows + Space, rebindable in the Input
-Actions panel), velocity-based movement relative to the ACTIVE camera's
-facing applied per fixed step to the TASK 54 physics body (one world /
-timestep / authority), physics-driven jump with edge consumption (no
-hold-stacking, airborne rejected), wall blocking via the existing
-resolution, restart resets everything, save/reload persists, editor
-Controller panel + diagnostics + observability attributes (data-3d-player,
-data-controller-*), export vanilla mirror with identical math. E2E
-e2e-3d-character-controller 35/35 (real keyboard gameplay incl. published +
-exported-run-from-disk). All 14 regressions green. STOP per directive.
+Cloudflare Workers Web Deployment Phase 1B is COMPLETE and verified: the
+EUNSUPPORTEDPROTOCOL failure (npm auto-detection vs pnpm workspace) is fixed
+with an EXPLICIT generated config — apps/web/wrangler.jsonc + vite.config.ts
+via `vinext init --platform=cloudflare` (vinext 1.0.0-beta.12, wrangler
+4.141.0), scripts dev:vinext/build:vinext/start:vinext/deploy:vinext added
+(dev/build/start untouched), `workspace:*` INTACT, pnpm install from root
+works, react 19.3.0, allowBuilds esbuild/workerd completed. Verified:
+build:vinext exit 0 (32 routes), Workers preview on :8787 (browser
+verification 12/12 — landing/login/register/pricing/explore/docs render,
+zero pageerror/zero hydration errors; API-connection refusals expected —
+backend intentionally not deployed), wrangler deploy --dry-run exit 0.
+Regressions after the change: 15 E2E suites green, tsc clean, go vet clean,
+go test 11/11, next build exit 0 (Vercel intact). Real dashboard deploy
+pending Cloudflare auth (one command: pnpm run deploy:vinext; root dir
+apps/web). ALSO: a manual test account was created via the auth API for 3D
+testing (credentials shared with the owner in chat ONLY — never committed). STOP per directive.
 
 
 COMPLETED (session 52 â€” TASK 53 3D hierarchy):
@@ -107,6 +102,53 @@ BLOCKED: nothing technical. NOTE: git is not on PATH on this machine, so
 the uncommitted batch above cannot be committed until git is available.
 
 SESSION LOG:
+
+## Session 57 (2026-10-02)
+DATE: 2026-10-02
+COMMIT: (this session) Cloudflare Phase 1B — committed + pushed
+CURRENT PHASE: Cloudflare Workers Web Deployment - Phase 1B
+CURRENT FEATURE: explicit vinext/Wrangler configuration for apps/web
+COMPLETED THIS SESSION:
+- vinext check in apps/web: 87% compatible, NO blockers (2 partial:
+  next/font/google CDN fonts, App Router strict-mode wrapping)
+- vinext init --platform=cloudflare: generated apps/web/wrangler.jsonc
+  (Worker `web`, fetch-handler, nodejs_compat, assets dist/client, IMAGES),
+  apps/web/vite.config.ts (vinext + CF vite plugin), apps/web/.gitignore,
+  scripts dev:vinext/build:vinext/start:vinext/deploy:vinext (dev/build/
+  start untouched), react 19.1.0 -> 19.3.0, "type": "module"
+- pnpm-workspace.yaml allowBuilds placeholders completed (esbuild true,
+  workerd true; sharp false kept) — build scripts now run
+- pnpm install (root) clean; workspace:* intact; no monorepo flattening
+- pnpm approve path: esbuild/workerd postinstall ran via allowBuilds
+VERIFIED THIS SESSION: build:vinext exit 0 (32 routes, dist/client+server);
+start:vinext Workers preview on :8787 + browser verification 12/12
+(scripts/verify-cf-preview.mjs: landing/login/register/pricing/explore/docs
+render, header nav, builder fallback without backend, ZERO pageerror, ZERO
+hydration errors; API-connection refusals are the only console errors and
+are expected — backend intentionally not deployed); wrangler deploy
+--dry-run exit 0 (202 modules); regressions after change: 15 E2E suites
+green (controller 35, material-lighting 42, gizmos 34, physics 24,
+foundation 18, hierarchy 17, tilemap 44, input-actions 32, camera 34,
+particles 22, state-machine 20, 2d-lighting 19, sprite 18, gameplay 21,
+sorting 19, motion 11), tsc clean, go vet clean, go test 11/11, next build
+exit 0 (Vercel intact). Evidence in STATUS.md 64 +
+docs/CLOUDFLARE_WEB_DEPLOYMENT.md.
+ALSO THIS SESSION: created a manual test account via the auth API for the
+owner to try the 3D features (credentials shared in chat only, NOT in the
+repo); PostgreSQL restarted after machine memory-pressure kill.
+TEST RESULTS: go test -count=1 ./... -> ok 11/11 packages with tests.
+E2E RESULTS (this session): controller 35/0; lighting 42/0; gizmos 34/0;
+physics 24/0; foundation 18/0; hierarchy 17/0; tilemap 44/0; input-actions
+32/0; camera 34/0; particles 22/0; state-machine 20/0; 2d-lighting 19/0;
+sprite 18/0; gameplay 21/0; sorting 19/0; motion 11/0.
+KNOWN LIMITATIONS: Workers deployment has NO backend (auth flows fail until
+the Go API phase — not faked); vinext is 1.0.0-beta; next/font/google uses
+CDN fonts; Worker name `web` (generated); real dashboard deploy pending
+Cloudflare account auth.
+CURRENT BLOCKERS: Cloudflare deploy needs the owner's Cloudflare account
+authentication (dashboard login or wrangler login).
+NEXT EXACT TASK: STOP - awaiting approval; Cloudflare dashboard deploy or
+TASK 58.
 
 ## Session 56 (2026-09-27)
 DATE: 2026-09-27

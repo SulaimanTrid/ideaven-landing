@@ -3799,3 +3799,49 @@ collision = a playable 3D scene. Full record in
 
 STOP per the directive — await explicit approval before TASK 58.
 
+## 64. Cloudflare Workers Web Deployment — Phase 1B (explicit vinext/Wrangler config)
+
+The Cloudflare deployment failure (`npm error Unsupported URL Type
+"workspace:"`) came from automatic framework detection running npm against
+the pnpm workspace. Fix: an EXPLICIT, toolchain-generated Workers
+configuration inside **apps/web** — the monorepo, `workspace:*`, the Go API,
+PostgreSQL, and Vercel were not touched. Full record in
+`docs/CLOUDFLARE_WEB_DEPLOYMENT.md`.
+
+- `pnpm dlx vinext check` (apps/web): **87% compatible, no blockers**
+  (partial: next/font/google CDN fonts; App Router strict-mode wrapping).
+- `vinext init --platform=cloudflare` generated `apps/web/wrangler.jsonc`
+  (Worker `web`, fetch-handler, `nodejs_compat`, assets dist/client, Images
+  binding), `apps/web/vite.config.ts` (vinext + Cloudflare Vite plugin),
+  `apps/web/.gitignore`, and scripts `dev:vinext` / `build:vinext` /
+  `start:vinext` / `deploy:vinext` — existing `dev`/`build`/`start`/`check`
+  untouched. `pnpm-workspace.yaml` allowBuilds placeholders completed with
+  real values (`esbuild: true`, `workerd: true`).
+- react/react-dom 19.1.0 → 19.3.0 (vinext RSC requirement;
+  `next dev`/`next build` verified green on 19.3.0). `"type": "module"`
+  added. `workspace:*` intact; `pnpm install` from root works.
+- Workers verification: `build:vinext` exit 0 (32 routes); `start:vinext`
+  preview on :8787 verified in a real browser (12/12: landing/login/
+  register/pricing/explore/docs render, navigation, builder fallback without
+  backend, zero pageerror + zero hydration errors; API-connection refusals
+  are the only console errors and are expected — the Go API is intentionally
+  not deployed for Workers yet); `wrangler deploy --dry-run` exit 0.
+- Full regression after the change: 15 E2E suites green (35/42/34/24/18/17
+  3D suites + 2D), `tsc` clean, `go vet` clean, `go test` 11/11, `next build`
+  exit 0.
+- Real dashboard deploy is pending Cloudflare authentication (one command:
+  `pnpm run deploy:vinext`; dashboard: root directory `apps/web`, deploy
+  command `pnpm run deploy:vinext`, no framework-detection overrides). The
+  acceptance checklist lives in the task doc §10.
+
+### Honest notes (Cloudflare Phase 1B)
+
+- The Workers deployment has NO backend yet — authenticated flows
+  intentionally do not work there (not faked).
+- vinext 1.0.0-beta.12 / wrangler 4.141.0; Worker name `web` (generated).
+
+### Next exact task
+
+Cloudflare dashboard deploy (needs account auth) or the next directive task
+— await explicit approval.
+
