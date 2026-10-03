@@ -1,26 +1,20 @@
 NEXT_TASK:
-STOP - awaiting explicit approval per the TASK 58 directive. Queued:
-TASK 59 onward (builder deepening or the next master-priority system).
+STOP - awaiting explicit approval per the TASK 59 directive. Queued:
+TASK 60 onward.
 
 FILES / MODULES TO CONTINUE FROM:
-- apps/web/src/app/builder/[id]/builder/canvas.tsx (TASK 58: measured-unit
-  one-scale-owner viewport + is3d full-surface shell + identity chip +
-  empty states calling actions.insertNew)
-- apps/web/src/app/builder/[id]/builder/top-bar.tsx (3-zone header: brand
-  shrink-0 / nav flex-1 scrollable / actions flex-1 scrollable)
-- apps/web/src/app/builder/[id]/builder/diagnostics-panel.tsx (scrollable
-  tab row - the 390px overflow fix)
-- apps/web/src/app/builder/[id]/builder/blocks-visual.tsx (BLOCK_ICON_PATHS
-  all 34 built-ins + CATEGORY_FALLBACK_ICONS + blockIconPath resolution)
-- apps/web/src/app/builder/[id]/builder/palette.tsx (3D projects surface
-  ONLY 3D Objects; game surfaces Game Entities)
-- scripts/e2e-builder-shell-integrity.mjs (35 checks - the shell gate)
-- apps/web/src/lib/character3d.ts (TASK 57 controller)
-- apps/web/src/lib/render3d.ts (renderer + shading + gizmos + mat4Invert)
-- apps/web/src/components/runtime/viewport-3d.tsx (physics/controller/gizmos)
-- apps/api/internal/project/export.go (vanilla mirrors)
-- apps/web/wrangler.jsonc + vite.config.ts (CF Phase 1B config)
-- docs/TASK51..58 + docs/CLOUDFLARE_WEB_DEPLOYMENT.md
+- apps/web/src/app/dashboard/projects/new/create-project-client.tsx (TASK 59
+  Creation Hub: 3 environment cards, canonical type flow, duplicate guard)
+- apps/web/src/app/builder/[id]/builder/top-bar.tsx (engine identity chip +
+  environment menu + cross-navigation confirm dialog)
+- apps/web/src/lib/project-meta.ts (engineIdentityLabel)
+- apps/web/src/components/visuals/icons.tsx (IconCube3D)
+- apps/web/src/app/builder/[id]/builder/canvas.tsx (TASK 58 scaling + APP/
+  GAME/3D empty states via actions.insertNew)
+- apps/web/src/app/builder/[id]/builder/blocks-visual.tsx (block icons)
+- scripts/e2e-engine-launcher.mjs (31 checks - the launcher gate)
+- scripts/e2e-builder-shell-integrity.mjs (35 checks - TASK 58 gate)
+- docs/TASK59_ENGINE_LAUNCHER.md + docs/TASK51..58
 - docs/DESIGN.md (the visual constitution - read before any UI/copy work)
 # IDEAVEN PROGRESS STATE â€” portable development handoff
 
@@ -28,7 +22,7 @@ FILES / MODULES TO CONTINUE FROM:
 > The repository is the source of truth; this file only points at it.
 
 CURRENT_DATE: 2026-10-03
-CURRENT_COMMIT: d013881 (feat(builder): TASK 58 shell integrity - one-scale-owner viewport, model.type shell routing, header 3-zone no-overlap, diagnostics 390px fix, complete block icon set, 3D/game palette isolation, canonical empty states)
+CURRENT_COMMIT: db8812b (docs: record TASK 58 session 58 in progress handoffs)
 PUSHED: YES — origin/main = 190a3f4 (https://github.com/SulaimanTrid/ideaven-landing.git), fully up to date as of 2026-09-27.
 CURRENT_BRANCH: main
 
@@ -119,6 +113,48 @@ BLOCKED: nothing technical. NOTE: git is not on PATH on this machine, so
 the uncommitted batch above cannot be committed until git is available.
 
 SESSION LOG:
+
+## Session 59 (2026-10-03)
+DATE: 2026-10-03
+COMMIT: (session commit) TASK 59 Engine Launcher + Creation Hub - pushed
+CURRENT PHASE: Product Entry Flow - TASK 59 Engine Launcher + Creation Hub
+CURRENT FEATURE: discoverable entry points for App / 2D Game / 3D Game
+COMPLETED THIS SESSION:
+- create-project-client.tsx: rewritten as the Creation Hub - three
+  environment cards (Application / 2D Game / 3D Game) with icons, honest
+  env labels (3D ENGINE - FOUNDATION AVAILABLE), capability chips,
+  lightweight previews derived from the real visual language, Start
+  actions; canonical type flow (app/game/3d) into projectApi.create;
+  creatingRef duplicate guard; real ApiError surfacing
+- FIXED ROOT CAUSE: the wizard's 3D choice never changed the created type
+  (gameDimension local state never sent) - users choosing 3D got type game;
+  stale "3D in development" notice removed
+- top-bar.tsx: engine identity chip (data-engine-identity, engineIdentity-
+  Label: APP / 2D GAME / 3D GAME) + environment menu (creation navigator):
+  choosing another environment opens a confirm dialog and creates a NEW
+  project via projectApi.create (loading/disabled/error states); current
+  project never mutated
+- project-meta.ts: engineIdentityLabel; icons.tsx: IconCube3D
+- canvas.tsx: app empty state (Button/Text/Image via actions.insertNew);
+  game empty state consolidated into screenRoot
+- e2e-engine-launcher.mjs (new)
+VERIFIED THIS SESSION: e2e-engine-launcher 31/31 NEW; regressions 16 suites
+green (shell-integrity 35, character-controller 35, material-lighting 42,
+gizmos 34, physics 24, foundation 18, hierarchy 17, tilemap 44,
+input-actions 32, camera 34, particles 22, state-machine 20, 2d-lighting
+19, sprite-animation 18, gameplay 21, sorting 19, motion 11); tsc clean;
+go vet clean; go test 11/11 packages with tests; next build exit 0;
+build:vinext exit 0. Evidence in STATUS.md 66 + docs/TASK59_ENGINE_LAUNCHER.md.
+TEST RESULTS: go test -count=1 ./... -> ok 11/11 packages with tests.
+E2E RESULTS: engine-launcher 31/0; shell-integrity 35/0; controller 35/0;
+lighting 42/0; gizmos 34/0; physics 24/0; foundation 18/0; hierarchy 17/0;
+tilemap 44/0; input-actions 32/0; camera 34/0; particles 22/0; state-machine
+20/0; 2d-lighting 19/0; sprite 18/0; gameplay 21/0; sorting 19/0; motion 11/0.
+KNOWN LIMITATIONS: AI start still Coming soon (honest badge); 3D card states
+Foundation available only; environment menu creates anonymous-name projects
+(rename in builder); no import paths.
+CURRENT BLOCKERS: none.
+NEXT EXACT TASK: STOP - awaiting approval; queued TASK 60.
 
 ## Session 58 (2026-10-03)
 DATE: 2026-10-03

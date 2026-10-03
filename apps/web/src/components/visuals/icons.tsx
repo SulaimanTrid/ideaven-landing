@@ -160,6 +160,17 @@ export function IconGamepad(props: IconProps) {
   );
 }
 
+/** TASK 59: isometric cube — the 3D Game engine identity, visually distinct
+ * from the 2D gamepad. Same hand-drawn stroke language. */
+export function IconCube3D(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3 20 7.25v9.5L12 21l-8-4.25v-9.5L12 3Z" />
+      <path d="M4.4 7.4 12 11.5l7.6-4.1M12 11.5V21" />
+    </Svg>
+  );
+}
+
 export function IconAppWindow(props: IconProps) {
   return (
     <Svg {...props}>

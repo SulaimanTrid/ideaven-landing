@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, ButtonLink, Chip } from "@ideaven/ui";
@@ -13,27 +13,116 @@ import {
   IconArrowRight,
   IconBlocks,
   IconChevronLeft,
+  IconCube3D,
   IconGamepad,
   IconSparkle,
 } from "@/components/visuals/icons";
 
 /**
- * Project creation: WHAT do you want to build (app/game) → HOW do you want to
- * start (blank today; templates and AI are marked, not faked) → details.
- * Creating posts to the API, which persists a real project with its initial
- * canonical model, then routes into the project workspace.
+ * TASK 59 — the Creation Hub: ONE canonical entry flow for the three real
+ * creation environments (Application / 2D Game / 3D Game). Choosing an
+ * environment sets the CANONICAL project type; creation posts that exact
+ * type to the API and routes into the existing builder for it. The 3D
+ * status is honest (foundation available) without being apologetic.
  */
 
-type CreationMethod = "blank" | "template" | "ai";
-type GameDimension = "2d" | "3d" | null;
+type CreationMethod = "blank" | "template";
+
+interface EnvironmentCard {
+  type: ProjectType;
+  label: string;
+  envLabel: string;
+  title: string;
+  description: string;
+  chips: string[];
+  action: string;
+  icon: React.ReactNode;
+  preview: React.ReactNode;
+}
+
+const ENVIRONMENTS: EnvironmentCard[] = [
+  {
+    type: "app",
+    label: "CREATION ENVIRONMENT",
+    envLabel: "App Builder",
+    title: "Application",
+    description:
+      "Build interactive apps and tools with visual components, logic, blocks, and code.",
+    chips: ["UI Components", "Blocks", "Code", "Navigation", "Device Preview"],
+    action: "Start App",
+    icon: <IconAppWindow size={24} />,
+    preview: (
+      <div aria-hidden="true" className="h-24 w-full overflow-hidden rounded-lg border border-line bg-white text-[#0b0e16]">
+        <div className="flex items-center gap-1 border-b border-line bg-[#f3f5f9] px-2 py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#c9cede]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#c9cede]" />
+          <span className="ml-1 h-2 w-16 rounded-sm bg-[#e3e6ee]" />
+        </div>
+        <div className="flex flex-col gap-1.5 p-2.5">
+          <span className="h-3 w-24 rounded-sm bg-[#5743d9]" />
+          <span className="h-2 w-full rounded-sm bg-[#e3e6ee]" />
+          <span className="h-2 w-4/5 rounded-sm bg-[#e3e6ee]" />
+          <span className="mt-1 flex items-center gap-1.5">
+            <span className="h-4 w-14 rounded-md bg-[#5743d9]/85" />
+            <span className="h-4 w-10 rounded-md border border-[#c9cede] bg-white" />
+          </span>
+        </div>
+      </div>
+    ),
+  },
+  {
+    type: "game",
+    label: "2D GAME ENGINE · AVAILABLE",
+    envLabel: "2D Game Engine",
+    title: "2D Game",
+    description:
+      "Build playable 2D games with sprites, scenes, physics, animation, effects, and visual logic.",
+    chips: ["Scenes", "Sprites", "Physics", "Animation", "Blocks"],
+    action: "Start 2D Game",
+    icon: <IconGamepad size={24} />,
+    preview: (
+      <div aria-hidden="true" className="relative h-24 w-full overflow-hidden rounded-lg border border-violet/30 bg-[#0c0f17] [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.06)_1px,transparent_0)] [background-size:14px_14px]">
+        <span className="absolute left-2 top-2 h-2 w-8 rounded-sm bg-[#46e3b4]/70" />
+        <span className="absolute bottom-3 left-0 h-2.5 w-16 rounded-sm bg-[#2a3348]" />
+        <span className="absolute bottom-6 left-14 h-2.5 w-12 rounded-sm bg-[#2a3348]" />
+        <span className="absolute bottom-[38px] left-6 h-4 w-4 rounded-sm bg-[#46e3b4]" />
+        <span className="absolute right-8 top-6 h-3.5 w-3.5 rotate-45 rounded-[3px] bg-[#f0b429]" />
+        <span className="absolute left-2 top-2 rounded border border-violet/40 px-1 font-mono text-[7px] uppercase tracking-[0.14em] text-violet">
+          scene
+        </span>
+      </div>
+    ),
+  },
+  {
+    type: "3d",
+    label: "3D ENGINE · FOUNDATION AVAILABLE",
+    envLabel: "3D Game Engine",
+    title: "3D Game",
+    description:
+      "Build 3D scenes and playable experiences with real 3D objects, cameras, lighting, physics, transforms, and character control.",
+    chips: ["3D Scene", "Cube / Sphere / Plane", "Camera", "Lighting", "Physics", "Controller"],
+    action: "Start 3D Game",
+    icon: <IconCube3D size={24} />,
+    preview: (
+      <div aria-hidden="true" className="relative h-24 w-full overflow-hidden rounded-lg border border-line bg-[#0c0f17]">
+        <span className="absolute bottom-4 left-1/2 h-8 w-28 -translate-x-1/2 rounded-sm bg-[#2a3348]" />
+        <span className="absolute bottom-[52px] left-1/2 h-7 w-7 -translate-x-1/2 rotate-12 rounded-[4px] bg-[#58c7f0]/85 shadow-[8px_6px_0_-1px_rgb(46_114_158/0.55)]" />
+        <span className="absolute right-5 top-4 h-2 w-2 rounded-full bg-[#ffd9a0] shadow-[0_0_14px_4px_rgb(255_217_160/0.35)]" />
+        <span aria-hidden className="absolute left-2 top-2 h-3 w-3 rounded-tl border-l border-t border-violet/40" />
+        <span aria-hidden className="absolute bottom-2 right-2 h-3 w-3 rounded-br border-b border-r border-violet/40" />
+      </div>
+    ),
+  },
+];
 
 export function CreateProjectClient() {
   const router = useRouter();
+  /** `creatingRef` guards double activation (click + Enter) at the source. */
+  const creatingRef = useRef(false);
 
-  const [step, setStep] = useState<1 | 2 | 3 | 12>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [projectType, setProjectType] = useState<ProjectType | null>(null);
-  const [gameDimension, setGameDimension] = useState<GameDimension>(null);
-  const [method, setMethod] = useState<CreationMethod | null>(null);
+  const [method, setMethod] = useState<"blank" | "template" | null>(null);
   const [templates, setTemplates] = useState<TemplateBrief[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateBrief | null>(null);
 
@@ -43,8 +132,11 @@ export function CreateProjectClient() {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
+  const environment = ENVIRONMENTS.find((e) => e.type === projectType);
+
   const create = async () => {
-    if (!projectType) return;
+    if (!projectType || creatingRef.current) return;
+    creatingRef.current = true;
     setError(null);
     setFieldError(null);
     setCreating(true);
@@ -57,6 +149,8 @@ export function CreateProjectClient() {
       });
       router.push(`/builder/${project.id}`);
     } catch (err) {
+      creatingRef.current = false;
+      setCreating(false);
       if (err instanceof ApiError) {
         const fieldMessage = err.fieldError("name") ?? err.fieldError("type");
         if (fieldMessage) setFieldError(fieldMessage);
@@ -64,19 +158,24 @@ export function CreateProjectClient() {
       } else {
         setError("Could not create the project. Check your connection and try again.");
       }
-      setCreating(false);
     }
   };
 
+  const chooseEnvironment = (type: ProjectType) => {
+    setProjectType(type);
+    setMethod(null);
+    setSelectedTemplate(null);
+    setStep(2);
+  };
+
   return (
-    <div className="relative mx-auto w-full max-w-4xl px-4 pt-10 pb-24 sm:px-6 lg:pt-14">
+    <div className="relative mx-auto w-full max-w-5xl px-4 pt-10 pb-24 sm:px-6 lg:pt-14">
       <div
         aria-hidden="true"
         className="bg-dots pointer-events-none absolute inset-x-0 top-0 h-80 [mask-image:radial-gradient(70%_100%_at_50%_0%,black,transparent)]"
       />
 
       <div className="relative">
-        {/* Breadcrumb */}
         <Link
           href="/dashboard/projects"
           className="inline-flex items-center gap-1.5 text-[13px] text-mist transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
@@ -86,49 +185,34 @@ export function CreateProjectClient() {
         </Link>
 
         {step === 1 ? (
-          <section aria-labelledby="create-what" className="mt-8">
+          <section aria-labelledby="create-hub" className="mt-8">
             <Chip tone="violet">Create Project</Chip>
-            <h1 id="create-what" className="mt-5 text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-              What do you want to build?
+            <h1 id="create-hub" className="mt-5 text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+              Choose your creation environment
             </h1>
-            <p className="mt-3 max-w-xl text-pretty text-lg leading-8 text-fog">
-              Pick a starting point. You can switch techniques — blocks or real code — at any
-              time inside the project.
+            <p className="mt-3 max-w-2xl text-pretty text-lg leading-8 text-fog">
+              Three real engines, one workflow. Each opens its own builder — the
+              project you create keeps that environment.
             </p>
 
-            <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TypeCard
-                title="App"
-                description="Tools, utilities, interactive pages — anything with a screen, buttons, and logic."
-                icon={<IconAppWindow size={26} />}
-                onSelect={() => {
-                  setProjectType("app");
-                  setStep(2);
-                }}
-              />
-              <TypeCard
-                title="Game"
-                description="Gameplay, scenes, scores, and interaction — built visually, playable instantly."
-                icon={<IconGamepad size={26} />}
-                onSelect={() => {
-                  setProjectType("game");
-                  setGameDimension(null);
-                  setStep(12);
-                }}
-              />
+            <div className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-3">
+              {ENVIRONMENTS.map((env) => (
+                <EnvironmentCardView
+                  key={env.type}
+                  env={env}
+                  onStart={() => chooseEnvironment(env.type)}
+                />
+              ))}
             </div>
 
-            <div className="mt-6">
+            <div className="mt-8">
               <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">More kinds</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {PROJECT_TYPES.filter((t) => !isFlagshipType(t)).map((t) => (
+                {PROJECT_TYPES.filter((t) => !isFlagshipType(t) && t !== "3d").map((t) => (
                   <button
                     key={t}
                     type="button"
-                    onClick={() => {
-                      setProjectType(t);
-                      setStep(2);
-                    }}
+                    onClick={() => chooseEnvironment(t)}
                     className="rounded-full border border-line bg-card px-3 py-1.5 text-[12.5px] text-fog transition-colors hover:border-violet/50 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
                   >
                     {projectTypeLabel(t)}
@@ -136,58 +220,16 @@ export function CreateProjectClient() {
                 ))}
               </div>
             </div>
-          </section>
-        ) : null}
 
-        {step === 12 && projectType === "game" ? (
-          <section aria-labelledby="create-dim" className="mt-8">
-            <Chip tone="violet">New Game</Chip>
-            <h1 id="create-dim" className="mt-5 text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-              2D or 3D?
-            </h1>
-            <p className="mt-3 max-w-xl text-pretty text-lg leading-8 text-fog">
-              Pick the dimension you want to work in.
+            <p className="mt-10 text-[13px] text-mist">
+              Not sure yet? Browse <ButtonLink variant="ghost" size="sm" href="/dashboard/templates" className="px-1">templates</ButtonLink> for inspiration.
             </p>
-            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TypeCard
-                title="2D"
-                description="Sprites, scenes, scores, and gameplay — fully supported today. Pick a template or start blank."
-                icon={<IconAppWindow size={26} />}
-                onSelect={() => {
-                  setGameDimension("2d");
-                  setStep(2);
-                }}
-              />
-              <TypeCard
-                title="3D"
-                description="Foundation in development — the 2D tooling is fully available today, and 3D scenes build on the same blocks."
-                icon={<IconGamepad size={26} />}
-                onSelect={() => {
-                  setGameDimension("3d");
-                  setStep(2);
-                }}
-              />
-            </div>
-            {gameDimension === "3d" ? (
-              <p className="mt-6 rounded-xl border border-amber/40 bg-amber/10 px-4 py-3 text-[13px] leading-6 text-amber" role="note">
-                Honest status: 3D scenes are the next engine milestone — today you can
-                build and play the 2D workflow end to end. Your project can adopt 3D
-                scenes when the foundation lands.
-              </p>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="mt-6 text-[13px] text-mist transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
-            >
-              ← Change project type
-            </button>
           </section>
         ) : null}
 
         {step === 2 ? (
           <section aria-labelledby="create-how" className="mt-8">
-            <Chip tone="violet">New {projectType ? projectTypeLabel(projectType) : "Project"}{gameDimension === "3d" ? " · 3D (foundation)" : ""}</Chip>
+            <Chip tone="violet">New {projectType ? projectTypeLabel(projectType) : "Project"}</Chip>
             <h1 id="create-how" className="mt-5 text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
               How do you want to start?
             </h1>
@@ -228,7 +270,7 @@ export function CreateProjectClient() {
                   ) : templates.filter((t) => t.type === projectType).length === 0 ? (
                     <p className="mt-3 text-[13px] text-fog">
                       No {projectType ? projectTypeLabel(projectType).toLowerCase() : ""} templates yet —
-                      start blank (or with AI) and it works the same.
+                      start blank and it works the same.
                     </p>
                   ) : (
                     <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -279,7 +321,7 @@ export function CreateProjectClient() {
               className="mt-8 inline-flex items-center gap-1.5 text-[13px] text-mist transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
             >
               <IconChevronLeft size={14} />
-              Change project type
+              Change environment
             </button>
           </section>
         ) : null}
@@ -311,7 +353,7 @@ export function CreateProjectClient() {
                   onChange={(event) => setName(event.target.value)}
                   maxLength={80}
                   autoFocus
-                  placeholder={projectType === "game" ? "e.g. Sky Jumper" : "e.g. Habit Tracker"}
+                  placeholder={projectType === "3d" ? "e.g. Cube Runner" : projectType === "game" ? "e.g. Sky Jumper" : "e.g. Habit Tracker"}
                   aria-invalid={Boolean(fieldError) || undefined}
                   aria-describedby={fieldError ? "project-name-error" : undefined}
                   className="h-11 w-full rounded-lg border border-line bg-panel px-3.5 text-[15px] text-ink transition-colors placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
@@ -346,7 +388,9 @@ export function CreateProjectClient() {
 
               <div className="flex items-center gap-3">
                 <Button type="submit" size="lg" disabled={creating || name.trim() === ""}>
-                  {creating ? "Creating…" : "Create project"}
+                  {creating
+                    ? `Creating ${environment ? environment.title.toLowerCase() : "project"}…`
+                    : "Create project"}
                   {!creating ? <IconArrowRight size={16} /> : null}
                 </Button>
                 <button
@@ -362,45 +406,53 @@ export function CreateProjectClient() {
             </form>
           </section>
         ) : null}
-
-        {step === 1 ? (
-          <p className="mt-10 text-[13px] text-mist">
-            Not sure yet? Browse <ButtonLink variant="ghost" size="sm" href="/dashboard/templates" className="px-1">templates</ButtonLink> for inspiration.
-          </p>
-        ) : null}
       </div>
     </div>
   );
 }
 
-/** Selectable project-type card for step 1. */
-function TypeCard({
-  title,
-  description,
-  icon,
-  onSelect,
-}: {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  onSelect: () => void;
-}) {
+/** One creation-environment card: icon, honest env label, capability chips,
+ * a preview derived from the real system, and the Start action. */
+function EnvironmentCardView({ env, onStart }: { env: EnvironmentCard; onStart: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="group flex flex-col items-start gap-3 rounded-2xl border border-line bg-card p-6 text-left transition-colors hover:border-violet/50 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+    <article
+      aria-label={`${env.title} creation environment`}
+      className="flex flex-col gap-4 rounded-2xl border border-line bg-card p-5 transition-colors hover:border-violet/40"
     >
-      <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-deep/20 text-violet transition-colors group-hover:bg-violet-deep/30">
-        {icon}
-      </span>
-      <span className="text-lg font-semibold tracking-tight">{title}</span>
-      <span className="text-sm leading-6 text-fog">{description}</span>
-      <span className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-medium text-violet">
-        Choose {title.toLowerCase()}
-        <IconArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
-      </span>
-    </button>
+      <div className="flex items-center justify-between">
+        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-deep/20 text-violet">
+          {env.icon}
+        </span>
+        <span className="font-mono text-[9px] tracking-[0.16em] text-mist uppercase">{env.label}</span>
+      </div>
+
+      {env.preview}
+
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">{env.title}</h2>
+        <p className="mt-1.5 text-[13.5px] leading-6 text-fog">{env.description}</p>
+      </div>
+
+      <ul className="flex flex-wrap gap-1.5" aria-label={`${env.title} capabilities`}>
+        {env.chips.map((chip) => (
+          <li
+            key={chip}
+            className="rounded-full border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-fog"
+          >
+            {chip}
+          </li>
+        ))}
+      </ul>
+
+      <button
+        type="button"
+        onClick={onStart}
+        className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-violet/40 bg-violet/10 px-4 py-2.5 text-[13.5px] font-medium text-violet transition-colors hover:bg-violet/20 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+      >
+        {env.action}
+        <IconArrowRight size={15} />
+      </button>
+    </article>
   );
 }
 

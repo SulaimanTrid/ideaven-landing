@@ -444,13 +444,59 @@ export function BuilderCanvas() {
               }}
             >
               {screen.components.length === 0 ? (
-                <div
-                  aria-hidden="true"
-                  className="flex flex-1 select-none items-center justify-center p-8 text-center text-[13px] leading-6"
-                  style={{ color: "#9aa1b2" }}
-                >
-                  {t("builder.dragComponents")}
-                </div>
+                isGame ? (
+                  <div className="flex flex-1 select-none flex-col items-center justify-center gap-3 p-8">
+                    <p className="text-center text-[13px] font-medium leading-6 text-[#c9cede]">
+                      Create your first game object
+                    </p>
+                    <div className="flex gap-1.5">
+                      {(["player", "sprite", "platform"] as const).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            actions.insertNew(type, {
+                              screenId: screen.id,
+                              parentId: null,
+                              index: screen.components.length,
+                            });
+                          }}
+                          className="rounded-lg border border-line bg-[#12151f] px-3 py-1.5 text-[12px] font-medium text-[#c9cede] transition-colors hover:border-violet hover:text-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+                        >
+                          {type === "player" ? "Player" : type === "sprite" ? "Sprite" : "Platform"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10.5px] leading-4 text-[#9aa1b2]">or drag from Game Entities</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-1 select-none flex-col items-center justify-center gap-3 p-8">
+                    <p className="text-center text-[13px] font-medium leading-6 text-[#9aa1b2]">
+                      Create your first component
+                    </p>
+                    <div className="flex gap-1.5">
+                      {(["button", "text", "image"] as const).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            actions.insertNew(type, {
+                              screenId: screen.id,
+                              parentId: null,
+                              index: screen.components.length,
+                            });
+                          }}
+                          className="rounded-lg border border-line bg-panel px-3 py-1.5 text-[12px] font-medium text-fog transition-colors hover:border-violet hover:text-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+                        >
+                          {type === "button" ? "Button" : type === "text" ? "Text" : "Image"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10.5px] leading-4 text-[#9aa1b2]">or drag from User Interface</p>
+                  </div>
+                )
               ) : isScene ? (
                 <SceneEditor screen={screen} scale={scale} snap={snap} tool={sceneTool} activeTile={safeActiveTile} showSorting={showSorting} />
               ) : (
@@ -523,33 +569,6 @@ export function BuilderCanvas() {
                   >
                     scene · {screen.name}
                   </span>
-                  {screen.components.length === 0 ? (
-                    <div className="flex h-full flex-col items-center justify-center gap-3">
-                      <p className="text-[13px] font-medium text-[#c9cede]">Create your first game object</p>
-                      <div className="flex gap-1.5">
-                        {(["player", "sprite", "platform"] as const).map((type) => (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              actions.insertNew(type, {
-                                screenId: screen.id,
-                                parentId: null,
-                                index: screen.components.length,
-                              });
-                            }}
-                            className="rounded-lg border border-line bg-[#12151f] px-3 py-1.5 text-[12px] font-medium text-[#c9cede] transition-colors hover:border-violet hover:text-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
-                          >
-                            {type === "player" ? "Player" : type === "sprite" ? "Sprite" : "Platform"}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-[10.5px] leading-4 text-[#9aa1b2]">
-                        or drag from Game Entities in the palette
-                      </p>
-                    </div>
-                  ) : null}
                   {screenRoot}
                 </div>
                 </ViewportFrame>

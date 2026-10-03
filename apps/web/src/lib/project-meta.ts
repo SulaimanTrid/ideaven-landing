@@ -31,5 +31,14 @@ export function projectTypeLabel(type: string): string {
 
 /** Whether the type has a guided creation card + templates today. */
 export function isFlagshipType(type: string): boolean {
-  return type === "app" || type === "game";
+  return type === "app" || type === "game" || type === "3d";
+}
+
+/** TASK 59: the BUILDER engine identity for a project type — short, visible,
+ * and honest about which environment the builder opens. */
+export function engineIdentityLabel(type: string): string {
+  if (type === "3d") return "3D GAME";
+  if (type === "game") return "2D GAME";
+  if (type === "app") return "APP";
+  return projectTypeLabel(type).toUpperCase();
 }

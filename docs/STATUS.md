@@ -3916,3 +3916,58 @@ record in docs/TASK58_BUILDER_SHELL_INTEGRITY.md.
 ### Next exact task
 
 STOP per the directive - await explicit approval before TASK 59.
+
+
+## 66. TASK 59 - Engine Launcher + Creation Hub
+
+The three REAL creation engines (Application / 2D Game / 3D Game) now have an
+intentional product front door. Full record in docs/TASK59_ENGINE_LAUNCHER.md.
+
+- **Root cause fixed**: the creation wizard's 3D choice stored gameDimension
+  locally but create() still posted 	ype: "game" - users choosing 3D got
+  2D projects; the 3D card was stale ("Foundation in development"); the
+  builder had no engine identity.
+- **Creation Hub** (rewritten /dashboard/projects/new): three environment
+  cards (Application / 2D Game / 3D Game) with icons, honest env labels
+  (3D ENGINE - FOUNDATION AVAILABLE), capability chips (real capabilities
+  only), lightweight previews derived from the actual visual language, and
+  Start actions. 	ype flows canonically into projectApi.create.
+- **Duplicate prevention + real errors**: creatingRef guard + disabled
+  button (one intent = one project); ApiError field errors surface; injected
+  500 keeps the user on the hub with the environment preserved.
+- **Builder engine identity**: [ 2D GAME ] / [ 3D GAME ] / [ APP ]
+  chip (data-engine-identity) + environment menu - a CREATION NAVIGATOR:
+  choosing another environment opens a confirm dialog and creates a NEW
+  project (current project never mutated; screens JSON verified unchanged);
+  current environment disabled; Escape/outside-click close.
+- **App empty state**: Create your first component [Button][Text][Image] via
+  actions.insertNew (game empty state consolidated into screenRoot).
+- **Icon**: new IconCube3D (isometric cube, same stroke language) for the 3D
+  engine identity.
+
+### Verified (session 59)
+
+- e2e-engine-launcher.mjs **31/31**: hub opens from the dashboard; three
+  cards + Start actions; Start App/2D/3D create the correct canonical types
+  (API-verified) and open the correct builders; engine identity per type;
+  reload persistence; environment menu (current disabled); cross-navigation
+  creates a NEW project while the current screens JSON stays byte-identical;
+  double activation creates exactly one; injected 500 shows a real error on
+  the hub; responsive 390/768/1024/1280; keyboard reachability + Enter +
+  Escape.
+- Regressions (16 suites): shell-integrity 35/35, character-controller
+  35/35, material-lighting 42/42, gizmos 34/34, physics 24/24, foundation
+  18/18, hierarchy 17/17, tilemap 44/44, input-actions 32/32, camera 34/34,
+  particles 22/22, state-machine 20/20, 2d-lighting 19/19, sprite-animation
+  18/18, gameplay 21/21, sorting 19/19, motion 11/11. tsc clean; go vet
+  clean; go test 11/11; next build exit 0; build:vinext exit 0.
+
+### Honest notes (TASK 59)
+
+- AI-generated start remains Coming soon (honest badge); 3D card states
+  Foundation available (no AAA/PBR/terrain claims); environment menu creates
+  projects with anonymous names (rename in builder).
+
+### Next exact task
+
+STOP per the directive - await explicit approval before TASK 60.

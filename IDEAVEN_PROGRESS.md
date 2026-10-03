@@ -933,3 +933,40 @@ providers, i18n coverage expansion, accessibility audit.
   builder at 390px is a compressed desktop shell (no dedicated mobile
   editor); extension blocks cannot ship custom icons yet.
 - STOP per directive — awaiting approval before TASK 59.
+
+## Session 59 addition (TASK 59 — Engine Launcher + Creation Hub)
+
+- The three REAL creation engines now have an intentional front door: the
+  Creation Hub at `/dashboard/projects/new` with three environment cards
+  (Application / 2D Game / 3D Game) — icons, honest env labels (3D ENGINE ·
+  FOUNDATION AVAILABLE), real capability chips, lightweight previews derived
+  from the actual visual language, and Start actions.
+- ROOT CAUSE FIXED: the old wizard's 3D choice stored a local flag that was
+  never sent — users choosing 3D got type "game" projects; the stale "3D in
+  development" notice is gone. `type` now flows canonically (app/game/3d)
+  into `projectApi.create` and the loaded `model.type` decides the engine
+  surface (no URL-only modes).
+- Builder engine identity: `[ APP / 2D GAME / 3D GAME ]` chip
+  (`data-engine-identity`, `engineIdentityLabel`) + environment menu — a
+  CREATION NAVIGATOR: choosing another environment opens a confirm dialog
+  and creates a NEW project (loading/disabled/error states); the current
+  project is never mutated (screens JSON verified byte-identical in E2E).
+- Duplicate prevention: `creatingRef` + disabled submit — one intent = one
+  project (E2E double-activation verified); real errors stay on the hub with
+  the environment preserved (injected-500 E2E).
+- App empty state: Create your first component [Button][Text][Image] via
+  `actions.insertNew`; game empty state consolidated into screenRoot.
+- New `IconCube3D` (isometric cube, same stroke language) for the 3D engine
+  identity.
+- Gates: e2e-engine-launcher NEW 31/31 (hub, three cards, Start App/2D/3D →
+  correct canonical types + builders, engine identity per type, reload
+  persistence, cross-navigation safety, duplicate prevention, injected-500
+  error handling, responsive 390–1280, keyboard Tab/Enter/Escape); 16
+  regression suites green (shell-integrity 35, controller 35, lighting 42,
+  gizmos 34, physics 24, foundation 18, hierarchy 17, tilemap 44,
+  input-actions 32, camera 34, particles 22, state-machine 20, lighting 19,
+  sprite 18, gameplay 21, sorting 19, motion 11); tsc clean; go vet clean;
+  go test 11/11; next build exit 0; build:vinext exit 0.
+- Honest: AI start remains Coming soon; 3D card claims Foundation available
+  only; environment menu creates anonymous-name projects.
+- STOP per directive — awaiting approval before TASK 60.

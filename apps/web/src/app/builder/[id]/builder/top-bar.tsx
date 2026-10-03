@@ -1,24 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/theme/theme-toggle";
 import { useI18n } from "@/lib/i18n/i18n";
-import { aiApi, type AICredits } from "@/lib/api";
+import { aiApi, projectApi, type AICredits } from "@/lib/api";
 import { CREDITS_UPDATED_EVENT } from "@/components/credits/credit-purchase-modal";
 import { Logo } from "@ideaven/ui";
 import { useBuilder } from "./builder-context";
 import { PublishButton } from "./publish-button";
 import { ExportButton } from "./export-button";
-import { IconHistory, IconImage, IconSparkle } from "@/components/visuals/icons";
-import { projectTypeLabel } from "@/lib/project-meta";
+import { IconAppWindow, IconArrowRight, IconCube3D, IconGamepad, IconHistory, IconImage, IconSparkle } from "@/components/visuals/icons";
+import { engineIdentityLabel } from "@/lib/project-meta";
 
 /**
- * Builder top bar: identity (back, logo, project, type), the Design/Blocks/
- * Code mode switcher (all three operate on the same Project Model), and
- * history + save controls. The Ask AI control carries the user's current
- * credit balance subtly; when the balance is empty it stays clickable and
- * opens the contextual purchase modal instead of the panel.
+ * Builder top bar: identity (back, logo, engine identity + environment
+ * navigator, project), the Design/Blocks/Code mode switcher (all three
+ * operate on the same Project Model), and history + save controls. The
+ * environment menu is a CREATION NAVIGATOR: choosing another environment
+ * creates a NEW project of that type — it never mutates the current project
+ * (TASK 59 §15/§16).
  */
 export function BuilderTopBar({
   aiOpen,
@@ -39,7 +41,13 @@ export function BuilderTopBar({
 }) {
   const { project, saveState, lastSavedError, actions, saveNow, mode, setMode } = useBuilder();
   const { t: tTop } = useI18n();
+  const router = useRouter();
   const [credits, setCredits] = useState<AICredits | null>(null);
+  const [envMenuOpen, setEnvMenuOpen] = useState(false);
+  const [pendingEnv, setPendingEnv] = useState<"app" | "game" | "3d" | null>(null);
+  const [creatingEnv, setCreatingEnv] = useState(false);
+  const [envError, setEnvError] = useState<string | null>(null);
+  const envCreatingRef = useRef(false);
 
   // Subtle balance (TASK 12): the AI control shows the live derived balance,
   // refreshed whenever a verified purchase lands.
@@ -63,8 +71,52 @@ export function BuilderTopBar({
 
   const creditsEmpty = credits !== null && credits.remaining === 0;
 
+  // TASK 59: close the environment menu / confirm dialog on Escape or
+  // outside activation.
+  useEffect(() => {
+    if (!envMenuOpen && !pendingEnv) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (pendingEnv && !envCreatingRef.current) setPendingEnv(null);
+      else if (envMenuOpen) setEnvMenuOpen(false);
+    };
+    const onClick = (event: MouseEvent) => {
+      if (!pendingEnv) {
+        const target = event.target as HTMLElement | null;
+        if (target && !target.closest("[data-env-menu-root]")) setEnvMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onClick);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onClick);
+    };
+  }, [envMenuOpen, pendingEnv]);
+
+  // Cross-environment navigation: create a NEW project of the chosen type —
+  // the current project is never mutated (TASK 59 §31). One intent = one
+  // project (guarded); real error on failure.
+  const createInEnvironment = async (type: "app" | "game" | "3d") => {
+    if (envCreatingRef.current) return;
+    envCreatingRef.current = true;
+    setCreatingEnv(true);
+    setEnvError(null);
+    try {
+      const { project: created } = await projectApi.create({
+        type,
+        name: `My ${type === "3d" ? "3D Game" : type === "game" ? "2D Game" : "App"}`,
+      });
+      router.push(`/builder/${created.id}`);
+    } catch {
+      envCreatingRef.current = false;
+      setCreatingEnv(false);
+      setEnvError("Could not create the project. Please try again.");
+    }
+  };
+
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-3 sm:px-4">
+    <header data-env-menu-root className="relative flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-3 sm:px-4">
       {/* Left: identity — reserved space, never overlapped */}
       <div className="flex shrink-0 items-center gap-3">
         <Link
@@ -78,11 +130,67 @@ export function BuilderTopBar({
           </svg>
         </Link>
         <Logo />
+        {/* TASK 59: engine identity — visible, subtle, per canonical type. */}
+        <button
+          type="button"
+          data-engine-identity={project.type}
+          onClick={() => setEnvMenuOpen((v) => !v)}
+          aria-expanded={envMenuOpen}
+          aria-haspopup="menu"
+          title="Switch creation environment — creates a NEW project, never changes this one"
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-violet/40 bg-violet/10 px-2 py-0.5 text-[11px] font-semibold tracking-[0.08em] text-violet transition-colors hover:bg-violet/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+        >
+          {engineIdentityLabel(project.type)}
+          <span aria-hidden="true" style={{ transform: envMenuOpen ? "rotate(-90deg)" : undefined }}>
+            ▾
+          </span>
+        </button>
+        {envMenuOpen ? (
+          <div
+            role="menu"
+            aria-label="Creation environments"
+            className="absolute left-3 top-12 z-50 w-56 rounded-xl border border-line bg-panel p-1.5 shadow-[0_24px_60px_-24px_rgb(0_0_0/0.7)]"
+          >
+            <p className="px-2 pb-1.5 pt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-mist">
+              Create a new project in
+            </p>
+            {(["app", "game", "3d"] as const).map((t) => {
+              const current = project.type === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  role="menuitem"
+                  disabled={current}
+                  onClick={() => {
+                    setEnvMenuOpen(false);
+                    setPendingEnv(t);
+                  }}
+                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                    current ? "text-mist" : "text-fog hover:bg-surface hover:text-ink"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    {t === "app" ? <IconAppWindow size={14} /> : t === "game" ? <IconGamepad size={14} /> : <IconCube3D size={14} />}
+                    {t === "app" ? "Application" : t === "game" ? "2D Game" : "3D Game"}
+                  </span>
+                  {current ? (
+                    <span className="rounded border border-line px-1 py-px font-mono text-[9px] uppercase text-mist">
+                      current
+                    </span>
+                  ) : (
+                    <IconArrowRight size={13} className="text-mist" />
+                  )}
+                </button>
+              );
+            })}
+            <p className="px-2 pb-1 pt-1.5 text-[10.5px] leading-4 text-mist">
+              This never changes the current project — a new one is created.
+            </p>
+          </div>
+        ) : null}
         <div className="hidden min-w-0 items-center gap-2 lg:flex">
           <span className="max-w-40 truncate text-sm font-semibold">{project.name}</span>
-          <span className="shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 text-[11px] text-mist">
-            {projectTypeLabel(project.type)}
-          </span>
         </div>
       </div>
 
@@ -188,6 +296,59 @@ export function BuilderTopBar({
           onSave={() => void saveNow()}
         />
       </div>
+
+      {/* TASK 59: cross-environment confirmation — creates a NEW project of
+          the chosen type; the current project is never mutated. */}
+      {pendingEnv ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Create a new ${pendingEnv === "app" ? "Application" : pendingEnv === "game" ? "2D Game" : "3D Game"} project`}
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !creatingEnv) setPendingEnv(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !creatingEnv) setPendingEnv(null);
+          }}
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-5 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)]">
+            <h2 className="text-[15px] font-semibold text-ink">
+              Create a new {pendingEnv === "app" ? "Application" : pendingEnv === "game" ? "2D Game" : "3D Game"} project?
+            </h2>
+            <p className="mt-2 text-[13px] leading-5 text-fog">
+              “{project.name}” stays exactly as it is — a separate{" "}
+              {pendingEnv === "app" ? "Application" : pendingEnv === "game" ? "2D Game" : "3D Game"}{" "}
+              project is created and opened.
+            </p>
+            {envError ? (
+              <p role="alert" className="mt-3 text-[13px] text-rose">
+                {envError}
+              </p>
+            ) : null}
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingEnv(null)}
+                disabled={creatingEnv}
+                className="h-9 rounded-lg border border-line px-3 text-[13px] font-medium text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void createInEnvironment(pendingEnv)}
+                disabled={creatingEnv}
+                className="h-9 rounded-lg bg-violet-deep px-3.5 text-[13px] font-medium text-white transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:opacity-60"
+              >
+                {creatingEnv
+                  ? "Creating…"
+                  : `Create ${pendingEnv === "app" ? "App" : pendingEnv === "game" ? "2D Game" : "3D Game"}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }
