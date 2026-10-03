@@ -102,12 +102,14 @@ export function DiagnosticsPanel({ onRequestAIFix }: { onRequestAIFix?: (prompt:
       className="shrink-0 border-t border-line bg-panel"
       style={{ height: open ? 168 : 36 }}
     >
-      <div className="flex h-9 items-center justify-between border-b border-line px-3">
+      {/* TASK 58: the tab row scrolls horizontally at narrow widths instead of
+          pushing the builder shell wider than the viewport. */}
+      <div className="flex h-9 items-center justify-between gap-2 overflow-x-auto border-b border-line px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[12px] font-medium text-fog transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+          className="flex shrink-0 items-center gap-2 rounded-md px-1.5 py-1 text-[12px] font-medium text-fog transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
         >
           <svg
             width="12"
@@ -125,7 +127,7 @@ export function DiagnosticsPanel({ onRequestAIFix }: { onRequestAIFix?: (prompt:
           Diagnostics
         </button>
 
-        <div className="flex items-center gap-2 text-[11px]">
+        <div className="flex shrink-0 items-center gap-2 text-[11px]">
           {onRequestAIFix ? (
             <button
               type="button"

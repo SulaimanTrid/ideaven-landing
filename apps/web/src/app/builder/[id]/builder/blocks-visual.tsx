@@ -11,7 +11,9 @@ import type { ProjectModelBlock } from "@/types/project";
  * is a function of the block definition and the block data.
  */
 
-/** Small stroke icons, one per block type (24px viewBox, drawn for Ideaven). */
+/** Small stroke icons, one per block type (24px viewBox, drawn for Ideaven).
+ * TASK 58: EVERY built-in block type has an explicit icon — the generic
+ * square is only ever a last resort for unknown types. */
 const BLOCK_ICON_PATHS: Record<string, string> = {
   "set-property": "M5 8h8m4 0h2M5 16h2m4 0h8M13 5.5v5M7 13.5v5",
   "set-variable": "M6.5 7h11v10h-11zM9.5 12h5",
@@ -28,9 +30,54 @@ const BLOCK_ICON_PATHS: Record<string, string> = {
   join: "M9.5 14.5 14.5 9.5M8.5 12 6 14.5a3.5 3.5 0 0 0 5 5L13.5 17M15.5 12 18 9.5a3.5 3.5 0 0 0-5-5L10.5 7",
   equals: "M5 9.5h14M5 14.5h14",
   add: "M12 5v14M5 12h14",
+  boolean: "M8.5 8h7a4 4 0 0 1 0 8h-7a4 4 0 0 1 0-8ZM10.25 12a1.75 1.75 0 1 1-3.5 0 1.75 1.75 0 0 1 3.5 0",
+  "burst-particle": "M12 10.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2ZM12 4.5V7M12 17v2.5M4.5 12H7M17 12h2.5M6.4 6.4l1.8 1.8M15.8 15.8l1.8 1.8M17.6 6.4l-1.8 1.8M8.2 15.8l-1.8 1.8",
+  "camera-shake": "M3.5 9v6M20.5 9v6M6.5 7.5h7.5l1 2h2A1.5 1.5 0 0 1 18.5 11v5.5a1.5 1.5 0 0 1-1.5 1.5H6.5A1.5 1.5 0 0 1 5 16.5V9a1.5 1.5 0 0 1 1.5-1.5ZM10.6 12.25a1.9 1.9 0 1 0 3.8 0 1.9 1.9 0 0 0-3.8 0",
+  "camera-set-target": "M12 4.5v3.2M12 16.3v3.2M4.5 12h3.2M16.3 12h3.2M12 9.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8Z",
+  "canvas-clear": "M4.5 5.5h15v13h-15zM9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6",
+  "canvas-draw-circle": "M4.5 5.5h15v13h-15zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
+  "clock-now": "M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM12 8v4.3l2.9 1.8",
+  "location-latitude": "M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM4.6 12h14.8M12 4.5c2.1 2.1 3.2 4.6 3.2 7.5s-1.1 5.4-3.2 7.5c-2.1-2.1-3.2-4.6-3.2-7.5S9.9 6.6 12 4.5Z",
+  "location-longitude": "M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM12 4.5v15M4.9 8.4c2.2 1.1 4.6 1.7 7.1 1.7s4.9-.6 7.1-1.7M4.9 15.6c2.2-1.1 4.6-1.7 7.1-1.7s4.9.6 7.1 1.7",
+  "location-request": "M12 20s6.5-5.4 6.5-10.2A6.5 6.5 0 1 0 5.5 9.8C5.5 14.6 12 20 12 20ZM12 12a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z",
+  "notifier-alert": "M12 4.5a5.3 5.3 0 0 0-5.3 5.3c0 3.9-1.4 5.4-1.9 5.9h14.4c-.5-.5-1.9-2-1.9-5.9A5.3 5.3 0 0 0 12 4.5ZM10.1 18.8a2 2 0 0 0 3.8 0",
+  "play-animation": "M4.5 6h7v12h-7zM14 8.7l5.5 3.3-5.5 3.3z",
+  "stop-animation": "M4.5 6h7v12h-7zM14 9.5h5.5v5H14z",
+  "set-animation-param": "M4.5 6h7v12h-7zM14.5 8h5M14.5 12h5M14.5 16h5M16 6.2v3.6M18.5 10.2v3.6M15.5 14.2v3.6",
+  "trigger-animation-param": "M4.5 6h7v12h-7zM18.6 8.2 14.4 12.8h2.4l-1.4 4.4 4.2-4.6h-2.4z",
+  "tinydb-get": "M5.5 6c0-1 2.9-1.9 6.5-1.9s6.5.9 6.5 1.9v12c0 1-2.9 1.9-6.5 1.9S5.5 19 5.5 18zM5.5 6c0 1 2.9 1.9 6.5 1.9S18.5 7 18.5 6M5.5 12c0 1 2.9 1.9 6.5 1.9s6.5-.9 6.5-1.9M12 15.5v-4m0 0-1.7 1.7M12 11.5l1.7 1.7",
+  "tinydb-store": "M5.5 6c0-1 2.9-1.9 6.5-1.9s6.5.9 6.5 1.9v12c0 1-2.9 1.9-6.5 1.9S5.5 19 5.5 18zM5.5 6c0 1 2.9 1.9 6.5 1.9S18.5 7 18.5 6M5.5 12c0 1 2.9 1.9 6.5 1.9s6.5-.9 6.5-1.9M12 10.5v4m0 0-1.7-1.7M12 14.5l1.7-1.7",
+  "tts-speak": "M4.5 6h10.5v8h-6l-4 3.5zM17.5 9.2c.9.8.9 2.8 0 3.6M19.7 7.4c1.7 1.7 1.7 5.5 0 7.2",
+  "web-get": "M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM4.6 12h14.8M12 4.5c2.1 2.1 3.2 4.6 3.2 7.5s-1.1 5.4-3.2 7.5c-2.1-2.1-3.2-4.6-3.2-7.5S9.9 6.6 12 4.5Z",
 };
 
 const FALLBACK_ICON = "M6.5 6.5h11v11h-11z";
+
+/** Meaningful per-category fallbacks for extension blocks without a custom
+ * icon — never a blank square. Reuses the same visual language. */
+const CATEGORY_FALLBACK_ICONS: Record<string, string> = {
+  ui: "M4.5 5.5h15v13h-15zM4.5 9h15",
+  variables: "M6.5 7h11v10h-11zM13.5 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z",
+  control: "M7 5v5.5A3.5 3.5 0 0 0 10.5 14H18m0 0-3-3m3 3-3 3",
+  navigation: "M4.5 12h15m-6-6.5L20 12l-6.5 6.5",
+  text: "M5 6.5V5h14v1.5M12 5v14M9.5 19h5",
+  logic: "M5 9.5h14M5 14.5h14",
+  audio: "M4 9.5v5h3l4.5 4v-13l-4.5 4H4zM15.5 9.5c1 .8 1 3.2 0 4M18 7.5c2 2 2 6.5 0 8.5",
+  media: "M8.2 5.6v12.8a.7.7 0 0 0 1.06.6l10.3-6.4a.7.7 0 0 0 0-1.2L9.26 5a.7.7 0 0 0-1.06.6Z",
+  storage: "M5.5 6c0-1 2.9-1.9 6.5-1.9s6.5.9 6.5 1.9v12c0 1-2.9 1.9-6.5 1.9S5.5 19 5.5 18zM5.5 6c0 1 2.9 1.9 6.5 1.9S18.5 7 18.5 6M5.5 12c0 1 2.9 1.9 6.5 1.9s6.5-.9 6.5-1.9",
+  connectivity: "M9.5 14.5 14.5 9.5M8.5 12 6 14.5a3.5 3.5 0 0 0 5 5L13.5 17M15.5 12 18 9.5a3.5 3.5 0 0 0-5-5L10.5 7",
+  sensors: "M11 17.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13ZM15.8 15.8 20 20",
+};
+
+/** One canonical icon resolution: explicit type icon → definition-category
+ * fallback (extension blocks) → generic square (truly unknown only). */
+function blockIconPath(type: string): string {
+  const explicit = BLOCK_ICON_PATHS[type];
+  if (explicit) return explicit;
+  const category = getAnyBlockDef(type)?.category;
+  if (category && CATEGORY_FALLBACK_ICONS[category]) return CATEGORY_FALLBACK_ICONS[category]!;
+  return FALLBACK_ICON;
+}
 
 export function BlockIcon({ type, size = 13 }: { type: string; size?: number }) {
   return (
@@ -47,7 +94,7 @@ export function BlockIcon({ type, size = 13 }: { type: string; size?: number }) 
       focusable="false"
       className="shrink-0"
     >
-      <path d={BLOCK_ICON_PATHS[type] ?? FALLBACK_ICON} />
+      <path d={blockIconPath(type)} />
     </svg>
   );
 }

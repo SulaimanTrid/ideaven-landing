@@ -45,6 +45,12 @@ export function BuilderCanvas() {
   const [zoom, setZoom] = useState<number | "fit">("fit");
   const [fitScale, setFitScale] = useState(1);
   const surfaceRef = useRef<HTMLDivElement>(null);
+  // TASK 58: ONE scale owner. The rendered device unit (frame + bezel +
+  // shell chrome) is MEASURED at native size; the layout spacer reserves
+  // exactly measuredSize × scale, and the unit itself carries the single
+  // transform. No double scaling, no bezel overflow, no negative margins.
+  const unitRef = useRef<HTMLDivElement>(null);
+  const [unitSize, setUnitSize] = useState<{ w: number; h: number } | null>(null);
 
   const frame = viewportSize({ device, orientation });
   const screen = findScreen(model, activeScreenId) ?? model.screens[0];
@@ -81,6 +87,22 @@ export function BuilderCanvas() {
   }, [frame.width]);
 
   const scale = zoom === "fit" ? fitScale : zoom;
+
+  // TASK 58: measure the actual rendered unit (offsetWidth/Height are
+  // unaffected by transforms, so this is the native size incl. bezel/stand).
+  useEffect(() => {
+    const unit = unitRef.current;
+    if (!unit || is3d) return;
+    const update = () => {
+      const w = unit.offsetWidth;
+      const h = unit.offsetHeight;
+      if (w > 0 && h > 0) setUnitSize((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(unit);
+    return () => observer.disconnect();
+  }, [is3d, device, orientation, isGame]);
 
   // Clear the drop indicator whenever any drag gesture ends.
   useEffect(() => {
@@ -149,11 +171,82 @@ export function BuilderCanvas() {
   // A model always carries at least one screen, but stay strict anyway.
   if (!screen) return null;
 
+  // ---- TASK 58: 3D projects get their OWN full-surface shell — no device
+  // spacer, no phone/tablet/desktop presets, no zoom/orientation chrome. A
+  // mode-identity chip says exactly what this environment is.
+  if (is3d) {
+    const empty = screen.components.length === 0;
+    return (
+      <div className="flex min-w-0 flex-1 flex-col bg-canvas">
+        <div className="flex h-11 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-line px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <span
+            data-mode-identity="3d-scene"
+            className="shrink-0 rounded-md border border-violet/40 bg-violet/10 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-violet"
+          >
+            3D SCENE · {screen.name}
+          </span>
+          <span className="hidden shrink-0 items-center gap-1 text-[11px] text-mist sm:flex">
+            Orbit: drag · Select: click · Gizmo: W/E/R
+          </span>
+        </div>
+        <div className="relative min-h-0 flex-1" onClick={onRootClick}>
+          <div
+            data-viewport-3d-shell="true"
+            className="relative h-full w-full"
+            onDragOver={onRootDragOver}
+            onDrop={onRootDrop}
+          >
+            <Viewport3D
+              model={model}
+              screen={screen}
+              mode="editor"
+              selectedId={selectedId ?? null}
+              onSelect={(id) => select(id)}
+              onDelete={(id) => actions.removeComponent3D(activeScreenId, id)}
+              onDuplicate={(id) => actions.duplicateHierarchy3D(activeScreenId, id)}
+              onTransform={(id, patch) => actions.updateProps(id, patch)}
+            />
+          </div>
+          {empty ? (
+            <div data-3d-empty-state="true" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+              <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-xl border border-line bg-[#12151f]/92 px-6 py-5 shadow-lg">
+                <p className="text-[13px] font-medium text-ink">Create your first 3D object</p>
+                <div className="flex gap-1.5">
+                  {(["cube3d", "sphere3d", "plane3d"] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() =>
+                        actions.insertNew(type, {
+                          screenId: screen.id,
+                          parentId: null,
+                          index: screen.components.length,
+                        })
+                      }
+                      className="rounded-lg border border-line bg-card px-3 py-1.5 text-[12px] font-medium text-fog transition-colors hover:border-violet hover:text-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+                    >
+                      {type === "cube3d" ? "Cube" : type === "sphere3d" ? "Sphere" : "Plane"}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10.5px] leading-4 text-mist">
+                  or drag from 3D Objects in the palette
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-canvas">
-      {/* Canvas toolbar */}
-      <div className="flex h-11 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-line px-4">
-        <div className="flex items-center gap-1" role="group" aria-label="Device preset">
+      {/* Canvas toolbar — device presets are APP-only chrome (TASK 58 §2):
+          game projects use the dark scene stage, 3D projects the 3D shell. */}
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-line px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {!isGame && (
+        <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Device preset">
           {DEVICES.map((d) => (
             <button
               key={d.id}
@@ -171,7 +264,7 @@ export function BuilderCanvas() {
             </button>
           ))}
         </div>
-
+        )}
         <div className="flex items-center gap-1" role="group" aria-label="Zoom">
           {isScene ? (
             <>
@@ -314,11 +407,13 @@ export function BuilderCanvas() {
           if (draggingRef.current) event.preventDefault();
         }}
       >
+        {/* TASK 58: the layout spacer reserves exactly measuredUnit × scale —
+            the scaled unit inside carries the ONE transform. */}
         <div
           className="mx-auto"
           style={{
-            width: frame.width * scale,
-            height: frame.height * scale,
+            width: (unitSize?.w ?? frame.width) * scale,
+            height: (unitSize?.h ?? frame.height) * scale,
           }}
         >
           {/* The screen root: shared by both branches. */}
@@ -397,33 +492,68 @@ export function BuilderCanvas() {
           if (isGame) {
             // The universal game viewport (TASK 11): dark shell + corner
             // ticks, inside the hardware frame on phone/tablet targets.
+            // TASK 58: the scale transform wraps the WHOLE frame+bezel unit —
+            // the screen inside stays native (one scale owner).
             return (
-              <ViewportFrame
-                kind="game"
-                settings={viewportSettings}
-                className="data-[screen-frame]"
-              >
               <div
-                data-screen-frame="1"
-                className="relative overflow-hidden text-[#0b0e16] [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.06)_1px,transparent_0)] [background-size:22px_22px]"
+                ref={unitRef}
                 style={{
-                  width: frame.width,
-                  height: frame.height,
                   transform: `scale(${scale})`,
                   transformOrigin: "top left",
                 }}
-                onDragOver={onRootDragOver}
-                onDrop={onRootDrop}
               >
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-3 top-2 z-10 rounded-md border border-violet/40 bg-[#12151f]/90 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-violet"
+                <ViewportFrame
+                  kind="game"
+                  settings={viewportSettings}
+                  className="data-[screen-frame]"
                 >
-                  scene · {screen.name}
-                </span>
-                {screenRoot}
+                <div
+                  data-screen-frame="1"
+                  className="relative overflow-hidden text-[#0b0e16] [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.06)_1px,transparent_0)] [background-size:22px_22px]"
+                  style={{
+                    width: frame.width,
+                    height: frame.height,
+                  }}
+                  onDragOver={onRootDragOver}
+                  onDrop={onRootDrop}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-3 top-2 z-10 rounded-md border border-violet/40 bg-[#12151f]/90 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-violet"
+                  >
+                    scene · {screen.name}
+                  </span>
+                  {screen.components.length === 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-3">
+                      <p className="text-[13px] font-medium text-[#c9cede]">Create your first game object</p>
+                      <div className="flex gap-1.5">
+                        {(["player", "sprite", "platform"] as const).map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              actions.insertNew(type, {
+                                screenId: screen.id,
+                                parentId: null,
+                                index: screen.components.length,
+                              });
+                            }}
+                            className="rounded-lg border border-line bg-[#12151f] px-3 py-1.5 text-[12px] font-medium text-[#c9cede] transition-colors hover:border-violet hover:text-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+                          >
+                            {type === "player" ? "Player" : type === "sprite" ? "Sprite" : "Platform"}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10.5px] leading-4 text-[#9aa1b2]">
+                        or drag from Game Entities in the palette
+                      </p>
+                    </div>
+                  ) : null}
+                  {screenRoot}
+                </div>
+                </ViewportFrame>
               </div>
-              </ViewportFrame>
             );
           }
 
@@ -432,10 +562,10 @@ export function BuilderCanvas() {
           // the screen root inside it.
           return (
             <div
+              ref={unitRef}
               data-screen-frame="1"
+              className="inline-block"
               style={{
-                width: frame.width,
-                height: frame.height,
                 transform: `scale(${scale})`,
                 transformOrigin: "top left",
               }}

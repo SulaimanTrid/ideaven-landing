@@ -147,10 +147,16 @@ async function openPreview() {
   await page.locator(VIEW).waitFor({ state: "visible", timeout: 8000 });
   await page.waitForTimeout(700); // settle frames
 }
-// Model-side truth for a UI edit — pinpoints where the flow breaks.
+// Model-side truth for a UI edit — polls the API past the autosave debounce
+// so a stale "Saved" indicator can never race the assertion.
 async function expectProp(id, key, value, label) {
-  const m = await getModel(cookie, project.id);
-  const actual = m.screens[0].components.find((c) => c.id === id)?.props?.[key];
+  let actual;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    const m = await getModel(cookie, project.id);
+    actual = m.screens[0].components.find((c) => c.id === id)?.props?.[key];
+    if (actual === value) break;
+    await new Promise((r) => setTimeout(r, 400));
+  }
   check(label, actual === value, `expected ${key}=${value}, got ${actual}`);
 }
 // Select an entity via its exact "Select <name>" tree button — clicking the

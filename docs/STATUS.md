@@ -3845,3 +3845,74 @@ PostgreSQL, and Vercel were not touched. Full record in
 Cloudflare dashboard deploy (needs account auth) or the next directive task
 — await explicit approval.
 
+
+
+## 65. TASK 58 - Builder Shell + Viewport + Iconography Integrity
+
+The builder presentation layer was fixed at the root-cause level: one scale
+owner for the device viewport, model.type as the ONLY shell router, honest
+icons for every built-in block, and no cross-type palette mixing. Full
+record in docs/TASK58_BUILDER_SHELL_INTEGRITY.md.
+
+- **Scaling (root cause)**: the canvas reserved frame-x-scale layout space
+  while the inner screen carried its own transform AND the DeviceFrame bezel
+  (26-34px/axis + monitor stand) was measured by neither - clipping,
+  detached content, strange zoomed-down phones. Now the rendered unit
+  (frame + bezel + shell) is MEASURED at native size (offsetWidth/Height,
+  transform-invariant) and the layout spacer reserves exactly measured x
+  scale while the unit carries the ONE transform - the screen inside stays
+  native. Fit/25/50/75/100% and landscape keep the frame aligned, content
+  inside, aspect preserved (bezel-inclusive), no double scaling, no negative
+  margins. Orientation is presentation-only (preview settings).
+- **Shell routing**: type=3d projects get a dedicated full-surface shell -
+  Viewport3D + a `3D SCENE - <screen>` identity chip; Phone/Tablet/Desktop
+  presets and zoom/orientation chrome are REMOVED for 3D. Device presets are
+  APP-only chrome; game keeps the dark stage + scene chip. Shells persist
+  across reload (model.type authoritative).
+- **Header**: fixed 3-zone flex - brand group shrink-0 (reserved), mode nav
+  flex-1 + internally scrollable, actions flex-1 + internally scrollable.
+  No overlap at any width; no absolute-position workarounds.
+- **390px overflow (root cause)**: the Diagnostics strip header forced the
+  shell to 418px; its tab row now scrolls internally - document scrollWidth
+  is exactly 390 at the narrowest width.
+- **Block icons**: BLOCK_ICON_PATHS covered 15/34 built-ins; 19 real types
+  rendered a generic square. Added 19 hand-drawn paths (tts-speak, tinydb,
+  animations, camera ops, canvas ops, location globes/pin, notifier, web,
+  burst, boolean) plus per-category fallbacks for extension blocks. One
+  canonical resolution: explicit type icon -> category fallback -> square
+  (truly unknown only). No second registry.
+- **Palette**: a 3D project surfaces ONLY 3D Objects (no Game Entities, no
+  app UI groups); game surfaces Game Entities without 3D Objects.
+- **Empty states**: 3D (Cube/Sphere/Plane) and 2D game (Player/Sprite/
+  Platform) quick-create buttons call actions.insertNew - the same canonical
+  insertion as the palette (API-verified in E2E).
+
+### Verified (session 58)
+
+- e2e-builder-shell-integrity.mjs **35/35, 0 console errors**: three shells
+  route by model.type and persist across reload; 3D shows no app-device
+  controls + gizmo toolbar + identity chip; empty-state buttons perform
+  canonical insertions; palette groups per type; ZERO generic fallback
+  squares across the live Blocks palette; 22 required built-ins render real
+  icons (label-to-svg-path assertions); fit/50/100/landscape
+  measured-rectangle checks (inside surface, bezel-inclusive aspect);
+  responsive 390/768/1024/1280 with no page overflow and no logo overlap.
+- Regressions (16 suites): 3d-character-controller 35/35,
+  3d-material-lighting 42/42, 3d-transform-gizmos 34/34, 3d-physics 24/24,
+  3d-foundation 18/18, 3d-hierarchy 17/17, tilemap 44/44, input-actions
+  32/32, camera 34/34, 2d-particles 22/22, state-machine 20/20, 2d-lighting
+  19/19, sprite-animation 18/18, scene-gameplay 21/21, sorting 19/19, motion
+  11/11. tsc clean; go vet clean; go test 11/11; next build exit 0;
+  build:vinext exit 0.
+
+### Honest notes (TASK 58)
+
+- Bezel-inclusive aspect assertions pin the current 26px phone bezel - a
+  bezel redesign updates one E2E constant.
+- Builder at 390px is a compressed desktop shell (no dedicated mobile
+  editor, per directive); palette/inspector drawers stay hidden below md/lg.
+- Extension blocks cannot ship custom icons yet (category fallback only).
+
+### Next exact task
+
+STOP per the directive - await explicit approval before TASK 59.

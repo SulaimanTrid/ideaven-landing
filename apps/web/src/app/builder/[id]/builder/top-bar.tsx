@@ -64,9 +64,9 @@ export function BuilderTopBar({
   const creditsEmpty = credits !== null && credits.remaining === 0;
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 overflow-x-auto border-b border-line bg-panel px-3 [scrollbar-width:none] sm:px-4 [&::-webkit-scrollbar]:hidden">
-      {/* Left: identity */}
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-3 sm:px-4">
+      {/* Left: identity — reserved space, never overlapped */}
+      <div className="flex shrink-0 items-center gap-3">
         <Link
           href="/dashboard/projects"
           aria-label="Back to projects"
@@ -78,16 +78,22 @@ export function BuilderTopBar({
           </svg>
         </Link>
         <Logo />
-        <div className="hidden min-w-0 items-center gap-2 sm:flex">
-          <span className="truncate text-sm font-semibold">{project.name}</span>
+        <div className="hidden min-w-0 items-center gap-2 lg:flex">
+          <span className="max-w-40 truncate text-sm font-semibold">{project.name}</span>
           <span className="shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 text-[11px] text-mist">
             {projectTypeLabel(project.type)}
           </span>
         </div>
       </div>
 
-      {/* Center: modes */}
-      <nav aria-label="Editor modes" className="flex items-center rounded-lg border border-line bg-canvas p-1">
+      {/* Center: modes — horizontally scrollable at narrow widths, never
+          rendered under the brand (TASK 58: the nav owns its own overflow
+          instead of the whole header sliding over the logo). */}
+      <nav
+        aria-label="Editor modes"
+        className="flex min-w-0 flex-1 items-center justify-center overflow-x-auto rounded-lg border border-line bg-canvas p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <div className="flex items-center">
         {(["design", "blocks", "code", "preview", "insights"] as const).map((m) => {
           const label = tTop(`builder.${m}` as Parameters<typeof tTop>[0]);
           const active = mode === m;
@@ -97,7 +103,7 @@ export function BuilderTopBar({
               type="button"
               onClick={() => setMode(m)}
               aria-current={active ? "page" : undefined}
-              className={`rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
                 active ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
               }`}
             >
@@ -105,10 +111,13 @@ export function BuilderTopBar({
             </button>
           );
         })}
+        </div>
       </nav>
 
-      {/* Right: theme + Ask AI + history + save */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      {/* Right: theme + Ask AI + history + save — internally scrollable and
+          shrinkable at narrow widths so the brand and nav are never overlapped
+          and the page never overflows */}
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <ThemeToggle compact />
         <PublishButton />
         <ExportButton />

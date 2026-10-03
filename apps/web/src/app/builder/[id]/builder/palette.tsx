@@ -57,11 +57,15 @@ export function Palette() {
   return (
     <div className="flex flex-col gap-4 p-3">
       {CATEGORY_ORDER.filter((category) =>
-        category.id === "game"
-          ? model.type === "game"
+        model.type === "3d"
+          ? // TASK 58 §13: a 3D project surfaces ONLY the 3D Objects palette —
+            // app-UI and 2D-game components never mix into the 3D workflow.
+            category.id === "3d"
           : category.id === "3d"
-            ? model.type === "3d"
-            : true,
+            ? false
+            : category.id === "game"
+              ? model.type === "game"
+              : true,
       ).map((category) => (
         <section key={category.id} aria-label={category.label}>
           <h3 className="px-1 pb-1.5 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
