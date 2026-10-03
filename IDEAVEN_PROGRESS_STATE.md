@@ -1,31 +1,34 @@
 NEXT_TASK:
-STOP — awaiting explicit approval per the Cloudflare Phase 1B directive.
-Queued: Cloudflare dashboard deploy (needs account auth) or TASK 58 onward.
+STOP - awaiting explicit approval per the TASK 58 directive. Queued:
+TASK 59 onward (builder deepening or the next master-priority system).
 
 FILES / MODULES TO CONTINUE FROM:
-- apps/web/wrangler.jsonc + apps/web/vite.config.ts (CF Phase 1B generated
-  config — source of truth for Workers deploy)
-- apps/web/package.json (scripts dev:vinext/build:vinext/start:vinext/
-  deploy:vinext; react 19.3.0; type: module; vinext/wrangler/vite deps)
-- pnpm-workspace.yaml (allowBuilds: esbuild true, workerd true, sharp false)
-- scripts/verify-cf-preview.mjs (12-check Workers preview verification)
-- docs/CLOUDFLARE_WEB_DEPLOYMENT.md (Phase 1B record + dashboard checklist
-  + rollback)
+- apps/web/src/app/builder/[id]/builder/canvas.tsx (TASK 58: measured-unit
+  one-scale-owner viewport + is3d full-surface shell + identity chip +
+  empty states calling actions.insertNew)
+- apps/web/src/app/builder/[id]/builder/top-bar.tsx (3-zone header: brand
+  shrink-0 / nav flex-1 scrollable / actions flex-1 scrollable)
+- apps/web/src/app/builder/[id]/builder/diagnostics-panel.tsx (scrollable
+  tab row - the 390px overflow fix)
+- apps/web/src/app/builder/[id]/builder/blocks-visual.tsx (BLOCK_ICON_PATHS
+  all 34 built-ins + CATEGORY_FALLBACK_ICONS + blockIconPath resolution)
+- apps/web/src/app/builder/[id]/builder/palette.tsx (3D projects surface
+  ONLY 3D Objects; game surfaces Game Entities)
+- scripts/e2e-builder-shell-integrity.mjs (35 checks - the shell gate)
 - apps/web/src/lib/character3d.ts (TASK 57 controller)
-- apps/web/src/lib/transform-gizmo.ts (TASK 56 gizmo math)
 - apps/web/src/lib/render3d.ts (renderer + shading + gizmos + mat4Invert)
 - apps/web/src/components/runtime/viewport-3d.tsx (physics/controller/gizmos)
 - apps/api/internal/project/export.go (vanilla mirrors)
-- scripts/e2e-3d-character-controller.mjs (35 checks)
-- docs/TASK51..57 + docs/CLOUDFLARE_WEB_DEPLOYMENT.md
-- docs/DESIGN.md (the visual constitution — read before any UI/copy work)
+- apps/web/wrangler.jsonc + vite.config.ts (CF Phase 1B config)
+- docs/TASK51..58 + docs/CLOUDFLARE_WEB_DEPLOYMENT.md
+- docs/DESIGN.md (the visual constitution - read before any UI/copy work)
 # IDEAVEN PROGRESS STATE â€” portable development handoff
 
 > Regenerate/update this file at the END of every implementation session.
 > The repository is the source of truth; this file only points at it.
 
-CURRENT_DATE: 2026-09-27
-CURRENT_COMMIT: 190a3f4 (docs: record commit 500d922 in the progress handoff; git restored via portable MinGit)
+CURRENT_DATE: 2026-10-03
+CURRENT_COMMIT: d013881 (feat(builder): TASK 58 shell integrity - one-scale-owner viewport, model.type shell routing, header 3-zone no-overlap, diagnostics 390px fix, complete block icon set, 3D/game palette isolation, canonical empty states)
 PUSHED: YES — origin/main = 190a3f4 (https://github.com/SulaimanTrid/ideaven-landing.git), fully up to date as of 2026-09-27.
 CURRENT_BRANCH: main
 
@@ -47,6 +50,20 @@ https://github.com/SulaimanTrid/ideaven-landing.git — origin/main is up to
 date (190a3f4). No pending commits remain.
 
 CURRENT_OBJECTIVE:
+CURRENT_OBJECTIVE:
+TASK 58 (Builder Shell + Viewport + Iconography Integrity) is COMPLETE and
+verified (session 58): ONE scale owner for the device viewport (measured
+native unit incl. bezel - spacer reserves measured x scale, the unit carries
+the single transform; fit/zoom/orientation all correct, no double scaling),
+model.type as the ONLY shell router (3D = dedicated full-surface Viewport3D
+shell with 3D SCENE chip and NO app-device chrome; APP = device presets;
+GAME = dark stage), 3-zone header that never overlaps the brand, the
+Diagnostics 390px overflow fixed at the root, ALL 34 built-in block types
+with hand-drawn icons + per-category extension fallbacks (zero generic
+squares among rendered blocks - DOM-verified), palette isolation per project
+type (3D = 3D Objects only), and canonical empty states for 3D/2D. E2E
+e2e-builder-shell-integrity 35/35; all 16 regression suites green; tsc/go
+vet/go test/next build/build:vinext green. STOP per directive.
 Cloudflare Workers Web Deployment Phase 1B is COMPLETE and verified: the
 EUNSUPPORTEDPROTOCOL failure (npm auto-detection vs pnpm workspace) is fixed
 with an EXPLICIT generated config — apps/web/wrangler.jsonc + vite.config.ts
@@ -102,6 +119,47 @@ BLOCKED: nothing technical. NOTE: git is not on PATH on this machine, so
 the uncommitted batch above cannot be committed until git is available.
 
 SESSION LOG:
+
+## Session 58 (2026-10-03)
+DATE: 2026-10-03
+COMMIT: d013881 (pushed to origin/main)
+CURRENT PHASE: Builder Shell - TASK 58 Shell + Viewport + Iconography Integrity
+CURRENT FEATURE: UI/editor integration correctness (no engine changes)
+COMPLETED THIS SESSION:
+- canvas.tsx: measured-unit one-scale-owner viewport (unitRef/offsetWidth +
+  ResizeObserver; spacer = measured x scale; single transform), is3d
+  full-surface shell (identity chip 3D SCENE, no device presets/zoom for
+  3D), 3D + 2D game canonical empty states, device presets now APP-only
+- top-bar.tsx: 3-zone header (brand shrink-0, nav flex-1 scrollable,
+  actions flex-1 scrollable) - no logo/nav overlap at 390-1280px
+- diagnostics-panel.tsx: scrollable tab row (390px page-overflow fix:
+  scrollWidth 418 -> 390)
+- blocks-visual.tsx: 19 new block icons (all 34 built-ins covered) +
+  CATEGORY_FALLBACK_ICONS per category + blockIconPath resolution
+- palette.tsx: 3D projects surface ONLY 3D Objects (no Game Entities, no
+  app UI groups)
+- e2e-builder-shell-integrity.mjs (new, 35 checks)
+- e2e-3d-material-lighting.mjs: expectProp now polls the API past the
+  autosave debounce (test-harness race fix, not an app change)
+VERIFIED THIS SESSION: e2e-builder-shell-integrity 35/35 NEW; regressions
+16 suites green (3d-character-controller 35, 3d-material-lighting 42,
+3d-transform-gizmos 34, 3d-physics 24, 3d-foundation 18, 3d-hierarchy 17,
+tilemap 44, input-actions 32, camera 34, 2d-particles 22, state-machine 20,
+2d-lighting 19, sprite-animation 18, scene-gameplay 21, sorting 19, motion
+11); tsc clean; go vet clean; go test 11/11 packages with tests; next build
+exit 0; build:vinext exit 0. Evidence in STATUS.md 65 +
+docs/TASK58_BUILDER_SHELL_INTEGRITY.md.
+TEST RESULTS: go test -count=1 ./... -> ok 11/11 packages with tests.
+E2E RESULTS: shell-integrity 35/0; controller 35/0; lighting 42/0; gizmos
+34/0; physics 24/0; foundation 18/0; hierarchy 17/0; tilemap 44/0;
+input-actions 32/0; camera 34/0; particles 22/0; state-machine 20/0;
+2d-lighting 19/0; sprite 18/0; gameplay 21/0; sorting 19/0; motion 11/0.
+KNOWN LIMITATIONS: bezel-inclusive aspect assertions pin the current 26px
+phone bezel; builder at 390px is a compressed desktop shell (no dedicated
+mobile editor); extension blocks cannot ship custom icons yet (category
+fallback only).
+CURRENT BLOCKERS: none.
+NEXT EXACT TASK: STOP - awaiting approval; queued TASK 59.
 
 ## Session 57 (2026-10-02)
 DATE: 2026-10-02

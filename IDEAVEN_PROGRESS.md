@@ -887,3 +887,49 @@ providers, i18n coverage expansion, accessibility audit.
   deploy:vinext, root dir apps/web, no detection overrides). Rollback
   procedure in docs/CLOUDFLARE_WEB_DEPLOYMENT.md §12.
 - STOP per directive — awaiting approval before Cloudflare Phase 2.
+
+## Session 58 addition (TASK 58 — Builder Shell + Viewport + Iconography Integrity)
+
+- Builder presentation layer fixed at root-cause level (no engine changes):
+  ONE scale owner for the device viewport — the rendered unit (frame + bezel
+  + shell) is MEASURED at native size (offsetWidth/Height, transform-
+  invariant) and the layout spacer reserves exactly measured × scale while
+  the unit carries the single transform; the screen inside stays native.
+  Fixes clipping, detached content, and strange zoomed-down phones. The old
+  structure scaled the SCREEN inside a native-size bezel (game branch) —
+  the exact forbidden double scaling.
+- Shell routing by model.type ONLY: 3D projects get a dedicated full-surface
+  Viewport3D shell with a `3D SCENE · <screen>` identity chip and NO
+  Phone/Tablet/Desktop presets or zoom/orientation chrome; device presets
+  are APP-only; game keeps the dark stage + scene chip. Shells persist
+  across reload.
+- Header: fixed 3-zone flex (brand shrink-0 / nav flex-1 scrollable /
+  actions flex-1 scrollable) — no logo/nav overlap from 390 to 1280px, no
+  absolute-position workarounds.
+- 390px page overflow root cause: the Diagnostics strip header forced the
+  shell to 418px; its tab row now scrolls internally (scrollWidth exactly
+  390 at the narrowest width).
+- Block icons: BLOCK_ICON_PATHS covered 15/34 built-ins (19 rendered a
+  generic square). Added 19 hand-drawn paths (tts-speak, tinydb get/store,
+  play/stop/set/trigger animation, camera shake/target, canvas clear/draw,
+  location globes/pin, notifier, web-get, burst, boolean) + per-category
+  fallbacks for extension blocks. ONE resolution chain: explicit icon →
+  category fallback → square (truly unknown only).
+- Palette: 3D projects surface ONLY 3D Objects (no Game Entities, no app UI
+  groups); game surfaces Game Entities without 3D Objects. Empty states:
+  3D (Cube/Sphere/Plane) + game (Player/Sprite/Platform) quick-create
+  buttons call actions.insertNew — the canonical insertion, API-verified.
+- Gates: e2e-builder-shell-integrity NEW 35/35 (three shells route by
+  model.type + persist across reload, 3D no app-device controls, empty-state
+  canonical insertions, palette isolation, ZERO generic fallback squares
+  across the live Blocks palette, 22 required built-ins render real icons,
+  measured-rectangle fit/zoom/landscape checks, responsive 390/768/1024/1280);
+  regressions 16 suites green (3d-character-controller 35, material-lighting
+  42, gizmos 34, physics 24, foundation 18, hierarchy 17, tilemap 44,
+  input-actions 32, camera 34, particles 22, state-machine 20, lighting 19,
+  sprite 18, gameplay 21, sorting 19, motion 11); tsc clean; go vet clean;
+  go test 11/11; next build exit 0; build:vinext exit 0.
+- Honest: bezel-inclusive aspect assertions pin the current 26px phone bezel;
+  builder at 390px is a compressed desktop shell (no dedicated mobile
+  editor); extension blocks cannot ship custom icons yet.
+- STOP per directive — awaiting approval before TASK 59.
