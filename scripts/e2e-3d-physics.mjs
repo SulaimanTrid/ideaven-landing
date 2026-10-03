@@ -223,8 +223,9 @@ await page.waitForTimeout(1200);
   await putModel(cookie, project.id, m);
 }
 await page.reload({ waitUntil: "networkidle" });
-await page.waitForTimeout(1500);
-check("out-of-range mass/collider raise diagnostics",
+await page.waitForTimeout(1500);// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);check("out-of-range mass/collider raise diagnostics",
   (await page.getByText(/outside 0\.01–10000/).count()) >= 1);
 
 // ---- 6. Published parity (same web runtime on /p/<slug>) ---------------------------

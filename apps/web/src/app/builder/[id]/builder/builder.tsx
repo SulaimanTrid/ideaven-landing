@@ -55,6 +55,8 @@ import {
   setParent3D,
   duplicateHierarchy3D,
   removeComponent3D,
+  duplicateHierarchy3DMany,
+  removeComponent3DMany,
 } from "@/lib/project-model/ops";
 import {
   addHandler,
@@ -453,6 +455,13 @@ function BuilderSession({
         commit(duplicateHierarchy3D(modelRef.current, screenId, id)),
       removeComponent3D: (screenId, id) =>
         commit(removeComponent3D(modelRef.current, screenId, id)),
+      // TASK 60 §20: the whole multi-selection is ONE pure op — one commit,
+      // one undo step; rapid per-entity commits would overwrite each other
+      // because each reads the same pre-render model snapshot.
+      duplicateHierarchy3DMany: (screenId, ids) =>
+        commit(duplicateHierarchy3DMany(modelRef.current, screenId, ids)),
+      removeComponent3DMany: (screenId, ids) =>
+        commit(removeComponent3DMany(modelRef.current, screenId, ids)),
       // Code ↔ model sync.
       applyCodeSync: (screenId, handlers) => {
         const next = applyCodeSync(modelRef.current, screenId, handlers);

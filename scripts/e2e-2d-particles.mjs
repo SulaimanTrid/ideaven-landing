@@ -224,8 +224,9 @@ await page.waitForTimeout(1200);
   await putModel(cookie, project.id, m);
 }
 await page.reload({ waitUntil: "networkidle" });
-await page.waitForTimeout(1200);
-check("invalid emitter values raise diagnostics",
+await page.waitForTimeout(1200);// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);check("invalid emitter values raise diagnostics",
   (await page.getByText(/outside 0–500/).count()) >= 1 &&
   (await page.getByText(/outside 0.05–30/).count()) >= 1 &&
   (await page.getByText(/outside 1–1000/).count()) >= 1);

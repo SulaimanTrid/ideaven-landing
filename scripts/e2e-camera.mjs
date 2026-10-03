@@ -161,18 +161,20 @@ await page.getByRole("button", { name: "Design", exact: true }).first().click();
 await page.waitForTimeout(800);
 
 // ---- 4. Diagnostics: deleted target + inverted bounds -------------------------
-// (The diagnostics panel is open by default — do not toggle it.)
+// (TASK 60: the diagnostics drawer starts collapsed - each check opens it.)
 await putModel(cookie, project.id, acceptanceModel({ camera: { followTarget: "p-ghost" } }));
 await page.reload({ waitUntil: "networkidle" });
-await page.waitForTimeout(1800);
-check("deleted target produces a diagnostic",
+await page.waitForTimeout(1800);// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);check("deleted target produces a diagnostic",
   (await page.getByText(/Camera target .* no longer exists/).count()) >= 1,
   "diagnostic text not found");
 
 await putModel(cookie, project.id, acceptanceModel({ camera: { minX: 2000, maxX: 0 } }));
 await page.reload({ waitUntil: "networkidle" });
-await page.waitForTimeout(1800);
-check("inverted bounds produce a diagnostic",
+await page.waitForTimeout(1800);// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);check("inverted bounds produce a diagnostic",
   (await page.getByText(/Camera bounds are inverted/).count()) >= 1);
 
 // ---- 5. Preview: follow, smoothing, bounds, shake ------------------------------

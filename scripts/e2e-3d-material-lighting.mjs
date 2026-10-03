@@ -431,8 +431,9 @@ check("parenting persisted (light parented to the cube)",
   await putModel(cookie, project.id, m);
 }
 await openEditor();
-await page.waitForTimeout(800);
-check("malformed light/material values raise diagnostics",
+await page.waitForTimeout(800);// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);check("malformed light/material values raise diagnostics",
   (await page.getByText(/is not a hex color/).count()) >= 2 &&
   (await page.getByText(/intensity 999 is outside 0–5/).count()) === 1 &&
   (await page.getByText(/radius 0.001 is outside 0.1–1000/).count()) === 1);
@@ -454,6 +455,9 @@ check("malformed configuration does not crash the runtime", malformedOk);
 }
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForTimeout(1200);
+// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);
 check("more than 8 enabled lights raises an excessive-light diagnostic",
   (await page.getByText(/first 8/).count()) >= 1);
 await openPreview();

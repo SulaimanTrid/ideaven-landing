@@ -48,6 +48,9 @@ export function BuilderTopBar({
   const [creatingEnv, setCreatingEnv] = useState(false);
   const [envError, setEnvError] = useState<string | null>(null);
   const envCreatingRef = useRef(false);
+  // TASK 60 §24: overflow menu for secondary toolbar tools below xl.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRootRef = useRef<HTMLDivElement>(null);
 
   // Subtle balance (TASK 12): the AI control shows the live derived balance,
   // refreshed whenever a verified purchase lands.
@@ -93,6 +96,24 @@ export function BuilderTopBar({
       window.removeEventListener("mousedown", onClick);
     };
   }, [envMenuOpen, pendingEnv]);
+
+  // TASK 60 §24: the overflow "more" menu closes on Escape or outside click.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreOpen(false);
+    };
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && moreRootRef.current && !moreRootRef.current.contains(target)) setMoreOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [moreOpen]);
 
   // Cross-environment navigation: create a NEW project of the chosen type —
   // the current project is never mutated (TASK 59 §31). One intent = one
@@ -222,79 +243,175 @@ export function BuilderTopBar({
         </div>
       </nav>
 
-      {/* Right: theme + Ask AI + history + save — internally scrollable and
-          shrinkable at narrow widths so the brand and nav are never overlapped
-          and the page never overflows */}
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <ThemeToggle compact />
-        <PublishButton />
-        <ExportButton />
-        <button
-          type="button"
-          onClick={onToggleAssets}
-          aria-pressed={assetsOpen}
-          className="flex h-9 items-center gap-1.5 rounded-lg border border-mint/40 bg-mint/10 px-3 text-[13px] font-medium text-mint transition-colors hover:bg-mint/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
-        >
-          <IconImage size={14} />
-          <span className="hidden sm:inline">{tTop("builder.assets")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={onToggleHistory}
-          aria-pressed={historyOpen}
-          className="flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-fog transition-colors hover:bg-surface-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
-        >
-          <IconHistory size={14} />
-          <span className="hidden sm:inline">{tTop("builder.history")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={creditsEmpty ? onOpenPurchase : onToggleAI}
-          aria-pressed={creditsEmpty ? undefined : aiOpen}
-          aria-label={
-            creditsEmpty ? tTop("credits.emptyAriaLabel") : undefined
-          }
-          className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
-            creditsEmpty
-              ? "border-rose/40 bg-rose/10 text-rose hover:bg-rose/20"
-              : "border-violet/40 bg-violet/10 text-violet hover:bg-violet/20"
-          }`}
-        >
-          <IconSparkle size={14} />
-          <span className="hidden sm:inline">
-            {creditsEmpty
-              ? tTop("credits.emptyShort")
-              : credits
-                ? `${credits.remaining} ${tTop("credits.creditsUnit")}`
-                : tTop("builder.askAI")}
-          </span>
-        </button>
-        <IconButton
-          label="Undo"
-          disabled={!actions.canUndo}
-          onClick={actions.undo}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M9 14.5 4.5 10 9 5.5" />
-            <path d="M4.5 10H15a4.5 4.5 0 0 1 0 9h-4" />
-          </svg>
-        </IconButton>
-        <IconButton
-          label="Redo"
-          disabled={!actions.canRedo}
-          onClick={actions.redo}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="m15 14.5 4.5-4.5L15 5.5" />
-            <path d="M19.5 10H9a4.5 4.5 0 0 0 0 9h4" />
-          </svg>
-        </IconButton>
+      {/* Right: TASK 60 §24/§26 — a zoned toolbar. Export, Publish, theme and
+          Save are shrink-0 and ALWAYS visible — never scrolled underneath
+          another control. Secondary tools (Assets, History, Ask AI,
+          Undo/Redo) move into an overflow menu below xl. */}
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+        <div ref={moreRootRef} className="relative shrink-0 xl:hidden">
+          <button
+            type="button"
+            aria-label="More toolbar tools"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen((v) => !v)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-mist transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </button>
+          {moreOpen ? (
+            <div
+              role="menu"
+              aria-label="More toolbar tools"
+              className="absolute right-0 top-11 z-50 w-56 rounded-xl border border-line bg-panel p-1.5 shadow-[0_24px_60px_-24px_rgb(0_0_0/0.7)]"
+            >
+              {(
+                [
+                  {
+                    key: "assets",
+                    icon: <IconImage size={14} />,
+                    label: tTop("builder.assets"),
+                    disabled: false,
+                    run: () => onToggleAssets(),
+                  },
+                  {
+                    key: "history",
+                    icon: <IconHistory size={14} />,
+                    label: tTop("builder.history"),
+                    disabled: false,
+                    run: () => onToggleHistory(),
+                  },
+                  {
+                    key: "ai",
+                    icon: <IconSparkle size={14} />,
+                    label: creditsEmpty
+                      ? tTop("credits.emptyShort")
+                      : credits
+                        ? `${credits.remaining} ${tTop("credits.creditsUnit")}`
+                        : tTop("builder.askAI"),
+                    disabled: false,
+                    run: () => (creditsEmpty ? onOpenPurchase() : onToggleAI()),
+                  },
+                  {
+                    key: "undo",
+                    icon: (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M9 14.5 4.5 10 9 5.5" />
+                        <path d="M4.5 10H15a4.5 4.5 0 0 1 0 9h-4" />
+                      </svg>
+                    ),
+                    label: "Undo",
+                    disabled: !actions.canUndo,
+                    run: () => actions.undo(),
+                  },
+                  {
+                    key: "redo",
+                    icon: (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="m15 14.5 4.5-4.5L15 5.5" />
+                        <path d="M19.5 10H9a4.5 4.5 0 0 0 0 9h4" />
+                      </svg>
+                    ),
+                    label: "Redo",
+                    disabled: !actions.canRedo,
+                    run: () => actions.redo(),
+                  },
+                ] as const
+              ).map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  role="menuitem"
+                  disabled={item.disabled}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    item.run();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:pointer-events-none disabled:opacity-40"
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
-        <SaveStatus
-          state={saveState}
-          error={lastSavedError}
-          onSave={() => void saveNow()}
-        />
+        <div className="hidden shrink-0 items-center gap-1.5 xl:flex">
+          <button
+            type="button"
+            onClick={onToggleAssets}
+            aria-pressed={assetsOpen}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-mint/40 bg-mint/10 px-3 text-[13px] font-medium text-mint transition-colors hover:bg-mint/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+          >
+            <IconImage size={14} />
+            <span className="hidden sm:inline">{tTop("builder.assets")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onToggleHistory}
+            aria-pressed={historyOpen}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-fog transition-colors hover:bg-surface-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+          >
+            <IconHistory size={14} />
+            <span className="hidden sm:inline">{tTop("builder.history")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={creditsEmpty ? onOpenPurchase : onToggleAI}
+            aria-pressed={creditsEmpty ? undefined : aiOpen}
+            aria-label={
+              creditsEmpty ? tTop("credits.emptyAriaLabel") : undefined
+            }
+            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+              creditsEmpty
+                ? "border-rose/40 bg-rose/10 text-rose hover:bg-rose/20"
+                : "border-violet/40 bg-violet/10 text-violet hover:bg-violet/20"
+            }`}
+          >
+            <IconSparkle size={14} />
+            <span className="hidden sm:inline">
+              {creditsEmpty
+                ? tTop("credits.emptyShort")
+                : credits
+                  ? `${credits.remaining} ${tTop("credits.creditsUnit")}`
+                  : tTop("builder.askAI")}
+            </span>
+          </button>
+          <IconButton
+            label="Undo"
+            disabled={!actions.canUndo}
+            onClick={actions.undo}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 14.5 4.5 10 9 5.5" />
+              <path d="M4.5 10H15a4.5 4.5 0 0 1 0 9h-4" />
+            </svg>
+          </IconButton>
+          <IconButton
+            label="Redo"
+            disabled={!actions.canRedo}
+            onClick={actions.redo}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m15 14.5 4.5-4.5L15 5.5" />
+              <path d="M19.5 10H9a4.5 4.5 0 0 0 0 9h4" />
+            </svg>
+          </IconButton>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <ThemeToggle compact />
+          <PublishButton />
+          <ExportButton />
+          <SaveStatus
+            state={saveState}
+            error={lastSavedError}
+            onSave={() => void saveNow()}
+          />
+        </div>
       </div>
 
       {/* TASK 59: cross-environment confirmation — creates a NEW project of

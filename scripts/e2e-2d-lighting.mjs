@@ -202,8 +202,9 @@ check("out-of-range intensity/radius clamp safely (opacity ≤ 1, radius ≥ 8)"
 await page.goto(`${WEB}/builder/${project.id}`, { waitUntil: "networkidle" });
 await page.waitForTimeout(1200);
 await page.getByRole("button", { name: "Play", exact: true }).first().click().catch(() => null);
-await page.waitForTimeout(800);
-check("out-of-range light values raise diagnostics",
+await page.waitForTimeout(800);// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);check("out-of-range light values raise diagnostics",
   (await page.getByText(/outside 0–5/).count()) >= 1 && (await page.getByText(/outside 8–2000/).count()) >= 1);
 
 // ---- 7. Published + export parity -------------------------------------------------

@@ -109,6 +109,10 @@ export interface BuilderContextValue {
     setParent3D: (screenId: string, id: string, parentId: string | null) => void;
     duplicateHierarchy3D: (screenId: string, id: string) => void;
     removeComponent3D: (screenId: string, id: string) => void;
+    /** TASK 60 §20: GROUP variants for the viewport multi-select — the whole
+     * selection is ONE pure model operation and ONE undoable commit. */
+    duplicateHierarchy3DMany: (screenId: string, ids: string[]) => void;
+    removeComponent3DMany: (screenId: string, ids: string[]) => void;
     // Code ↔ model sync.
     applyCodeSync: (screenId: string, handlers: ProjectModelHandler[]) => void;
     setScreenCode: (screenId: string, code: string | null) => void;

@@ -204,6 +204,8 @@ export function BuilderCanvas() {
               onSelect={(id) => select(id)}
               onDelete={(id) => actions.removeComponent3D(activeScreenId, id)}
               onDuplicate={(id) => actions.duplicateHierarchy3D(activeScreenId, id)}
+              onDeleteMany={(ids) => actions.removeComponent3DMany(activeScreenId, ids)}
+              onDuplicateMany={(ids) => actions.duplicateHierarchy3DMany(activeScreenId, ids)}
               onTransform={(id, patch) => actions.updateProps(id, patch)}
             />
           </div>
@@ -529,12 +531,13 @@ export function BuilderCanvas() {
                   onSelect={(id) => select(id)}
                   onDelete={(id) => actions.removeComponent3D(activeScreenId, id)}
                   onDuplicate={(id) => actions.duplicateHierarchy3D(activeScreenId, id)}
+                  onDeleteMany={(ids) => actions.removeComponent3DMany(activeScreenId, ids)}
+                  onDuplicateMany={(ids) => actions.duplicateHierarchy3DMany(activeScreenId, ids)}
                   onTransform={(id, patch) => actions.updateProps(id, patch)}
                 />
               </div>
             );
           }
-
           if (isGame) {
             // The universal game viewport (TASK 11): dark shell + corner
             // ticks, inside the hardware frame on phone/tablet targets.

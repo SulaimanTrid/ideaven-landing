@@ -1,6 +1,7 @@
 // TASK 11 acceptance: universal viewport system — device/orientation/custom/
 // safe-area/fit-zoom, persistence through the model, unified frames.
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const pw = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const chromium = pw.chromium ?? pw.default?.chromium;
 const API = "http://localhost:8090";
 const WEB = "http://localhost:3000";
 const errors = [];

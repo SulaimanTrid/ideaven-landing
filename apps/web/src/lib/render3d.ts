@@ -350,6 +350,9 @@ export interface RenderOptions3D {
   /** Editor-only helpers (grid + axes). The runtime never draws them. */
   grid?: boolean;
   selectedId?: string;
+  /** TASK 60 §20: multi-select highlight (viewport-local ctrl+click set).
+   * Drawn thinner/bluer than the primary selection outline. */
+  highlightIds?: string[];
 }
 
 /**
@@ -430,6 +433,10 @@ export function drawScene3D(ctx: CanvasRenderingContext2D, options: RenderOption
     if (options.selectedId && face.meshId === options.selectedId) {
       ctx.strokeStyle = "#8f7bff";
       ctx.lineWidth = 2;
+      ctx.stroke();
+    } else if (options.highlightIds?.includes(face.meshId)) {
+      ctx.strokeStyle = "#5fa8ff";
+      ctx.lineWidth = 1.5;
       ctx.stroke();
     }
   }

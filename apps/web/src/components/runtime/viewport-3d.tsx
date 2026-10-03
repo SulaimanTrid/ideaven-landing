@@ -35,15 +35,19 @@ import {
   resolveControllerKeys,
 } from "@/lib/character3d";
 import {
+  aabbFromMatrix,
   angleDelta,
   axisRayParameter,
+  GIZMO_SNAP_STEPS,
   gizmoAxes,
   planarAngle,
   planeBasis,
+  raycastAABB,
   rayPlanePoint,
   rotationMatrix,
   scaleFromProjection,
   screenToWorldRay,
+  snapToStep,
   worldCenterOf,
   type GizmoAxis,
   type GizmoSpace,
@@ -109,6 +113,11 @@ export interface Viewport3DProps {
   /** TASK 53: editor-only hierarchy operations (wired to canonical ops). */
   onDelete?: (id: string) => void;
   onDuplicate?: (id: string) => void;
+  /** TASK 60 §20: GROUP variants for the multi-select chip — the whole
+   * selection is ONE pure model op / ONE undoable commit. Optional; without
+   * them the chip falls back to per-entity calls. */
+  onDeleteMany?: (ids: string[]) => void;
+  onDuplicateMany?: (ids: string[]) => void;
   /** TASK 54: runtime physics - emit dispatches trigger events through the
    * existing handler architecture (runtime mode only). */
   runtimeEmit?: (componentId: string | null, event: string) => void;
@@ -120,10 +129,12 @@ export interface Viewport3DProps {
   onTransform?: (id: string, patch: PropsMap) => void;
 }
 
-export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete, onDuplicate, runtimeEmit, getProps, onTransform }: Viewport3DProps) {
+export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete, onDuplicate, onDeleteMany, onDuplicateMany, runtimeEmit, getProps, onTransform }: Viewport3DProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // Editor-only orbit navigation: yaw (rad), elevation (rad), distance.
-  const orbit = useRef({ yaw: 0, elev: 0.35, distance: 9 });
+  // Editor-only orbit navigation: yaw (rad), elevation (rad), distance, and
+  // the look-at target (TASK 60 §22 — default matches the old implicit
+  // [0, 0.5, 0] anchor so the initial view is pixel-identical).
+  const orbit = useRef({ yaw: 0, elev: 0.35, distance: 9, target: { x: 0, y: 0.5, z: 0 } });
   const drag = useRef<{ x: number; y: number } | null>(null);
   const [, setRenderTick] = useState(0);
 
@@ -196,6 +207,12 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
   onTransformRef.current = onTransform;
   const gizmoGeometryRef = useRef<GizmoHandleGeometry | null>(null);
   const worldMatricesRef = useRef<ReturnType<typeof computeWorldMatrices>["matrices"] | null>(null);
+  // TASK 60: a drag must never end in an accidental selection. Chromium fires
+  // a click after every pointer drag on the same element, so the release
+  // point would raycast-select whatever happens to be under it (gizmo drags
+  // and orbits alike). The press tracks cumulative movement; click() ignores
+  // anything that moved more than a few pixels.
+  const pressRef = useRef<{ last: { x: number; y: number }; moved: number } | null>(null);
   const gizmoDrag = useRef<
     | null
     | {
@@ -217,6 +234,73 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
         current: { px: number; py: number; pz: number; rx: number; ry: number; rz: number; sx: number; sy: number; sz: number };
       }
   >(null);
+
+  // TASK 60 §18/§19/§25: editor view/interaction options — editor state,
+  // never the model. Colliders stay ON by default: the collider overlay has
+  // been part of how the editor reads a scene since TASK 55, and flipping it
+  // off would silently regress every collider-focused workflow.
+  const [snapEnabled, setSnapEnabled] = useState(false);
+  const [gridVisible, setGridVisible] = useState(true);
+  const [collidersVisible, setCollidersVisible] = useState(true);
+  // TASK 60 §25: Select tool — no gizmo, click only. Q/W/E/R switch tools.
+  const [selectMode, setSelectMode] = useState(false);
+  // TASK 60 §20: viewport-local multi-select (ctrl+click). Highlights in the
+  // canvas, group delete/duplicate; the gizmo stays single-selection — the
+  // one canonical transform pipeline is per-entity (documented limitation).
+  const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set());
+  const snapRef = useRef(snapEnabled);
+  const gridRef = useRef(gridVisible);
+  const collidersRef = useRef(collidersVisible);
+  const selectModeRef = useRef(selectMode);
+  const multiRef = useRef(multiSelected);
+  snapRef.current = snapEnabled;
+  gridRef.current = gridVisible;
+  collidersRef.current = collidersVisible;
+  selectModeRef.current = selectMode;
+  multiRef.current = multiSelected;
+
+  // External selection or hierarchy changes reset the viewport-local set.
+  useEffect(() => {
+    setMultiSelected(new Set());
+  }, [selectedId, screen]);
+
+  // TASK 60 §22: frame/reset — real orbit operations over the derived world
+  // matrices. Ref-only bodies, so the mount-stable keyboard effect can call
+  // the first render's closures safely.
+  const resetView = () => {
+    orbit.current = { yaw: 0, elev: 0.35, distance: 9, target: { x: 0, y: 0.5, z: 0 } };
+  };
+  const frameSelected = () => {
+    const id = selectedRef.current;
+    const entry = id ? worldRef.current.matrices.get(id) : null;
+    if (!entry) return;
+    const c = worldCenterOf(entry.matrix);
+    orbit.current.target = { x: c.x, y: c.y, z: c.z };
+  };
+  const frameAll = () => {
+    const matrices = screenRef.current.components
+      .filter((c) => MESH_TYPES.has(c.type) && c.props?.visible !== false)
+      .map((c) => worldRef.current.matrices.get(c.id)?.matrix)
+      .filter((m): m is number[] => Boolean(m));
+    if (matrices.length === 0) {
+      resetView();
+      return;
+    }
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (const matrix of matrices) {
+      const box = aabbFromMatrix(matrix, { x: 0.5, y: 0.5, z: 0.5 });
+      minX = Math.min(minX, box.min.x);
+      minY = Math.min(minY, box.min.y);
+      minZ = Math.min(minZ, box.min.z);
+      maxX = Math.max(maxX, box.max.x);
+      maxY = Math.max(maxY, box.max.y);
+      maxZ = Math.max(maxZ, box.max.z);
+    }
+    orbit.current.target = { x: (minX + maxX) / 2, y: (minY + maxY) / 2, z: (minZ + maxZ) / 2 };
+    const radius = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2;
+    orbit.current.distance = Math.min(80, Math.max(9, radius * 2.6));
+  };
 
   useEffect(() => {
     if (modeRef.current !== "runtime") return;
@@ -247,13 +331,13 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
     modeRef.current === "runtime"
       ? cameraOf3D(screenRef.current)
       : (() => {
-          const { yaw, elev, distance } = orbit.current;
+          const { yaw, elev, distance, target } = orbit.current;
           const deg = 180 / Math.PI;
           return {
             position: [
-              distance * Math.cos(elev) * Math.sin(yaw),
-              distance * Math.sin(elev) + 0.5,
-              distance * Math.cos(elev) * Math.cos(yaw),
+              target.x + distance * Math.cos(elev) * Math.sin(yaw),
+              target.y + distance * Math.sin(elev),
+              target.z + distance * Math.cos(elev) * Math.cos(yaw),
             ],
             rotation: [-elev * deg, yaw * deg, 0],
             fov: 60,
@@ -409,11 +493,26 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
         meshes,
         lights,
         ambient,
-        grid: modeRef.current === "editor",
+        grid: modeRef.current === "editor" && gridRef.current,
         selectedId: modeRef.current === "editor" ? selectedRef.current ?? undefined : undefined,
+        highlightIds:
+          modeRef.current === "editor" && multiRef.current.size > 0 ? [...multiRef.current] : undefined,
       });
       if (modeRef.current === "editor") {
+        // TASK 60: editor observability for the E2E suites (never a source
+        // of truth — the React state above is).
+        canvas.dataset.snapEnabled = String(snapRef.current);
+        canvas.dataset.gridVisible = String(gridRef.current);
+        canvas.dataset.collidersVisible = String(collidersRef.current);
+        canvas.dataset.selectMode = String(selectModeRef.current);
+        canvas.dataset.orbitTarget = JSON.stringify({
+          x: Number(orbit.current.target.x.toFixed(3)),
+          y: Number(orbit.current.target.y.toFixed(3)),
+          z: Number(orbit.current.target.z.toFixed(3)),
+        });
+        canvas.dataset.orbitDistance = orbit.current.distance.toFixed(2);
         // Collider gizmos only for entities that actually have a collider.
+        // TASK 60 §25: the overlay is toggleable (default ON).
         const gizmos = components
           .filter((c) => c.type !== "camera3d" && c.type !== "light3d")
           .map((c) => {
@@ -438,7 +537,9 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
             };
           })
           .filter((g) => g.hasCollider);
-        drawColliderGizmos(ctx, canvas.width, canvas.height, buildCamera(), gizmos);
+        if (collidersRef.current) {
+          drawColliderGizmos(ctx, canvas.width, canvas.height, buildCamera(), gizmos);
+        }
         // Light gizmos (TASK 55): marker + influence ring / direction arrow,
         // including disabled lights (drawn dimmed). Editor-only.
         const lightGizmos = lights.map((l) => ({
@@ -451,8 +552,13 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
         }));
         drawLightGizmos(ctx, canvas.width, canvas.height, buildCamera(), lightGizmos);
         // TASK 56: the transform gizmo on the selected entity (editor-only).
+        // TASK 60 §25: the Select tool suppresses the gizmo entirely.
         const selectedEntry = selectedRef.current ? worldMatrices.get(selectedRef.current) : null;
-        if (selectedEntry && selectedRef.current) {
+        if (selectModeRef.current) {
+          gizmoGeometryRef.current = null;
+          delete canvas.dataset.transformMode;
+          delete canvas.dataset.gizmoHandles;
+        } else if (selectedEntry && selectedRef.current) {
           const gAxes = gizmoAxes(gizmoSpaceRef.current, selectedEntry.matrix);
           const gOrigin = worldCenterOf(selectedEntry.matrix);
           const gSpec = {
@@ -616,7 +722,10 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
       const a = drag.uniform ? drag.axes[0] : drag.axes[axisIndex];
       const s = axisRayParameter(drag.startWorldCenter, a, ray);
       if (s === null || drag.rayStartParam === null) return;
-      const delta = s - drag.rayStartParam;
+      // TASK 60 §21: snap the DELTA (never the absolute pose) to the move
+      // step, so the object's sub-step starting offset is preserved.
+      const raw = s - drag.rayStartParam;
+      const delta = snapRef.current ? snapToStep(raw, GIZMO_SNAP_STEPS.move) : raw;
       const world: Vec3 = {
         x: drag.startWorldCenter.x + a.x * delta,
         y: drag.startWorldCenter.y + a.y * delta,
@@ -637,7 +746,8 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
       const point = rayPlanePoint(drag.startWorldCenter, a, ray);
       if (!point) return;
       const angle = planarAngle(drag.startWorldCenter, point, drag.ringBasis.u, drag.ringBasis.v);
-      const deltaDeg = (angleDelta(drag.startAngle, angle) * 180) / Math.PI;
+      const rawDeg = (angleDelta(drag.startAngle, angle) * 180) / Math.PI;
+      const deltaDeg = snapRef.current ? snapToStep(rawDeg, GIZMO_SNAP_STEPS.rotate) : rawDeg;
       const next = { ...drag.startLocal };
       if (drag.axis === "x") next.rx = drag.startLocal.rx + deltaDeg;
       if (drag.axis === "y") next.ry = drag.startLocal.ry + deltaDeg;
@@ -649,11 +759,17 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
       // its own start value (uniform multiplies all three by the factor).
       const factor = scaleFromProjection(drag.startProj, proj, 1);
       const clampScale = (v: number) => Math.min(100, Math.max(0.1, Number.isFinite(v) ? v : 1));
+      // TASK 60 §21: snap the resulting scale to the 0.1 step (re-clamped),
+      // applied only to the dragged axes so untouched axes never move.
+      const scaleOut = (v: number) => {
+        const clamped = clampScale(v);
+        return snapRef.current ? clampScale(snapToStep(clamped, GIZMO_SNAP_STEPS.scale)) : clamped;
+      };
       drag.current = {
         ...drag.startLocal,
-        sx: clampScale(drag.uniform || drag.axis === "x" ? drag.startLocal.sx * factor : drag.startLocal.sx),
-        sy: clampScale(drag.uniform || drag.axis === "y" ? drag.startLocal.sy * factor : drag.startLocal.sy),
-        sz: clampScale(drag.uniform || drag.axis === "z" ? drag.startLocal.sz * factor : drag.startLocal.sz),
+        sx: drag.uniform || drag.axis === "x" ? scaleOut(drag.startLocal.sx * factor) : drag.startLocal.sx,
+        sy: drag.uniform || drag.axis === "y" ? scaleOut(drag.startLocal.sy * factor) : drag.startLocal.sy,
+        sz: drag.uniform || drag.axis === "z" ? scaleOut(drag.startLocal.sz * factor) : drag.startLocal.sz,
       };
     }
   };
@@ -687,10 +803,27 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
       const inField =
         target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable === true;
       if (inField || event.ctrlKey || event.metaKey || event.altKey) return;
+      // TASK 60 §20: Escape clears the viewport-local multi-select (capture
+      // phase, so the builder's global Escape-to-deselect doesn't also run).
+      if (event.key === "Escape" && multiRef.current.size > 0) {
+        setMultiSelected(new Set());
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const key = event.key.toLowerCase();
-      if (key === "w") setGizmoMode("move");
-      else if (key === "e") setGizmoMode("rotate");
-      else if (key === "r") setGizmoMode("scale");
+      if (key === "q") setSelectMode(true);
+      else if (key === "w") {
+        setSelectMode(false);
+        setGizmoMode("move");
+      } else if (key === "e") {
+        setSelectMode(false);
+        setGizmoMode("rotate");
+      } else if (key === "r") {
+        setSelectMode(false);
+        setGizmoMode("scale");
+      } else if (key === "f") frameSelected(); // TASK 60 §22: focus selected
+      else if (event.key === "Home") frameAll(); // TASK 60 §22: frame all
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
@@ -698,9 +831,11 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
 
   const pointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (modeRef.current !== "editor") return;
+    pressRef.current = { last: { x: event.clientX, y: event.clientY }, moved: 0 };
     const canvas = event.currentTarget;
     const point = gizmoCanvasPoint(event, canvas);
-    if (selectedRef.current && pickGizmoHandle(point.x, point.y)) {
+    // TASK 60 §25: the Select tool never engages the gizmo.
+    if (!selectModeRef.current && selectedRef.current && pickGizmoHandle(point.x, point.y)) {
       const hit = pickGizmoHandle(point.x, point.y)!;
       startGizmoDrag(selectedRef.current, hit.axis, hit.uniform === true, point.x, point.y, canvas);
       if (gizmoDrag.current) {
@@ -717,6 +852,13 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
   const pointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (modeRef.current !== "editor") return;
     const canvas = event.currentTarget;
+    if (pressRef.current) {
+      pressRef.current.moved += Math.hypot(
+        event.clientX - pressRef.current.last.x,
+        event.clientY - pressRef.current.last.y,
+      );
+      pressRef.current.last = { x: event.clientX, y: event.clientY };
+    }
     if (gizmoDrag.current) {
       const point = gizmoCanvasPoint(event, canvas);
       updateGizmoDrag(point.x, point.y, canvas);
@@ -745,34 +887,82 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
 
   const click = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (modeRef.current !== "editor" || !onSelect) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    // Pick the nearest mesh world-center within a 32px radius (screen space).
-    const width = event.currentTarget.width;
-    const height = event.currentTarget.height;
+    // A drag that ends here is not a click: ignore anything that moved
+    // (gizmo drags and orbit drags both trail a synthetic click).
+    if (pressRef.current && pressRef.current.moved > 6) {
+      pressRef.current = null;
+      return;
+    }
+    pressRef.current = null;
+    // TASK 60 §17: pointer → BACKING-STORE canvas pixels, the SAME mapping the
+    // gizmo math uses (gizmoCanvasPoint). The pre-TASK-60 picker compared raw
+    // display pixels against backing-store projections — silently wrong at
+    // any display scale ≠ 1:1.
+    const canvas = event.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / (rect.width || 1);
+    const scaleY = canvas.height / (rect.height || 1);
+    const x = (event.clientX - rect.left) * scaleX;
+    const y = (event.clientY - rect.top) * scaleY;
+    const width = canvas.width;
+    const height = canvas.height;
     const cameraNow = buildCamera();
+    // TASK 60 §17: real picking — the pointer ray vs each entity's world
+    // AABB (raycastAABB slab method), nearest hit wins. The old nearest-
+    // center fallback (32px screen radius) stays for misses/thin targets so
+    // the click UX never regresses; both read the SAME derived matrices.
+    const ray = screenToWorldRay(cameraNow, x, y, width, height);
     let best: string | null = null;
-    let bestDistance = 32;
+    let bestT = Infinity;
     for (const component of screenRef.current.components) {
       if (!MESH_TYPES.has(component.type)) continue;
+      if (component.props?.visible === false) continue;
       const entry = worldRef.current.matrices.get(component.id);
-      const center = entry ? mat4TransformPoint(entry.matrix, [0, 0, 0]) : null;
-      if (!center) continue;
-      const view = rotateForPick(
-        [center[0] - cameraNow.position[0], center[1] - cameraNow.position[1], center[2] - cameraNow.position[2]],
-        [-cameraNow.rotation[0], -cameraNow.rotation[1], -cameraNow.rotation[2]],
-      );
-      if (view[2] >= -cameraNow.near) continue;
-      const focal = height / 2 / Math.tan((cameraNow.fov * Math.PI) / 360);
-      const sx = width / 2 + (view[0] * focal) / -view[2];
-      const sy = height / 2 - (view[1] * focal) / -view[2];
-      const distance = Math.hypot(sx - x, sy - y);
-      if (distance < bestDistance) {
-        bestDistance = distance;
+      if (!entry) continue;
+      const box = aabbFromMatrix(entry.matrix, { x: 0.5, y: 0.5, z: 0.5 });
+      const t = raycastAABB(ray.origin, ray.dir, box.min, box.max);
+      if (t !== null && t < bestT) {
+        bestT = t;
         best = component.id;
       }
     }
+    if (!best) {
+      let bestDistance = 32;
+      for (const component of screenRef.current.components) {
+        if (!MESH_TYPES.has(component.type)) continue;
+        const entry = worldRef.current.matrices.get(component.id);
+        const center = entry ? mat4TransformPoint(entry.matrix, [0, 0, 0]) : null;
+        if (!center) continue;
+        const view = rotateForPick(
+          [center[0] - cameraNow.position[0], center[1] - cameraNow.position[1], center[2] - cameraNow.position[2]],
+          [-cameraNow.rotation[0], -cameraNow.rotation[1], -cameraNow.rotation[2]],
+        );
+        if (view[2] >= -cameraNow.near) continue;
+        const focal = height / 2 / Math.tan((cameraNow.fov * Math.PI) / 360);
+        const sx = width / 2 + (view[0] * focal) / -view[2];
+        const sy = height / 2 - (view[1] * focal) / -view[2];
+        const distance = Math.hypot(sx - x, sy - y);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = component.id;
+        }
+      }
+    }
+    // TASK 60 §20: ctrl+click toggles viewport-local multi-select membership
+    // (highlight + group tools); it never changes the primary selection.
+    if (event.ctrlKey || event.metaKey) {
+      const hit = best;
+      if (hit) {
+        setMultiSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(hit)) next.delete(hit);
+          else next.add(hit);
+          return next;
+        });
+      }
+      return;
+    }
+    if (multiRef.current.size > 0) setMultiSelected(new Set());
     if (best) onSelect(best);
   };
 
@@ -802,9 +992,11 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
         <div
           role="toolbar"
           aria-label="Transform tools"
-          className="absolute bottom-9 left-3 flex items-center gap-0.5 rounded-lg border border-line bg-panel/95 p-0.5 shadow-sm backdrop-blur"
+          data-3d-toolbar="true"
+          className="absolute left-1/2 top-2 flex max-w-[calc(100%-12px)] -translate-x-1/2 items-center gap-0.5 overflow-x-auto rounded-lg border border-line bg-panel/95 p-1 shadow-sm backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {([
+            ["select", "Select", "Q"],
             ["move", "Move", "W"],
             ["rotate", "Rotate", "E"],
             ["scale", "Scale", "R"],
@@ -812,11 +1004,20 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
             <button
               key={kind}
               type="button"
-              aria-pressed={gizmoMode === kind}
+              data-tool={kind}
+              aria-pressed={kind === "select" ? selectMode : !selectMode && gizmoMode === kind}
               title={`${label} (${shortcut})`}
-              onClick={() => setGizmoMode(kind)}
+              onClick={() => {
+                if (kind === "select") setSelectMode(true);
+                else {
+                  setSelectMode(false);
+                  setGizmoMode(kind);
+                }
+              }}
               className={`h-6 rounded-md px-2 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
-                gizmoMode === kind ? "bg-violet/25 text-ink" : "text-mist hover:text-fog"
+                (kind === "select" ? selectMode : !selectMode && gizmoMode === kind)
+                  ? "bg-violet/25 text-ink"
+                  : "text-mist hover:text-fog"
               }`}
             >
               {label}
@@ -827,6 +1028,7 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
             <button
               key={space}
               type="button"
+              data-space={space}
               aria-pressed={gizmoSpace === space}
               title={`${space === "local" ? "Local" : "World"} space`}
               onClick={() => setGizmoSpace(space)}
@@ -837,6 +1039,115 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
               {space}
             </button>
           ))}
+          <span className="mx-0.5 h-4 w-px bg-line" />
+          <button
+            type="button"
+            data-toggle="snap"
+            aria-pressed={snapEnabled}
+            title="Snap — move 0.5 · rotate 15° · scale 0.1"
+            onClick={() => setSnapEnabled((v) => !v)}
+            className={`h-6 rounded-md px-2 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+              snapEnabled ? "bg-violet/25 text-ink" : "text-mist hover:text-fog"
+            }`}
+          >
+            Snap
+          </button>
+          <button
+            type="button"
+            data-toggle="grid"
+            aria-pressed={gridVisible}
+            title="Show grid"
+            onClick={() => setGridVisible((v) => !v)}
+            className={`h-6 rounded-md px-2 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+              gridVisible ? "bg-violet/25 text-ink" : "text-mist hover:text-fog"
+            }`}
+          >
+            Grid
+          </button>
+          <button
+            type="button"
+            data-toggle="colliders"
+            aria-pressed={collidersVisible}
+            title="Collider overlays"
+            onClick={() => setCollidersVisible((v) => !v)}
+            className={`h-6 rounded-md px-2 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+              collidersVisible ? "bg-violet/25 text-ink" : "text-mist hover:text-fog"
+            }`}
+          >
+            Colliders
+          </button>
+          <span className="mx-0.5 h-4 w-px bg-line" />
+          <button
+            type="button"
+            data-action="frame-selected"
+            title="Frame selected (F)"
+            onClick={frameSelected}
+            className="h-6 rounded-md px-2 text-[11px] font-medium text-mist transition-colors hover:text-fog focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+          >
+            Frame Sel
+          </button>
+          <button
+            type="button"
+            data-action="frame-all"
+            title="Frame all (Home)"
+            onClick={frameAll}
+            className="h-6 rounded-md px-2 text-[11px] font-medium text-mist transition-colors hover:text-fog focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+          >
+            Frame All
+          </button>
+          <button
+            type="button"
+            data-action="reset-view"
+            title="Reset view"
+            onClick={resetView}
+            className="h-6 rounded-md px-2 text-[11px] font-medium text-mist transition-colors hover:text-fog focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+          >
+            Reset
+          </button>
+        </div>
+      ) : null}
+      {mode === "editor" && multiSelected.size > 0 ? (
+        <div
+          data-multi-select-count={multiSelected.size}
+          className="absolute bottom-9 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-sky/40 bg-[#12151f]/95 px-3 py-1.5 text-[12px] text-sky shadow-sm backdrop-blur"
+        >
+          <span className="whitespace-nowrap">{multiSelected.size} selected — group tools act on all</span>
+          {onDuplicate || onDuplicateMany ? (
+            <button
+              type="button"
+              data-multi-duplicate="true"
+              onClick={() =>
+                onDuplicateMany
+                  ? onDuplicateMany([...multiSelected])
+                  : [...multiSelected].forEach((id) => onDuplicate!(id))
+              }
+              className="h-6 rounded-md border border-line px-2 text-[11px] text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+            >
+              Duplicate
+            </button>
+          ) : null}
+          {onDelete || onDeleteMany ? (
+            <button
+              type="button"
+              data-multi-delete="true"
+              onClick={() =>
+                onDeleteMany
+                  ? onDeleteMany([...multiSelected])
+                  : [...multiSelected].forEach((id) => onDelete!(id))
+              }
+              className="h-6 rounded-md border border-rose/40 px-2 text-[11px] text-rose transition-colors hover:bg-rose/10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+            >
+              Delete
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-label="Clear multi-selection"
+            onClick={() => setMultiSelected(new Set())}
+            className="h-6 w-6 rounded-md text-mist transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+          >
+            ✕
+          </button>
         </div>
       ) : null}
       <span className="absolute bottom-2 left-3 font-mono text-[10px] tracking-[0.14em] text-mist">

@@ -167,6 +167,9 @@ check("redo re-applies the transform",
 }
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForTimeout(1800);
+// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);
 check("malformed transform/fov do not crash the runtime (viewport still renders)",
   (await canvas.count()) === 1 && (await page.getByText(/outside 20–120/).count()) >= 1);
 {

@@ -199,6 +199,9 @@ check("deleting the parent reparents children (never orphans)",
 }
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForTimeout(2000);
+// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);
 check("cycle in raw model raises a diagnostic",
   (await page.getByText(/parent cycle/).count()) >= 1);
 check("runtime stays error-free with a cycle", errors.filter((e) => e.startsWith("pageerror")).length === 0,

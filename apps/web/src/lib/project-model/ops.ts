@@ -315,6 +315,38 @@ export function removeComponent3D(model: ProjectModel, screenId: string, id: str
   return next;
 }
 
+/**
+ * TASK 60 §20: GROUP variants — one pure model operation for a whole
+ * multi-selection. Chaining through the intermediate result means ONE
+ * undoable commit per group action (rapid per-entity commits would clobber
+ * each other: each reads the same pre-render model snapshot).
+ */
+export function duplicateHierarchy3DMany(
+  model: ProjectModel,
+  screenId: string,
+  ids: string[],
+): ProjectModel {
+  let next = model;
+  for (const id of ids) {
+    const after = duplicateHierarchy3D(next, screenId, id);
+    if (after !== next) next = after;
+  }
+  return next;
+}
+
+export function removeComponent3DMany(
+  model: ProjectModel,
+  screenId: string,
+  ids: string[],
+): ProjectModel {
+  let next = model;
+  for (const id of ids) {
+    const after = removeComponent3D(next, screenId, id);
+    if (after !== next) next = after;
+  }
+  return next;
+}
+
 export interface ComponentUpdate {
   props?: PropsPatch;
   styles?: PropsPatch;

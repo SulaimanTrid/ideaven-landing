@@ -309,8 +309,9 @@ check("rebound Jump key (j) makes the player jump",
 await page.goto(`${WEB}/builder/${project.id}`, { waitUntil: "networkidle" });
 await page.waitForTimeout(1500);
 await page.getByRole("button", { name: "Play", exact: true }).first().click().catch(() => null);
-await page.waitForTimeout(800);
-const leftDelete = page.getByRole("button", { name: "Delete action Move left" });
+await page.waitForTimeout(800);// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);const leftDelete = page.getByRole("button", { name: "Delete action Move left" });
 await leftDelete.click();
 // The top bar can already read "Saved" right after a reload, so give the
 // autosave a real moment before fetching the model.

@@ -314,8 +314,9 @@ check("after save + reload the machine still switches Idle → Run", samples.som
   await page.waitForTimeout(1500);
   // The machine lives on the Play screen — open it so its diagnostics show.
   await page.getByRole("button", { name: "Play", exact: true }).first().click().catch(() => null);
-  await page.waitForTimeout(1000);
-  check("a state referencing a missing clip raises a diagnostic",
+  await page.waitForTimeout(1000);  // TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+  await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+  await page.waitForTimeout(250);  check("a state referencing a missing clip raises a diagnostic",
     (await page.getByText(/references the clip “anim-missing”/).count()) >= 1);
   await page.getByRole("button", { name: "Preview", exact: true }).first().click();
   await page.waitForTimeout(1500);

@@ -16,6 +16,13 @@ import { mat4TransformPoint } from "@/lib/render3d";
  *   delta is applied to the matching local Euler axis (rx/ry/rz).
  * - SCALE: pointer projection onto the axis' screen direction → factor over
  *   the drag-start projection → local sx/sy/sz, clamped 0.1–100, NaN-safe.
+ *
+ * TASK 60 additions, same module so there is ONE interaction-math source:
+ * - SNAP: GIZMO_SNAP_STEPS + snapToStep — move 0.5 world units, rotate 15°,
+ *   scale 0.1 — applied to the drag DELTA (never the absolute pose), so
+ *   snapping preserves the object's sub-step starting offset.
+ * - RAYCAST: raycastAABB + aabbFromMatrix — the picking foundation (slab
+ *   method, returns entry distance or null). Pure and deterministic.
  */
 
 export type GizmoMode = "move" | "rotate" | "scale";
@@ -29,6 +36,73 @@ export interface Vec3 {
 }
 
 export const GIZMO_SCALE_LIMITS = { min: 0.1, max: 100 } as const;
+
+/** TASK 60 §21: snap increments per gizmo kind (editor units: world units,
+ * degrees, absolute scale). One source of truth for the toolbar tooltip, the
+ * drag math, and the docs. */
+export const GIZMO_SNAP_STEPS = { move: 0.5, rotate: 15, scale: 0.1 } as const;
+
+/** TASK 60: snap `value` to the nearest multiple of `step` (NaN-safe). */
+export function snapToStep(value: number, step: number): number {
+  if (!Number.isFinite(value)) return value;
+  if (!(step > 0)) return value;
+  return Math.round(value / step) * step;
+}
+
+/** TASK 60 §17: ray vs axis-aligned bounding box (slab method). Returns the
+ * entry distance along the ray (≥ 0 when the origin is inside), or null on
+ * miss / non-finite input. The raycast FOUNDATION for editor picking. */
+export function raycastAABB(
+  origin: Vec3,
+  dir: Vec3,
+  min: Vec3,
+  max: Vec3,
+): number | null {
+  let tmin = 0;
+  let tmax = Infinity;
+  const o = [origin.x, origin.y, origin.z];
+  const d = [dir.x, dir.y, dir.z];
+  const lo = [min.x, min.y, min.z];
+  const hi = [max.x, max.y, max.z];
+  for (let i = 0; i < 3; i++) {
+    const oi = o[i]!;
+    const di = d[i]!;
+    if (!Number.isFinite(oi) || !Number.isFinite(di)) return null;
+    if (Math.abs(di) < 1e-12) {
+      // Parallel to this slab pair: inside only if the origin is.
+      if (oi < lo[i]! || oi > hi[i]!) return null;
+      continue;
+    }
+    const inv = 1 / di;
+    let t1 = (lo[i]! - oi) * inv;
+    let t2 = (hi[i]! - oi) * inv;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  return tmin;
+}
+
+/** TASK 60: world AABB for an entity from its world matrix and LOCAL half
+ * extents (the mesh primitives are unit-sized, so half = 0.5×scale by
+ * default). Half extents are scaled by the matrix column lengths — the same
+ * scale convention the physics bodies and collider gizmos use. */
+export function aabbFromMatrix(
+  matrix: number[],
+  half: Vec3,
+): { min: Vec3; max: Vec3 } {
+  const colLen = (i: number): number =>
+    Math.hypot(matrix[i] ?? 0, matrix[i + 1] ?? 0, matrix[i + 2] ?? 0) || 1;
+  const c = mat4TransformPoint(matrix, [0, 0, 0]);
+  const hx = Math.abs(half.x) * colLen(0);
+  const hy = Math.abs(half.y) * colLen(4);
+  const hz = Math.abs(half.z) * colLen(8);
+  return {
+    min: { x: c[0] - hx, y: c[1] - hy, z: c[2] - hz },
+    max: { x: c[0] + hx, y: c[1] + hy, z: c[2] + hz },
+  };
+}
 
 /** Screen-space ray through one canvas pixel (same projection as the
  * renderer: focal = (h/2)/tan(fov/2), view dir = unprojected, world dir =

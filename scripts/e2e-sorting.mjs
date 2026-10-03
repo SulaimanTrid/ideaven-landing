@@ -189,6 +189,9 @@ model.screens[0].sortingLayers = LAYERS.filter((l) => l.name !== "Foreground");
 await putModel(cookie, project.id, model);
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForTimeout(2000);
+// TASK 60: the diagnostics drawer starts COLLAPSED - open it to read entries.
+await page.getByRole("button", { name: "Diagnostics", exact: true }).click();
+await page.waitForTimeout(250);
 check("deleted layer raises a diagnostic (entity falls back to World)",
   (await page.getByText(/Sorting layer .* no longer exists/).count()) >= 1);
 // The runtime never breaks: Tree (dangling) now renders with World — behind Characters.

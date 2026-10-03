@@ -19,13 +19,26 @@ import { IconSparkle } from "@/components/visuals/icons";
 export function DiagnosticsPanel({ onRequestAIFix }: { onRequestAIFix?: (prompt: string) => void }) {
   const { model, setMode, selectHandler, setActiveScreen, codeDiagnostics } = useBuilder();
   const { t } = useI18n();
-  const [open, setOpen] = useState(true);
+  // TASK 60 §28: diagnostics start COLLAPSED for every project type — never
+  // auto-expanded because a project loads or a warning exists. The collapsed
+  // strip shows the counts; the user opens the drawer explicitly. Build/
+  // export failures may still open it via the ideaven:open-diagnostics event.
+  const [open, setOpen] = useState(false);
   // Build/export failures elsewhere can open the panel explicitly.
   useEffect(() => {
     const onOpen = () => setOpen(true);
     window.addEventListener("ideaven:open-diagnostics", onOpen);
     return () => window.removeEventListener("ideaven:open-diagnostics", onOpen);
   }, []);
+  // TASK 60 §29: Escape closes the drawer.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
   const [filter, setFilter] = useState<"all" | "error" | "warning" | "info">("all");
 
   const modelDiags = useMemo(() => collectModelDiagnostics(model), [model]);

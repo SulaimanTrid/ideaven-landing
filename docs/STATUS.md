@@ -3971,3 +3971,83 @@ intentional product front door. Full record in docs/TASK59_ENGINE_LAUNCHER.md.
 ### Next exact task
 
 STOP per the directive - await explicit approval before TASK 60.
+
+## 67. TASK 60 - Real 3D Editor Core + Builder UI Overhaul
+
+Session 60 (2026-10-03). Directive: make the 3D builder a real editor core
+and overhaul the builder toolbar - extending the existing systems only (one
+canonical implementation per system, no second engine, no fake controls).
+
+### What was built (session 60)
+
+- **3D secondary toolbar** (`data-3d-toolbar`, accessible name kept as
+  "Transform tools"): Select/Move/Rotate/Scale (Q/W/E/R), Local/World space,
+  Snap toggle, Grid toggle, Colliders toggle, Frame Selected (F), Frame All
+  (Home), Reset View - every control drives real editor state consumed by
+  the render loop and the interaction math (no fake buttons).
+- **Raycast picking foundation** (`transform-gizmo.ts`): `raycastAABB` slab
+  method + `aabbFromMatrix` (column-length scale convention shared with
+  physics bodies and collider gizmos). Click picking casts the pointer ray
+  vs every entity's world AABB, nearest hit wins; invisible entities are
+  skipped; occlusion resolves to the nearer cube.
+- **Root-cause fixes found by the new E2E**: (1) canvas click-select
+  compared raw display pixels against backing-store projections - broken at
+  any display scale != 1:1 since TASK 51; now uses the same
+  pointer-to-canvas mapping as the gizmo math. (2) Chromium fires a click
+  after every pointer drag, so drag endings silently re-selected whatever
+  was under the release point; a per-press movement guard now separates
+  clicks from drags. (3) rapid sequential group ops read the same
+  pre-render model snapshot and clobbered each other; group duplicate/
+  delete are now ONE pure op with ONE undo step.
+- **Snap math**: move 0.5 / rotate 15 deg / scale 0.1 (GIZMO_SNAP_STEPS),
+  applied to the drag DELTA so sub-step starting offsets survive; scale
+  snapping re-clamps and only touches dragged axes.
+- **Multi-select (scoped honestly)**: ctrl/cmd+click toggles viewport-local
+  membership with blue outline highlights (optional `highlightIds` render
+  option) and a group Duplicate/Delete chip (data-multi-select-count).
+  The gizmo stays single-selection by design - documented, not faked.
+- **Frame/focus**: editor orbit gained a look-at target (default matches
+  the old implicit [0, 0.5, 0]); F / Home / Reset View are real orbit ops
+  over the derived world matrices (data-orbit-target/distance observable).
+- **Top bar zones**: Export/Publish/theme/Save shrink-0 and always visible
+  (icon fallback at narrow widths, never scrolled under another control);
+  Assets/History/Ask AI/Undo/Redo move into an overflow menu below xl
+  (role=menu, Escape/outside-click close). No horizontal overflow at 768px.
+- **Diagnostics collapsed by default for every project type**: the strip
+  with severity counts stays visible; the drawer opens on demand and closes
+  with Escape.
+- **Builder metadata per project type**: generateMetadata reads the project
+  type and emits "<name> - IDEAVEN 3D Game Builder / 2D Game Builder /
+  App Builder", canonical /builder/<id>, robots noindex.
+
+### Verified (session 60)
+
+- e2e-task60-3d-editor-core.mjs **47/47**: secondary toolbar (8), raycast
+  picking incl. occlusion + fall-through (5), snap math (4), frame/reset
+  (5), multi-select group ops (5), diagnostics collapsed default on 3D +
+  APP and Escape (5), top-bar zones at 1280/1024/768 (9), metadata (3),
+  empty state + runtime lifecycle (3). Zero console/page errors.
+- Regressions re-run green (19 suites): foundation 18/18, hierarchy 17/17,
+  physics 24/24, material-lighting 42/42, gizmos 34/34, character-controller
+  35/35, shell-integrity 35/35, engine-launcher 31/31, tilemap 44/44,
+  input-actions 32/32, camera 34/34, particles 22/22, state-machine 20/20,
+  2d-lighting 19/19, sprite-animation 18/18, gameplay 21/21, sorting 19/19,
+  motion 11/11, viewport-system 14/14 (import pattern fixed - pre-existing
+  env incompatibility). Ten suites updated to open the diagnostics drawer
+  explicitly before asserting diagnostic text (mandated collapsed default;
+  no assertion weakened). tsc clean; go vet clean; go test ok; next build
+  exit 0; vinext build exit 0; verify-cf-preview 12/12.
+
+### Honest notes (TASK 60)
+
+- Colliders overlay defaults ON (deliberate deviation from the directive
+  sketch: since TASK 55 the overlay is part of how the editor reads a
+  scene; one click hides it).
+- Multi-select is viewport-local and the gizmo remains single-selection.
+- raycastAABB is axis-aligned (rotated meshes pick against their world
+  AABB); exact hull picking is future work.
+- Orthographic camera and GLB import remain deferred - not faked.
+
+### Next exact task
+
+STOP per the directive - await explicit approval before TASK 61.
