@@ -98,7 +98,13 @@ export function ViewportFrame({ kind, settings, children, className, screenClass
       </div>
     );
     if (hardware) {
-      return <DeviceFrame kind={settings.device === "tablet" ? "tablet" : "phone"}>{shell}</DeviceFrame>;
+      // TASK 61: the frame is orientation-aware — landscape repositions the
+      // chrome so the whole device presentation reflows as one object.
+      return (
+        <DeviceFrame kind={settings.device === "tablet" ? "tablet" : "phone"} orientation={settings.orientation}>
+          {shell}
+        </DeviceFrame>
+      );
     }
     return shell;
   }
@@ -106,7 +112,10 @@ export function ViewportFrame({ kind, settings, children, className, screenClass
   // App: the polished hardware frame.
   return (
     <div className={className}>
-      <DeviceFrame kind={settings.device === "tablet" ? "tablet" : settings.device === "desktop" ? "desktop" : "phone"}>
+      <DeviceFrame
+        kind={settings.device === "tablet" ? "tablet" : settings.device === "desktop" ? "desktop" : "phone"}
+        orientation={settings.orientation}
+      >
         {screen}
       </DeviceFrame>
     </div>

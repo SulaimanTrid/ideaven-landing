@@ -970,3 +970,33 @@ providers, i18n coverage expansion, accessibility audit.
 - Honest: AI start remains Coming soon; 3D card claims Foundation available
   only; environment menu creates anonymous-name projects.
 - STOP per directive — awaiting approval before TASK 60.
+
+---
+
+## SESSION 61 â€” TASK 61: Creation Visuals + Real Device Orientation + Responsive Builder Polish (2026-10-03)
+
+- CreationPreview: ONE deterministic inline-SVG system for App/2D/3D in the
+  real engines' visual language; wired into Creation Hub + Dashboard cards
+  (3D projects no longer show the app glyph); labelled media (role=img);
+  nothing invented, nothing that can 404. Asset contract documented
+  (public/ideaven/creation-previews/ via the one component).
+- Landscape fixed at the root: orientation-aware DeviceFrame (chrome
+  repositions as one object) + two-axis, bezel-aware, stage-measured fit;
+  ONE dimension source (VIEWPORT_SIZES); one scale owner preserved;
+  orientation stays a preview setting.
+- Toolbar root fix: actions zone is content-sized (shrink-0) â€” the measured
+  77px collision at 1440 is gone; semantic groups + separators; Save/
+  Publish/Export visually distinct with honest tooltips; 390px compaction
+  (theme into the overflow menu, icon-only Save) with zero overflow.
+- REAL bugs caught by geometry/sweep and fixed: flex-1 actions-zone
+  leftward overflow (real collision), game-unit block-div measurement
+  feedback loop (shell collapsed to a sliver at scale < 1), duplicated
+  device dimension constants.
+- Gates: task61 NEW 45/45; 22 suites green (incl. task60 47/47,
+  shell 35/35, material-lighting 42/42, tilemap 44/44); launch-audit 20
+  routes green with IV_COOKIE; tsc/go vet/go test -count=1/next build/
+  build:vinext/verify-cf-preview 12/12 green. Four legacy suites' import
+  pattern fixed so they actually run; e2e-community.mjs recorded as
+  pre-existing drift (first 13 checks green; rest references UI the current
+  page never had) â€” flagged for a rewrite task, not faked.
+- STOP per directive â€” awaiting approval before TASK 62.

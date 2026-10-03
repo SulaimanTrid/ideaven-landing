@@ -1,7 +1,8 @@
 // TASK 07 community E2E — real user flows against the live two-server setup
 // (API :8090, web :3000). Run:
 //   PLAYWRIGHT_MODULE=/tmp/iv-pw/node_modules/playwright/index.mjs node /tmp/iv-e2e-community.mjs
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const pw = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const chromium = pw.chromium ?? pw.default?.chromium;
 
 const API = "http://localhost:8090";
 const WEB = "http://localhost:3000";

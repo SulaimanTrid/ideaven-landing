@@ -6,7 +6,8 @@
 //   PLAYWRIGHT_MODULE=/tmp/iv-pw/node_modules/playwright/index.mjs
 // Exits non-zero on any console/page error, failed request, or mobile
 // horizontal overflow on the audited pages.
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const pw = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const chromium = pw.chromium ?? pw.default?.chromium;
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
 const COOKIE = process.env.IV_COOKIE;

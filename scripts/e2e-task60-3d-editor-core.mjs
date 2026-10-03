@@ -442,8 +442,9 @@ await page.waitForTimeout(400);
     (await more.isVisible()) === true && (await inlineAssets.isVisible()) === false);
   await more.click();
   await page.waitForTimeout(200);
-  check("A5: the overflow menu carries the five secondary tools",
-    (await page.getByRole("menu", { name: "More toolbar tools" }).getByRole("menuitem").count()) === 5);
+  // TASK 61 §18: the menu now also carries the theme entry (six tools).
+  check("A5: the overflow menu carries the secondary tools (+ theme)",
+    (await page.getByRole("menu", { name: "More toolbar tools" }).getByRole("menuitem").count()) === 6);
   await page.getByRole("menuitem", { name: "Assets" }).click();
   await page.waitForTimeout(200);
   check("A6: choosing a tool from the menu closes the menu",

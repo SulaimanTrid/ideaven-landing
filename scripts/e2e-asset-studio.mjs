@@ -1,6 +1,7 @@
 // TASK 09 acceptance: Asset Studio — draw, layers, frames, save to Project
 // Assets, entity texture usage in the 2D Game Studio, mobile usability.
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const pw = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const chromium = pw.chromium ?? pw.default?.chromium;
 const API = "http://localhost:8090";
 const WEB = "http://localhost:3000";
 const errors = [];

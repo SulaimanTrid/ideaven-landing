@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { cn } from "@ideaven/ui";
 import { DropdownMenu } from "@/components/dashboard/menu";
 import { formatRelativeDate } from "@/lib/format";
 import type { ProjectSummary } from "@/types/project";
 import { projectTypeLabel } from "@/lib/project-meta";
+import { CreationPreview, type CreationPreviewType } from "@/components/visuals/creation-preview";
 import {
-  IconAppWindow,
   IconArchive,
   IconCopy,
-  IconGamepad,
   IconPen,
   IconRestore,
   IconTrash,
@@ -36,6 +34,10 @@ export function ProjectCard({
   onDelete?: (project: ProjectSummary) => void;
 }) {
   const archived = project.status === "archived";
+  // TASK 61: every environment gets its real preview — 3D projects are no
+  // longer shown with the generic app glyph.
+  const previewType: CreationPreviewType =
+    project.type === "game" ? "game" : project.type === "3d" ? "3d" : "app";
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-line bg-card transition-colors hover:border-white/20">
@@ -46,21 +48,8 @@ export function ProjectCard({
         aria-label={`Open ${project.name}`}
       />
 
-      <div
-        aria-hidden="true"
-        className={cn(
-          "relative flex h-28 items-center justify-center border-b border-line",
-          project.type === "game"
-            ? "bg-gradient-to-br from-mint/15 via-panel to-panel"
-            : "bg-gradient-to-br from-violet/20 via-panel to-panel",
-        )}
-      >
-        <div className="bg-dots absolute inset-0 opacity-40" />
-        {project.type === "game" ? (
-          <IconGamepad size={30} className="relative text-mint/80" />
-        ) : (
-          <IconAppWindow size={30} className="relative text-violet/90" />
-        )}
+      <div aria-hidden="true" className="relative h-28 border-b border-line bg-panel p-3">
+        <CreationPreview type={previewType} className="mx-auto h-full max-w-[240px]" />
 
         {archived ? (
           <span className="absolute top-3 left-3 rounded-md border border-amber/30 bg-amber/10 px-2 py-0.5 text-[11px] font-medium text-amber">

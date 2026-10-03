@@ -1,7 +1,8 @@
 // TASK 10 language audit: for each page, capture EN and ID screenshots and
 // check horizontal overflow in BOTH languages (Indonesian runs longer).
 // Usage: PLAYWRIGHT_MODULE=/tmp/iv-pw/node_modules/playwright/index.mjs node scripts/e2e-i18n-audit.mjs
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const pw = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
+const chromium = pw.chromium ?? pw.default?.chromium;
 const WEB = "http://localhost:3000";
 const API = "http://localhost:8090";
 const PAGES = ["/", "/login", "/register", "/dashboard", "/community", "/explore", "/extensions", "/pricing"];

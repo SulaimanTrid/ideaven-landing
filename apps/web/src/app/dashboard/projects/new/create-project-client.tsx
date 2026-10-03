@@ -8,6 +8,7 @@ import { projectApi, templateApi, type TemplateBrief } from "@/lib/api";
 import { ApiError } from "@/types/auth";
 import type { ProjectType } from "@/types/project";
 import { PROJECT_TYPES, isFlagshipType, projectTypeLabel } from "@/lib/project-meta";
+import { CreationPreview } from "@/components/visuals/creation-preview";
 import {
   IconAppWindow,
   IconArrowRight,
@@ -51,24 +52,9 @@ const ENVIRONMENTS: EnvironmentCard[] = [
     chips: ["UI Components", "Blocks", "Code", "Navigation", "Device Preview"],
     action: "Start App",
     icon: <IconAppWindow size={24} />,
-    preview: (
-      <div aria-hidden="true" className="h-24 w-full overflow-hidden rounded-lg border border-line bg-white text-[#0b0e16]">
-        <div className="flex items-center gap-1 border-b border-line bg-[#f3f5f9] px-2 py-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#c9cede]" />
-          <span className="h-1.5 w-1.5 rounded-full bg-[#c9cede]" />
-          <span className="ml-1 h-2 w-16 rounded-sm bg-[#e3e6ee]" />
-        </div>
-        <div className="flex flex-col gap-1.5 p-2.5">
-          <span className="h-3 w-24 rounded-sm bg-[#5743d9]" />
-          <span className="h-2 w-full rounded-sm bg-[#e3e6ee]" />
-          <span className="h-2 w-4/5 rounded-sm bg-[#e3e6ee]" />
-          <span className="mt-1 flex items-center gap-1.5">
-            <span className="h-4 w-14 rounded-md bg-[#5743d9]/85" />
-            <span className="h-4 w-10 rounded-md border border-[#c9cede] bg-white" />
-          </span>
-        </div>
-      </div>
-    ),
+    // TASK 61: ONE CreationPreview system — deterministic SVG in the real
+    // engines' visual language (replaces the old ad-hoc div compositions).
+    preview: <CreationPreview type="app" className="h-28 w-full" />,
   },
   {
     type: "game",
@@ -80,18 +66,7 @@ const ENVIRONMENTS: EnvironmentCard[] = [
     chips: ["Scenes", "Sprites", "Physics", "Animation", "Blocks"],
     action: "Start 2D Game",
     icon: <IconGamepad size={24} />,
-    preview: (
-      <div aria-hidden="true" className="relative h-24 w-full overflow-hidden rounded-lg border border-violet/30 bg-[#0c0f17] [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.06)_1px,transparent_0)] [background-size:14px_14px]">
-        <span className="absolute left-2 top-2 h-2 w-8 rounded-sm bg-[#46e3b4]/70" />
-        <span className="absolute bottom-3 left-0 h-2.5 w-16 rounded-sm bg-[#2a3348]" />
-        <span className="absolute bottom-6 left-14 h-2.5 w-12 rounded-sm bg-[#2a3348]" />
-        <span className="absolute bottom-[38px] left-6 h-4 w-4 rounded-sm bg-[#46e3b4]" />
-        <span className="absolute right-8 top-6 h-3.5 w-3.5 rotate-45 rounded-[3px] bg-[#f0b429]" />
-        <span className="absolute left-2 top-2 rounded border border-violet/40 px-1 font-mono text-[7px] uppercase tracking-[0.14em] text-violet">
-          scene
-        </span>
-      </div>
-    ),
+    preview: <CreationPreview type="game" className="h-28 w-full" />,
   },
   {
     type: "3d",
@@ -103,15 +78,7 @@ const ENVIRONMENTS: EnvironmentCard[] = [
     chips: ["3D Scene", "Cube / Sphere / Plane", "Camera", "Lighting", "Physics", "Controller"],
     action: "Start 3D Game",
     icon: <IconCube3D size={24} />,
-    preview: (
-      <div aria-hidden="true" className="relative h-24 w-full overflow-hidden rounded-lg border border-line bg-[#0c0f17]">
-        <span className="absolute bottom-4 left-1/2 h-8 w-28 -translate-x-1/2 rounded-sm bg-[#2a3348]" />
-        <span className="absolute bottom-[52px] left-1/2 h-7 w-7 -translate-x-1/2 rotate-12 rounded-[4px] bg-[#58c7f0]/85 shadow-[8px_6px_0_-1px_rgb(46_114_158/0.55)]" />
-        <span className="absolute right-5 top-4 h-2 w-2 rounded-full bg-[#ffd9a0] shadow-[0_0_14px_4px_rgb(255_217_160/0.35)]" />
-        <span aria-hidden className="absolute left-2 top-2 h-3 w-3 rounded-tl border-l border-t border-violet/40" />
-        <span aria-hidden className="absolute bottom-2 right-2 h-3 w-3 rounded-br border-b border-r border-violet/40" />
-      </div>
-    ),
+    preview: <CreationPreview type="3d" className="h-28 w-full" />,
   },
 ];
 

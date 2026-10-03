@@ -8,7 +8,7 @@ import { findScreen } from "@/lib/project-model/ops";
 import { isSceneScreen, tileColorAt, tilemapPaletteValues } from "@/lib/project-model/scene";
 import { SceneEditor, type SceneTool } from "./scene-canvas";
 import { Viewport3D } from "@/components/runtime/viewport-3d";
-import { viewportSize, ViewportFrame, type ViewportDevice, type ViewportOrientation } from "@/components/builder/viewport";
+import { viewportSize, VIEWPORT_SIZES, ViewportFrame, type ViewportDevice, type ViewportOrientation } from "@/components/builder/viewport";
 import { useI18n } from "@/lib/i18n/i18n";
 
 /**
@@ -17,11 +17,15 @@ import { useI18n } from "@/lib/i18n/i18n";
  * node moves anywhere in the tree.
  */
 
-const DEVICES = [
-  { id: "phone", label: "Phone", width: 390, height: 844 },
-  { id: "tablet", label: "Tablet", width: 834, height: 1112 },
-  { id: "desktop", label: "Desktop", width: 1280, height: 800 },
-] as const;
+// TASK 61 §11: ONE canonical dimension source (VIEWPORT_SIZES in the
+// viewport module) — the preset row derives its labels; it never re-declares
+// device dimensions.
+const DEVICES = (["phone", "tablet", "desktop"] as const).map((id) => ({
+  id,
+  label: id === "phone" ? "Phone" : id === "tablet" ? "Tablet" : "Desktop",
+  width: VIEWPORT_SIZES[id].width,
+  height: VIEWPORT_SIZES[id].height,
+}));
 
 type DeviceId = (typeof DEVICES)[number]["id"];
 
@@ -72,19 +76,26 @@ export function BuilderCanvas() {
     if (!tilemapSelected) setSceneTool("select");
   }, [tilemapSelected]);
 
-  // Fit-to-width: measure the surface and scale the frame down when needed.
+  // TASK 61 §13: fit computes from the ACTUAL central stage (which already
+  // sits between the palette and inspector — never the browser width), on
+  // BOTH axes, against the MEASURED unit (bezel included), so the entire
+  // device presentation is visible, centered, and unclipped at any
+  // orientation.
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
     const update = () => {
-      const available = surface.clientWidth - 64;
-      setFitScale(Math.min(1, available / frame.width));
+      const availableW = surface.clientWidth - 64;
+      const availableH = surface.clientHeight - 64;
+      const nativeW = unitSize?.w ?? frame.width;
+      const nativeH = unitSize?.h ?? frame.height;
+      setFitScale(Math.min(1, availableW / nativeW, availableH / nativeH));
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(surface);
     return () => observer.disconnect();
-  }, [frame.width]);
+  }, [frame.width, frame.height, unitSize]);
 
   const scale = zoom === "fit" ? fitScale : zoom;
 
@@ -546,6 +557,12 @@ export function BuilderCanvas() {
             return (
               <div
                 ref={unitRef}
+                // TASK 61: inline-block — the unit must size to its CONTENT
+                // (screen + bezel) like the app branch. As a block div its
+                // offsetWidth equals the spacer width, and any scale < 1
+                // feeds a spacer→unit→measurement shrink loop that collapses
+                // the shell to a sliver.
+                className="inline-block"
                 style={{
                   transform: `scale(${scale})`,
                   transformOrigin: "top left",
@@ -594,7 +611,7 @@ export function BuilderCanvas() {
               onDragOver={onRootDragOver}
               onDrop={onRootDrop}
             >
-              <DeviceFrame kind={device === "custom" ? "desktop" : device}>
+              <DeviceFrame kind={device === "custom" ? "desktop" : device} orientation={orientation}>
                 <div className="overflow-hidden rounded-[26px] bg-white text-[#0b0e16]" style={{ width: frame.width, height: frame.height }}>
                   {screenRoot}
                 </div>

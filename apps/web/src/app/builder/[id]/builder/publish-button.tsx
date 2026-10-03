@@ -87,6 +87,10 @@ export function PublishButton() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-label="Publish"
+        // TASK 61 §21: publish is distinct from save/export — the tooltip
+        // says exactly what it does (public snapshot at /p/<slug>).
+        title="Publish — snapshot this project to a public page (/p/<slug>)"
         className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
           published
             ? "border-mint/40 bg-mint/10 text-mint hover:bg-mint/20"
@@ -97,7 +101,7 @@ export function PublishButton() {
           <path d="M12 19V5" />
           <path d="m5 12 7-7 7 7" />
         </svg>
-        <span className="hidden sm:inline">{published ? t("builder.saved") : t("builder.publish")}</span>
+        <span className="hidden lg:inline">{published ? t("builder.saved") : t("builder.publish")}</span>
       </button>
 
       {open ? (

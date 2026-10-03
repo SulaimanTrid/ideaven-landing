@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/theme/theme-toggle";
+import { useTheme } from "@/theme/theme-provider";
 import { useI18n } from "@/lib/i18n/i18n";
 import { aiApi, projectApi, type AICredits } from "@/lib/api";
 import { CREDITS_UPDATED_EVENT } from "@/components/credits/credit-purchase-modal";
@@ -152,6 +153,9 @@ export function BuilderTopBar({
         </Link>
         <Logo />
         {/* TASK 59: engine identity — visible, subtle, per canonical type. */}
+        {/* TASK 61 §18: the identity chip is part of the desktop brand zone;
+            below md the 390px header drops it (the environment stays visible
+            in the overflow menu and the full creation hub). */}
         <button
           type="button"
           data-engine-identity={project.type}
@@ -159,7 +163,7 @@ export function BuilderTopBar({
           aria-expanded={envMenuOpen}
           aria-haspopup="menu"
           title="Switch creation environment — creates a NEW project, never changes this one"
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-violet/40 bg-violet/10 px-2 py-0.5 text-[11px] font-semibold tracking-[0.08em] text-violet transition-colors hover:bg-violet/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+          className="hidden shrink-0 items-center gap-1.5 rounded-md border border-violet/40 bg-violet/10 px-2 py-0.5 text-[11px] font-semibold tracking-[0.08em] text-violet transition-colors hover:bg-violet/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint md:flex"
         >
           {engineIdentityLabel(project.type)}
           <span aria-hidden="true" style={{ transform: envMenuOpen ? "rotate(-90deg)" : undefined }}>
@@ -211,7 +215,9 @@ export function BuilderTopBar({
           </div>
         ) : null}
         <div className="hidden min-w-0 items-center gap-2 lg:flex">
-          <span className="max-w-40 truncate text-sm font-semibold">{project.name}</span>
+          <span className="max-w-40 truncate text-sm font-semibold" title={project.name}>
+            {project.name}
+          </span>
         </div>
       </div>
 
@@ -243,11 +249,15 @@ export function BuilderTopBar({
         </div>
       </nav>
 
-      {/* Right: TASK 60 §24/§26 — a zoned toolbar. Export, Publish, theme and
-          Save are shrink-0 and ALWAYS visible — never scrolled underneath
-          another control. Secondary tools (Assets, History, Ask AI,
-          Undo/Redo) move into an overflow menu below xl. */}
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+      {/* Right: TASK 60 §24/§26 + TASK 61 §17–19 — a zoned toolbar. The
+          actions zone is sized BY ITS CONTENT (shrink-0): with justify-end a
+          flex-1 share smaller than the content would spill LEFTWARD over the
+          mode nav (real, measured collision at 1440). The nav (flex-1,
+          min-w-0) owns whatever space remains and scrolls when tight.
+          Export, Publish, theme and Save are ALWAYS visible — secondary
+          tools (Assets, History, Ask AI, Undo/Redo) move into an overflow
+          menu below xl. */}
+      <div className="flex shrink-0 items-center justify-end gap-1.5">
         <div ref={moreRootRef} className="relative shrink-0 xl:hidden">
           <button
             type="button"
@@ -267,6 +277,10 @@ export function BuilderTopBar({
               aria-label="More toolbar tools"
               className="absolute right-0 top-11 z-50 w-56 rounded-xl border border-line bg-panel p-1.5 shadow-[0_24px_60px_-24px_rgb(0_0_0/0.7)]"
             >
+              {/* TASK 61 §18: below sm the inline theme toggle moves here —
+                  the same useTheme cycle, reachable at 390px. */}
+              <ThemeMenuButton onDone={() => setMoreOpen(false)} />
+              <div className="my-1 border-t border-line" aria-hidden="true" />
               {(
                 [
                   {
@@ -340,6 +354,8 @@ export function BuilderTopBar({
         </div>
 
         <div className="hidden shrink-0 items-center gap-1.5 xl:flex">
+          {/* TASK 61 §19: semantic groups with hairline separators —
+              [utility] [credits] [history]. */}
           <button
             type="button"
             onClick={onToggleAssets}
@@ -358,13 +374,15 @@ export function BuilderTopBar({
             <IconHistory size={14} />
             <span className="hidden sm:inline">{tTop("builder.history")}</span>
           </button>
+          <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-line" />
           <button
             type="button"
             onClick={creditsEmpty ? onOpenPurchase : onToggleAI}
             aria-pressed={creditsEmpty ? undefined : aiOpen}
             aria-label={
-              creditsEmpty ? tTop("credits.emptyAriaLabel") : undefined
+              creditsEmpty ? tTop("credits.emptyAriaLabel") : tTop("builder.askAI")
             }
+            title={creditsEmpty ? tTop("credits.emptyShort") : tTop("builder.askAI")}
             className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
               creditsEmpty
                 ? "border-rose/40 bg-rose/10 text-rose hover:bg-rose/20"
@@ -380,6 +398,7 @@ export function BuilderTopBar({
                   : tTop("builder.askAI")}
             </span>
           </button>
+          <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-line" />
           <IconButton
             label="Undo"
             disabled={!actions.canUndo}
@@ -403,9 +422,13 @@ export function BuilderTopBar({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <ThemeToggle compact />
+          <span className="hidden sm:inline-flex">
+            <ThemeToggle compact />
+          </span>
+          <span aria-hidden="true" className="mx-0.5 hidden h-5 w-px bg-line sm:block" />
           <PublishButton />
           <ExportButton />
+          <span aria-hidden="true" className="mx-0.5 hidden h-5 w-px bg-line sm:block" />
           <SaveStatus
             state={saveState}
             error={lastSavedError}
@@ -480,8 +503,7 @@ function IconButton({
   disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
-}) {
-  return (
+}) {  return (
     <button
       type="button"
       aria-label={label}
@@ -538,15 +560,46 @@ function SaveStatus({
         }`}
       >
         {label}
-      </span>
-      <button
+      </span>      <button
         type="button"
         onClick={onSave}
         disabled={state !== "dirty"}
-        className="h-9 rounded-lg bg-violet-deep px-3.5 text-[13px] font-medium text-white shadow-[0_10px_30px_-10px] shadow-violet/50 transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:pointer-events-none disabled:opacity-40 md:disabled:opacity-60"
+        aria-label={t("builder.save")}
+        title="Save — persist the current project"
+        className="h-9 rounded-lg bg-violet-deep px-3 text-[13px] font-medium text-white shadow-[0_10px_30px_-10px] shadow-violet/50 transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:pointer-events-none disabled:opacity-40 md:px-3.5 md:disabled:opacity-60"
       >
-        {t("builder.save")}
+        {/* TASK 61 §18: icon-only below sm — Save stays visible and distinct
+            at 390px without pushing Export out of the header. */}
+        <svg className="sm:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M5 4h11l3 3v13H5z" />
+          <path d="M8 4v5h7V4M8 20v-6h8v6" />
+        </svg>
+        <span className="hidden sm:inline">{t("builder.save")}</span>
       </button>
     </div>
+  );
+}
+
+/** TASK 61 §18: the overflow-menu theme entry — the SAME useTheme cycle the
+ * inline toggle uses, so small screens keep full theme control. */
+function ThemeMenuButton({ onDone }: { onDone: () => void }) {
+  const { preference, setTheme } = useTheme();
+  const next = preference === "light" ? "dark" : preference === "dark" ? "system" : "light";
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        setTheme(next);
+        onDone();
+      }}
+      title={`Switch to ${next} theme`}
+      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+      </svg>
+      Theme — switch to {next}
+    </button>
   );
 }

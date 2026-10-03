@@ -4051,3 +4051,95 @@ canonical implementation per system, no second engine, no fake controls).
 ### Next exact task
 
 STOP per the directive - await explicit approval before TASK 61.
+## 68. TASK 61 â€” Creation Visuals + Real Device Orientation + Responsive Builder Polish
+
+Session 61 (2026-10-03). Extend-only presentation/architecture task: ONE
+creation-preview system, a device frame that truly reflows in landscape, and
+a toolbar that cannot collide â€” no second engine, renderer, model, or preview
+system. Full record in `docs/TASK61_CREATION_VISUALS_RESPONSIVE.md`.
+
+### Root causes fixed (session 61)
+
+1. **Toolbar collisions were real and measured**: the actions zone was
+   `flex-1`, so at wide viewports its ~690px of controls overflowed
+   LEFTWARD over the mode nav (bounding-box proof: `Preview âˆ© Assets`
+   = 77px at 1440Ã—950). Fix: the zone is sized BY ITS CONTENT (`shrink-0`);
+   the nav owns the rest. Pairwise bbox assertions now cover
+   390/768/1024/1280/1440.
+2. **Landscape was a sideways portrait**: the screen swapped dimensions but
+   `DeviceFrame` chrome (camera pill, side buttons, home indicator) stayed
+   portrait. Fix: orientation-aware frame â€” chrome repositions as one
+   coherent object; the measured-unit scale owner wraps the whole thing.
+3. **Fit was width-only and bezel-blind**: now `min(1, availW/native,
+   availH/native)` against the MEASURED unit on the actual central stage.
+4. **Game-shell unit measurement flaw (caught by the sweep)**: the game
+   branch's scaled unit was a BLOCK div, so its offsetWidth equaled the
+   spacer width â€” with any scale < 1 a spacerâ†’unitâ†’measurement feedback
+   loop collapsed the shell to a ~1px sliver (clicks intercepted; caught by
+   shell-integrity + scene-gameplay at 720p). Fix: `inline-block` unit
+   (content-sized like the app branch).
+5. **Dimension constants existed twice**: the canvas preset row now derives
+   from the canonical `VIEWPORT_SIZES`.
+
+### What was built (session 61)
+
+- **CreationPreview** (`components/visuals/creation-preview.tsx`): ONE
+  deterministic inline-SVG system (480Ã—200, meet â€” no crop/stretch, crisp at
+  any DPI, nothing to 404), `data-creation-preview` + `role=img` + descriptive
+  label. Scenes use REAL engine values only: app (#5743d9 button, white
+  screen, violet selection outline + handles, block motif); 2D (#0c0f17 +
+  dots, player #46e3b4, platform #2a3348, coin #ffb454, dashed camera
+  framing, corner ticks); 3D (#58c7f0 tri-tone flat shading, violet grid,
+  warm light gizmo, dashed camera frustum). Wired into Creation Hub cards +
+  Dashboard project cards (a 3D project no longer shows the app glyph).
+  Asset contract: external art belongs under
+  `public/ideaven/creation-previews/` consumed through this one component.
+- **Toolbar**: content-sized actions zone; semantic groups with hairline
+  separators; Publish gains `aria-label` + honest tooltip; Save tooltip;
+  project name `title` tooltip; below sm the theme toggle moves into the
+  overflow menu (same `useTheme` cycle) and Save becomes icon-only â€” no
+  overflow at 390; diagnostics stays collapsed (TASK 60) everywhere.
+- **a11y**: icon-only controls all carry aria-label + title; orientation/
+  zoom keep accessible names; overflow menu is role=menu with Escape.
+
+### Verified (session 61)
+
+- e2e-task61-creation-visuals.mjs **45/45, 0 console errors**: previews
+  (existence/one architecture/labels/no broken images/geometry/
+  320â†’1440), dashboard cards per type, toolbar matrix with bounding-rect
+  evidence at five widths (no collisions, Export reachable, no overflow,
+  diagnostics collapsed), Save/Publish/Export separation, landscape cycle
+  (portrait â†’ landscape ratio swap â†’ Fit inside stage â†’ portrait restored â†’
+  save â†’ reload persistence â†’ tablet landscape/portrait).
+- Regression sweep (directive Â§46 + TASK 60/61): shell-integrity 35/35,
+  engine-launcher 31/31, 3d-foundation 18/18, 3d-hierarchy 17/17,
+  3d-physics 24/24, 3d-material-lighting 42/42, 3d-transform-gizmos 34/34,
+  3d-character-controller 35/35, task60 47/47, scene-gameplay 21/21,
+  asset-studio 25/25, camera 34/34, sorting 19/19, input-actions 32/32,
+  sprite-animation 18/18, animation-state-machine 20/20, 2d-lighting 19/19,
+  2d-particles 22/22, tilemap-paint 44/44, motion 11/11, i18n-audit 26/26,
+  task61 45/45, launch-audit 20 route checks EXIT 0 (with IV_COOKIE).
+- Gates: tsc clean; go vet clean; `go test -count=1 ./...` ok; next build
+  exit 0 (dev stopped, .next rebuilt); build:vinext exit 0;
+  verify-cf-preview 12/12 EXIT 0.
+- Four legacy suites had a pre-existing Playwright import pattern that
+  could never resolve in this environment (asset-studio, community,
+  i18n-audit, launch-audit â€” plus viewport-system earlier): switched to the
+  standard import; they now actually run.
+
+### Honest notes (TASK 61)
+
+- **e2e-community.mjs is a legacy audit with pre-existing drift**: with the
+  import fixed it now runs and passes its first 13 real checks, then
+  references community feed UI (a "Search the community" input, an
+  Unanswered filter, a # Game Dev channel) that the shipped community page
+  never had â€” recorded here rather than faked; needs its own rewrite task.
+- The app preview's phone miniature is intentionally small on the wide
+  480Ã—200 stage (the 2D/3D scene languages fill it better).
+- Builder at 390px remains a compressed desktop shell (DESIGN.md Â§N).
+- 1024â€“1279 keeps the TASK 60 compaction (secondary tools in the overflow
+  menu); Â§18 permits compacting there.
+
+### Next exact task
+
+STOP per the directive â€” await explicit approval before TASK 62.
