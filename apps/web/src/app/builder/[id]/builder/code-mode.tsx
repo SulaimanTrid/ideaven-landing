@@ -151,6 +151,13 @@ export function CodeMode() {
 
       {/* Result / conflict panel */}
       {result ? <SyncResultPanel result={result} /> : null}
+      {/* TASK 63 §30: one quiet beginner hint for generated code. */}
+      {state === "visual" && !dirty ? (
+        <p className="shrink-0 border-b border-line bg-panel px-4 py-1.5 text-[11.5px] text-mist" data-code-hint="true">
+          Your generated TypeScript appears here — edit freely, then{" "}
+          <span className="font-medium text-fog">Sync to blocks</span>.
+        </p>
+      ) : null}
 
       {/* Monaco editor */}
       <div className="min-h-0 flex-1">

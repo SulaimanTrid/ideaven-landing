@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { eventsFor, getDef, EVENT_LABELS, type FieldDef } from "@/lib/project-model/registry";
 import { genId, locateComponent } from "@/lib/project-model/ops";
 import {
@@ -2208,13 +2208,36 @@ function ColorField({
 
 // ---- chrome ---------------------------------------------------------------------------
 
+/**
+ * TASK 63 §10: collapsible inspector sections — every section starts OPEN
+ * (preserving today's behavior), and each header toggles with full
+ * aria-expanded/aria-controls so beginners can fold what they don't need
+ * without any field being hidden irrecoverably.
+ */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(true);
+  const id = useMemo(() => `inspector-section-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, [title]);
   return (
     <section aria-label={title}>
-      <h3 className="px-1 pb-1.5 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
-        {title}
-      </h3>
-      <div className="flex flex-col">{children}</div>
+      <button
+        type="button"
+        data-inspector-section={title}
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((value) => !value)}
+        title={`${open ? "Collapse" : "Expand"} ${title}`}
+        className="flex w-full items-center justify-between rounded-md px-1 pb-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+      >
+        <span className="font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
+          {title}
+        </span>
+        <span aria-hidden="true" className={`text-mist transition-transform ${open ? "rotate-90" : ""}`}>
+          ▸
+        </span>
+      </button>
+      <div id={id} className="flex flex-col" hidden={!open}>
+        {children}
+      </div>
     </section>
   );
 }

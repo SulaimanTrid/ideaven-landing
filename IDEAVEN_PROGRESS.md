@@ -1025,3 +1025,25 @@ providers, i18n coverage expansion, accessibility audit.
 - Honest: layer lock, prefab ecosystem, camera dead-zone/zoom deferred
   (documented); straight-run shading is a visible rule-tile upgrade.
 - STOP per directive â€” awaiting approval before TASK 63.
+---
+
+## SESSION 63 â€” TASK 63: Beginner Workspace Navigation + Scrollable Editor Panels (2026-10-04)
+
+- Mode strip: Alt+1..5 shortcuts, tooltips, underline active state;
+  ROOT-CAUSE FIX â€” justify-center spilled overflowing tabs under the brand
+  (measured click interception); now justify-start. One compact breadcrumb
+  (project / ENGINE / MODE), pointer-events-none.
+- Left panel: sticky palette search (label+type+category+aliases), folding
+  categories persisted per project type (primary "Â· start here" open).
+- Inspector: collapsible sections with aria state; independent rail scroll
+  preserved across selection changes.
+- Panel collapse rails (desktop) + palette/inspector drawers (390/768) with
+  one-drawer rule, backdrop + window Escape close.
+- Wheel routing proven three ways: 3D viewport wheel zooms the orbit;
+  palette/inspector wheel scrolls those panels.
+- Secondary toolbar tools compact below 2xl (measured 67px overflow at
+  1280 fixed); Undo/Redo always inline.
+- Gates: task63 NEW 42/42; 20+ suites green (incl. task60 47, task61 45,
+  task62 61, shell 35, tilemap 44); tsc/go vet/go test -count=1/next
+  build/build:vinext/verify-cf-preview 12/12 green.
+- STOP per directive â€” awaiting approval before TASK 64.

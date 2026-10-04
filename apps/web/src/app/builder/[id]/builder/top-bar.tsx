@@ -215,50 +215,75 @@ export function BuilderTopBar({
           </div>
         ) : null}
         <div className="hidden min-w-0 items-center gap-2 lg:flex">
-          <span className="max-w-40 truncate text-sm font-semibold" title={project.name}>
-            {project.name}
-          </span>
+          {/* TASK 63 §32: ONE compact breadcrumb — project / engine / mode —
+              replacing the separate name span so the left zone never grows
+              wide enough to collide with the mode strip. Non-interactive
+              (pointer-events-none): it can never steal a click even at the
+              tightest widths. */}
+          <nav
+            data-workspace-context="true"
+            aria-label={`Workspace context: ${project.name}, ${engineIdentityLabel(project.type)}, ${tTop(`builder.${mode}` as Parameters<typeof tTop>[0])}`}
+            className="pointer-events-none hidden min-w-0 items-center gap-1.5 text-[13px] xl:flex"
+          >
+            <span className="max-w-36 truncate font-semibold text-ink" title={project.name}>
+              {project.name}
+            </span>
+            <span aria-hidden="true" className="text-mist">/</span>
+            <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-[0.1em] text-mist">
+              {engineIdentityLabel(project.type)}
+            </span>
+            <span aria-hidden="true" className="text-mist">/</span>
+            <span data-workspace-mode-label="true" className="shrink-0 font-mono text-[10.5px] uppercase tracking-[0.1em] text-fog">
+              {tTop(`builder.${mode}` as Parameters<typeof tTop>[0])}
+            </span>
+          </nav>
         </div>
       </div>
 
       {/* Center: modes — horizontally scrollable at narrow widths, never
           rendered under the brand (TASK 58: the nav owns its own overflow
-          instead of the whole header sliding over the logo). */}
+          instead of the whole header sliding over the logo). TASK 63 §4/§5/§24:
+          one controlled strip, consistent sizing, tooltips with the Alt+number
+          shortcut, active marked by state AND an underline (never color alone). */}
       <nav
         aria-label="Editor modes"
-        className="flex min-w-0 flex-1 items-center justify-center overflow-x-auto rounded-lg border border-line bg-canvas p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex min-w-0 flex-1 items-center justify-start overflow-x-auto rounded-lg border border-line bg-canvas p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <div className="flex items-center">
-        {(["design", "blocks", "code", "preview", "insights"] as const).map((m) => {
+        {(["design", "blocks", "code", "preview", "insights"] as const).map((m, index) => {
           const label = tTop(`builder.${m}` as Parameters<typeof tTop>[0]);
           const active = mode === m;
           return (
             <button
               key={m}
               type="button"
+              data-mode-tab={m}
               onClick={() => setMode(m)}
               aria-current={active ? "page" : undefined}
-              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+              title={`${label} (Alt+${index + 1})`}
+              className={`relative shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
                 active ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
               }`}
             >
               {label}
+              {active ? (
+                <span aria-hidden="true" className="absolute inset-x-3 -bottom-1 h-0.5 rounded-full bg-violet" />
+              ) : null}
             </button>
           );
         })}
         </div>
       </nav>
 
-      {/* Right: TASK 60 §24/§26 + TASK 61 §17–19 — a zoned toolbar. The
-          actions zone is sized BY ITS CONTENT (shrink-0): with justify-end a
-          flex-1 share smaller than the content would spill LEFTWARD over the
-          mode nav (real, measured collision at 1440). The nav (flex-1,
-          min-w-0) owns whatever space remains and scrolls when tight.
-          Export, Publish, theme and Save are ALWAYS visible — secondary
-          tools (Assets, History, Ask AI, Undo/Redo) move into an overflow
-          menu below xl. */}
+      {/* Right: TASK 60 §24/§26 + TASK 61 §17–19 + TASK 63 §18 — a zoned
+          toolbar sized BY ITS CONTENT (shrink-0): with justify-end a flex-1
+          share smaller than the content would spill LEFTWARD over the mode
+          nav (real, measured collision at 1440). The nav (flex-1, min-w-0)
+          owns whatever space remains and scrolls when tight. Export, Publish,
+          theme, Save and Undo/Redo are ALWAYS visible — Assets/History/
+          Ask AI move into an overflow menu below 2xl. */}
       <div className="flex shrink-0 items-center justify-end gap-1.5">
-        <div ref={moreRootRef} className="relative shrink-0 xl:hidden">
+        <div ref={moreRootRef} className="relative shrink-0 2xl:hidden">
           <button
             type="button"
             aria-label="More toolbar tools"
@@ -353,7 +378,10 @@ export function BuilderTopBar({
           ) : null}
         </div>
 
-        <div className="hidden shrink-0 items-center gap-1.5 xl:flex">
+        {/* TASK 60 §24/§26 + TASK 63 §18: secondary tools (Assets, History,
+            Ask AI, Undo/Redo) live inline from 2xl; below that they compact
+            into the overflow menu so the 1280 header never overflows. */}
+        <div className="hidden shrink-0 items-center gap-1.5 2xl:flex">
           {/* TASK 61 §19: semantic groups with hairline separators —
               [utility] [credits] [history]. */}
           <button
@@ -399,6 +427,32 @@ export function BuilderTopBar({
             </span>
           </button>
           <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-line" />
+          <IconButton
+            label="Undo"
+            disabled={!actions.canUndo}
+            onClick={actions.undo}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 14.5 4.5 10 9 5.5" />
+              <path d="M4.5 10H15a4.5 4.5 0 0 1 0 9h-4" />
+            </svg>
+          </IconButton>
+          <IconButton
+            label="Redo"
+            disabled={!actions.canRedo}
+            onClick={actions.redo}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m15 14.5 4.5-4.5L15 5.5" />
+              <path d="M19.5 10H9a4.5 4.5 0 0 0 0 9h4" />
+            </svg>
+          </IconButton>
+        </div>
+
+        {/* TASK 63 §18: Undo/Redo stay INLINE below 2xl (≥sm — at 390 the
+            overflow menu carries them); tiny, critical, expected by muscle
+            memory (the 2xl group above carries its own pair). */}
+        <div className="hidden shrink-0 items-center gap-1.5 sm:flex 2xl:hidden">
           <IconButton
             label="Undo"
             disabled={!actions.canUndo}

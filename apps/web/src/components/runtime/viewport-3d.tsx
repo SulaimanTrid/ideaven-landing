@@ -829,6 +829,22 @@ export function Viewport3D({ model, screen, mode, selectedId, onSelect, onDelete
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [mode]);
 
+  // TASK 63 §15: the mouse wheel OVER the 3D viewport is 3D navigation —
+  // wheel zooms the orbit camera (never page scroll). Non-passive listener
+  // with preventDefault so the outer app never scrolls behind it; the
+  // palette/inspector keep their own wheel scrolling untouched.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || mode !== "editor") return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const factor = event.deltaY > 0 ? 1.1 : 1 / 1.1;
+      orbit.current.distance = Math.min(80, Math.max(3, orbit.current.distance * factor));
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [mode]);
+
   const pointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (modeRef.current !== "editor") return;
     pressRef.current = { last: { x: event.clientX, y: event.clientY }, moved: 0 };

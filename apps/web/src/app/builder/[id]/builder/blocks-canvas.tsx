@@ -879,6 +879,11 @@ export function BlocksCanvas({ screen, components, screenName }: CanvasProps) {
                 here. Blocks dropped on free canvas stay parked as drafts —
                 connect them whenever you are ready.
               </p>
+              {/* TASK 63 §19: beginner pointer — an empty-state hint, not a
+                  permanent tutorial. */}
+              <p className="mt-3 rounded-lg border border-violet/30 bg-violet/[0.08] px-3 py-2 text-[12.5px] font-medium text-violet" data-blocks-hint="true">
+                Start with an event block — “When this happens…”.
+              </p>
             </div>
           ) : null}
 

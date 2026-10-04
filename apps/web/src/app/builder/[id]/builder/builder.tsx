@@ -183,6 +183,59 @@ function BuilderSession({
   const [mode, setMode] = useState<BuilderMode>("design");
   // TASK 62 §32: game projects get the flat GameObject list in the left rail.
   const isGameProject = model.type === "game";
+  // TASK 63 §24/§26/§27: editor UI state (never the project model) — mode
+  // shortcuts, desktop panel collapse, and small-width panel drawers.
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [paletteDrawer, setPaletteDrawer] = useState(false);
+  const [inspectorDrawer, setInspectorDrawer] = useState(false);
+
+  // Alt+1..5 switches modes (Design/Blocks/Code/Preview/Insights). Guarded:
+  // never fires while typing in a field, and plain W/A/S/D/E/R/Space stay
+  // untouched for gameplay/tools.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target as HTMLElement | null;
+      const inField =
+        target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable === true;
+      if (inField) return;
+      const order: BuilderMode[] = ["design", "blocks", "code", "preview", "insights"];
+      const index = Number(event.key) - 1;
+      if (Number.isInteger(index) && index >= 0 && index < order.length) {
+        event.preventDefault();
+        setMode(order[index]!);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // §27: only ONE major drawer occupies the screen at a time.
+  const openPaletteDrawer = () => {
+    setPaletteDrawer(true);
+    setInspectorDrawer(false);
+    setAssetsOpen(false);
+    setHistoryOpen(false);
+  };
+  const openInspectorDrawer = () => {
+    setInspectorDrawer(true);
+    setPaletteDrawer(false);
+    setAssetsOpen(false);
+    setHistoryOpen(false);
+  };
+  // §36: Escape closes whichever drawer is open (focus may live on the FAB,
+  // outside the drawer node — so the listener is global while one is open).
+  useEffect(() => {
+    if (!paletteDrawer && !inspectorDrawer) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setPaletteDrawer(false);
+      setInspectorDrawer(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paletteDrawer, inspectorDrawer]);
 
   // M5 universal search: the platform-chrome command palette dispatches
   // context jumps (screen/component/handler) through this window event.
@@ -669,13 +722,46 @@ function BuilderSession({
         />
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1">
-          {/* Left rail: screens + mode-specific panel */}
+          {/* Left rail: screens + mode-specific panel. TASK 63 §26: desktop
+              collapse keeps a compact rail with a recovery button; §27 the
+              rail content is also openable as a drawer below md. */}
           {mode !== "preview" ? (
-            <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-panel md:flex">
+            leftCollapsed ? (
+              <div className="hidden shrink-0 flex-col items-center gap-2 border-r border-line bg-panel py-2 md:flex">
+                <button
+                  type="button"
+                  data-toggle-left-panel="true"
+                  aria-expanded={false}
+                  aria-controls="workspace-left-panel"
+                  aria-label="Expand left panel"
+                  title="Expand left panel"
+                  onClick={() => setLeftCollapsed(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-mist transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+                >
+                  »
+                </button>
+                <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.2em] text-mist [writing-mode:vertical-rl]">
+                  Panels
+                </span>
+              </div>
+            ) : (
+            <aside id="workspace-left-panel" className="relative hidden w-60 shrink-0 flex-col border-r border-line bg-panel md:flex">
+              <button
+                type="button"
+                data-toggle-left-panel="true"
+                aria-expanded={true}
+                aria-controls="workspace-left-panel"
+                aria-label="Collapse left panel"
+                title="Collapse left panel"
+                onClick={() => setLeftCollapsed(true)}
+                className="absolute right-1 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded text-mist transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+              >
+                «
+              </button>
               <div className="max-h-[40%] overflow-y-auto">
                 <ScreensPanel />
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
                 {mode === "design" ? (
                   isGameProject ? (
                     <>
@@ -692,6 +778,7 @@ function BuilderSession({
                 )}
               </div>
             </aside>
+            )
           ) : null}
 
           {/* Center: mode surface */}
@@ -707,18 +794,50 @@ function BuilderSession({
             <CodeMode />
           )}
 
-          {/* Right rail: design tools (Blocks mode renders its own palette rail) */}
+          {/* Right rail: design tools (Blocks mode renders its own palette rail).
+              TASK 63 §26: desktop collapse with a recovery rail. */}
           {mode === "design" ? (
-            <aside className="hidden w-72 shrink-0 flex-col border-l border-line bg-panel lg:flex">
+            rightCollapsed ? (
+              <div className="hidden shrink-0 flex-col items-center gap-2 border-l border-line bg-panel py-2 lg:flex">
+                <button
+                  type="button"
+                  data-toggle-right-panel="true"
+                  aria-expanded={false}
+                  aria-controls="workspace-right-panel"
+                  aria-label="Expand inspector panel"
+                  title="Expand inspector panel"
+                  onClick={() => setRightCollapsed(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-mist transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+                >
+                  «
+                </button>
+                <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.2em] text-mist [writing-mode:vertical-rl]">
+                  Inspector
+                </span>
+              </div>
+            ) : (
+            <aside id="workspace-right-panel" className="relative hidden w-72 shrink-0 flex-col border-l border-line bg-panel lg:flex">
+              <button
+                type="button"
+                data-toggle-right-panel="true"
+                aria-expanded={true}
+                aria-controls="workspace-right-panel"
+                aria-label="Collapse inspector panel"
+                title="Collapse inspector panel"
+                onClick={() => setRightCollapsed(true)}
+                className="absolute right-1 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded text-mist transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+              >
+                »
+              </button>
               <div className="flex max-h-[45%] flex-col border-b border-line">
                 <div className="p-3 pb-1">
                   <h3 className="px-1 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">Layers</h3>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
                   <ComponentTree />
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
                 <div className="p-3 pb-1">
                   <h3 className="px-1 font-mono text-[10px] tracking-[0.16em] text-mist uppercase">
                     Inspector
@@ -728,8 +847,114 @@ function BuilderSession({
                 <div className="h-6" />
               </div>
             </aside>
+            )
           ) : null}
           </div>
+
+          {/* TASK 63 §27: mobile/tablet drawer FABs — the side panels stay
+              reachable below md/lg as sheets; one drawer at a time. */}
+          {mode !== "preview" ? (
+            <div className="fixed bottom-16 right-3 z-40 flex flex-col gap-2 md:hidden">
+              <button
+                type="button"
+                data-open-palette-drawer="true"
+                aria-expanded={paletteDrawer}
+                aria-label="Open palette panel"
+                title="Open palette panel"
+                onClick={openPaletteDrawer}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-line bg-panel text-ink shadow-[0_10px_30px_-10px_rgb(0_0_0/0.8)] transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+              >
+                ▦
+              </button>
+            </div>
+          ) : null}
+          {mode === "design" ? (
+            <div className="fixed bottom-28 right-3 z-40 flex flex-col gap-2 lg:hidden">
+              <button
+                type="button"
+                data-open-inspector-drawer="true"
+                aria-expanded={inspectorDrawer}
+                aria-label="Open inspector panel"
+                title="Open inspector panel"
+                onClick={openInspectorDrawer}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-line bg-panel text-ink shadow-[0_10px_30px_-10px_rgb(0_0_0/0.8)] transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+              >
+                ⚙
+              </button>
+            </div>
+          ) : null}
+
+          {/* TASK 63 §27: the palette drawer (below md). */}
+          {paletteDrawer ? (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Palette panel"
+              data-drawer="palette"
+              className="fixed inset-0 z-[80] flex justify-end bg-black/60 md:hidden"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setPaletteDrawer(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setPaletteDrawer(false);
+              }}
+            >
+              <div className="flex h-full w-72 max-w-[85vw] flex-col border-l border-line bg-panel shadow-[0_24px_60px_-24px_rgb(0_0_0/0.8)]">
+                <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3">
+                  <h2 className="font-mono text-[10px] uppercase tracking-[0.16em] text-mist">Panels</h2>
+                  <button
+                    type="button"
+                    aria-label="Close palette drawer"
+                    title="Close"
+                    onClick={() => setPaletteDrawer(false)}
+                    className="flex h-7 w-7 items-center justify-center rounded text-mist hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+                  <ScreensPanel />
+                  {isGameProject ? <GameObjectsPanel /> : null}
+                  <Palette />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* TASK 63 §27: the inspector drawer (below lg, design mode). */}
+          {inspectorDrawer ? (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Inspector panel"
+              data-drawer="inspector"
+              className="fixed inset-0 z-[80] flex justify-end bg-black/60 lg:hidden"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setInspectorDrawer(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setInspectorDrawer(false);
+              }}
+            >
+              <div className="flex h-full w-80 max-w-[88vw] flex-col border-l border-line bg-panel shadow-[0_24px_60px_-24px_rgb(0_0_0/0.8)]">
+                <div className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3">
+                  <h2 className="font-mono text-[10px] uppercase tracking-[0.16em] text-mist">Inspector</h2>
+                  <button
+                    type="button"
+                    aria-label="Close inspector drawer"
+                    title="Close"
+                    onClick={() => setInspectorDrawer(false)}
+                    className="flex h-7 w-7 items-center justify-center rounded text-mist hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+                  <Inspector />
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {/* Bottom: diagnostics (errors / warnings / info) */}
           <DiagnosticsPanel

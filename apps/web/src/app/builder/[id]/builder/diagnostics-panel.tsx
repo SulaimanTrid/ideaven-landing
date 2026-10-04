@@ -120,8 +120,10 @@ export function DiagnosticsPanel({ onRequestAIFix }: { onRequestAIFix?: (prompt:
       <div className="flex h-9 items-center justify-between gap-2 overflow-x-auto border-b border-line px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
+          data-diagnostics-toggle="true"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
+          title={open ? "Collapse diagnostics" : "Open diagnostics"}
           className="flex shrink-0 items-center gap-2 rounded-md px-1.5 py-1 text-[12px] font-medium text-fog transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
         >
           <svg

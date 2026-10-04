@@ -4222,3 +4222,93 @@ camera/physics system. Full record in `docs/TASK62_2D_ENGINE_CORE.md`.
 ### Next exact task
 
 STOP per the directive â€” await explicit approval before TASK 63.
+## 70. TASK 63 â€” Beginner Workspace Navigation + Scrollable Editor Panels
+
+Session 63 (2026-10-04). ONE builder shell; navigation and scrolling
+architecture for beginners â€” no new engine/builder/model. Full record in
+`docs/TASK63_WORKSPACE_NAVIGATION.md`.
+
+### What was built (session 63)
+
+- **Mode navigation** (Â§4/Â§5/Â§24): one controlled strip; tooltips with the
+  new **Alt+1..5** shortcuts (Design/Blocks/Code/Preview/Insights; guarded
+  against typing contexts; W/A/S/D/E/R/Space untouched); active tab marked
+  by `aria-current` + underline (never color alone). ROOT-CAUSE FIX found
+  by the new E2E: the strip's `justify-center` spilled overflowing tabs
+  LEFT under the brand zone (breadcrumb intercepted clicks at 1440) â€” now
+  `justify-start`, overflow scrolls right predictably.
+- **Breadcrumb** (Â§32/Â§33): one compact `project / ENGINE / MODE` context
+  (`data-workspace-context`, aria-labelled) replacing the separate name
+  span; `pointer-events-none` so it can never steal a click.
+- **Left panel** (Â§6/Â§7/Â§8): sticky **palette search** over label + type +
+  category + alias vocabulary ("text" â†’ Text/Text Input/Password Input/TTS;
+  "tap" â†’ Button) â€” no second index; **collapsible categories** with
+  `aria-expanded`/`aria-controls`, persisted per project type in
+  localStorage (UI-only); primary category (Game Entities / 3D Objects /
+  User Interface) open + "Â· start here", others collapsed for beginners.
+- **Inspector** (Â§10/Â§11): every section collapsible (`aria-expanded`/
+  `aria-controls`, open by default); independent rail scrolling with NO
+  reset on selection change (asserted).
+- **Panel collapse** (Â§26): left/right desktop collapse into compact rails
+  with recovery buttons (`aria-expanded`/`aria-controls`).
+- **Drawers** (Â§27/Â§28): palette drawer (<md) and inspector drawer (<lg,
+  design) as right-side sheets â€” `role=dialog`+`aria-modal`, backdrop AND
+  window-level Escape close, ONE drawer at a time (opening one closes the
+  others); FABs open them below md/lg.
+- **Wheel routing** (Â§15): wheel over the 3D viewport ZOOMS the 3D orbit
+  (non-passive listener, page never scrolls); wheel over palette/inspector
+  scrolls those panels â€” asserted all three ways.
+- **Guidance** (Â§19/Â§30): Blocks empty state "Start with an event block";
+  Code "Your generated TypeScript appears here"; empty states keep real
+  canonical actions (Â§31).
+- **Toolbar widths** (Â§18 rebalance): secondary panel tools (Assets/
+  History/Ask AI) compact into the overflow menu below 2xl; Undo/Redo stay
+  INLINE at every width (sub-2xl pair + 2xl pair) â€” at 390 the overflow
+  menu carries them. Fixes a real measured 67px overflow at 1280.
+
+### Root causes fixed
+
+1. `justify-center` mode strip spilled overflowing tabs under the brand
+   zone (breadcrumb intercepted clicks â€” measured).
+2. Name span + breadcrumb together made the left zone wide enough to
+   re-create that collision at 1280 â€” merged into ONE breadcrumb.
+3. Right-zone inline tools + breadcrumb together overflowed 1280 by a
+   measured 67px â€” secondary tools compact below 2xl, Undo/Redo stay inline.
+4. Multi-select reset effect cleared the marquee/ctrl selection on select()
+   â€” group gestures now survive (TASK 62 hardening).
+
+### Verified (session 63)
+
+- e2e-task63-workspace-navigation.mjs **42/42, 0 console/page errors**
+  across all three engines: mode nav (mouse + Alt keys + tooltips +
+  breadcrumb), left/right independent scrolling with the central viewport
+  frozen (bbox evidence), palette search/aliases/collapse/persist,
+  inspector collapse + scroll preservation, code Ctrl+Homeâ†’End scroll,
+  blocks palette scroll + hint + wheel-pan + ctrl-wheel zoom, 3D wheel
+  zoom + palette wheel routing, collapse rails, 390 drawers (one at a
+  time, Escape), 768/1024/1280/1440 layouts, diagnostics collapsed.
+- Regression sweep (directive Â§43): shell-integrity 35/35, engine-launcher
+  31/31, task61 45/45, task62 61/61, 3d suites 18/17/24/42/34/35,
+  scene-gameplay 21/21, asset-studio 25/25, camera 34/34, sorting 19/19,
+  input-actions 32/32, sprite-animation 18/18, state-machine 20/20,
+  2d-lighting 19/19, 2d-particles 22/22, tilemap-paint 44/44 (rule-tile
+  class expectations updated to the TASK 62 six-class rule; Erase/Paint
+  locators disambiguated), task60 47/47, task63 42/42, motion 11/11,
+  i18n-audit 26/26, launch-audit 20 routes EXIT 0.
+- Gates: tsc clean; go vet clean; `go test -count=1 ./internal/project` ok;
+  next build exit 0 (dev stopped, .next rebuilt); build:vinext exit 0;
+  verify-cf-preview 12/12.
+
+### Honest notes (TASK 63)
+
+- Mode strip is left-aligned when it overflows (centered overflow was the
+  unreachable-tabs bug â€” a deliberate visual change).
+- Secondary tools compact below 2xl (was xl) â€” at 1280â€“1535 Undo/Redo stay
+  inline while Assets/History/Ask AI live in the menu.
+- Category-collapse persistence is per browser per project type;
+  inspector section state is session-local.
+- e2e-community.mjs legacy drift unchanged (STATUS Â§68).
+
+### Next exact task
+
+STOP per the directive â€” await explicit approval before TASK 64.
