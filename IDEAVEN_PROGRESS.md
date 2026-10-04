@@ -1000,3 +1000,28 @@ providers, i18n coverage expansion, accessibility audit.
   pre-existing drift (first 13 checks green; rest references UI the current
   page never had) â€” flagged for a rewrite task, not faked.
 - STOP per directive â€” awaiting approval before TASK 62.
+---
+
+## SESSION 62 â€” TASK 62: Real 2D Game Engine Core + Professional 2D Authoring (2026-10-04)
+
+- Sprite authoring: visual asset picker (thumbnails + measured dims +
+  choose/replace/clear), canonical pivot (presets + numeric) and flip X/Y â€”
+  ONE render formula across editor/preview/published/export.
+- Tilemap: visual palette editor (color picker, add/remove/reorder, per-tile
+  solid/pass flags in the canonical palette string), flood fill +
+  erase-fill (bounded BFS, one gesture one undo), rule tiles upgraded to
+  six neighborhood classes (cross/T/straight/corner/end/isolated), live
+  collision flags (solid blocks, pass decorates) with export parity.
+- Camera pixel-snap mode (canonical prop, whole-pixel rendering, export
+  mirror). Editor workflow: ctrl+click multi-select, marquee, group
+  move/duplicate/delete/align (ONE commit each), z-order shortcuts, debug
+  overlays (default OFF), grid toggle, Play/Stop, flat GameObject list,
+  scene duplicate/reorder, empty-state guidance. Asset Studio: sprite-sheet
+  import + grid slicing into real PNG assets.
+- Gates: task62 NEW 61/61; 20 regression suites green (incl. task60 47/47,
+  tilemap-paint 44/44, shell 35/35); tsc clean; go vet clean (fixed a real
+  unescaped-% in the new export template); go test -count=1 ok; next build
+  0; build:vinext 0; verify-cf-preview 12/12.
+- Honest: layer lock, prefab ecosystem, camera dead-zone/zoom deferred
+  (documented); straight-run shading is a visible rule-tile upgrade.
+- STOP per directive â€” awaiting approval before TASK 63.

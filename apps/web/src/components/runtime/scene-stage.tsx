@@ -35,7 +35,8 @@ import {
   PLAYER_ACTION_RIGHT,
   rectsOverlap,
   sortedRenderOrder,
-  tilemapCellRects,
+  spriteTransformStyle,
+  tilemapSolidCellRects,
   tilemapCellSize,
   touchEventFor,
   type AnimClip,
@@ -344,6 +345,14 @@ export function SceneStage({ screen, runtime, emit, onRestart, onTrace, width, h
       const clamped = clampCamera(cam.x, cam.y, { ...cfg, viewport: { width, height } });
       cam.x = clamped.x;
       cam.y = clamped.y;
+      // TASK 62 §23: pixel-safe mode — the eased camera ROUNDS to whole
+      // pixels before rendering (deterministic, no subpixel jitter; the
+      // smooth follow still eases underneath). Presentation-only: authored
+      // coordinates are never mutated.
+      if (cfg.pixelSnap) {
+        cam.x = Math.round(cam.x);
+        cam.y = Math.round(cam.y);
+      }
 
       // Bounded shake: a sine envelope that decays to exactly zero — repeated
       // shakes restart the envelope, they never accumulate offsets.
@@ -417,15 +426,16 @@ export function SceneStage({ screen, runtime, emit, onRestart, onTrace, width, h
         player.grounded = false;
 
         // COLLISION (solid): land on top surfaces of non-trigger collidables.
-        // A tilemap contributes one rect per painted cell — a painted cell is
-        // solid, an empty cell never is.
+        // A tilemap contributes one SOLID rect per painted cell (TASK 62 §20:
+        // "pass" palette tiles are decoration — they render, never collide);
+        // an empty cell never is.
         const body = playerDim(player);
         for (const entity of others) {
           const props = liveProps(entity.id);
           if (!entityVisible(props) || !entityCollidable(props, entity.type)) continue;
           if (entityIsTrigger(entity.type, props)) continue;
           const rect = entityRect(props, entity.type);
-          const solids = entity.type === "tilemap" ? tilemapCellRects(props, rect) : [rect];
+          const solids = entity.type === "tilemap" ? tilemapSolidCellRects(props, rect) : [rect];
           for (const solid of solids) {
             const withinX = body.x + body.width > solid.x + 2 && body.x < solid.x + solid.width - 2;
             const feet = body.y + body.height;
@@ -466,13 +476,14 @@ export function SceneStage({ screen, runtime, emit, onRestart, onTrace, width, h
 
         // COLLISION EVENTS (SYSTEM 3): enter / stay (2 Hz, not every frame) /
         // exit — all dispatched into the block runtime. Tilemap overlap is
-        // per painted cell, matching the collision solids.
+        // per SOLID painted cell, matching the collision solids (non-solid
+        // "pass" decoration never fires touch events either).
         const stillTouching = new Set<string>();
         for (const entity of others) {
           const props = liveProps(entity.id);
           if (!entityVisible(props) || !entityCollidable(props, entity.type)) continue;
           const rect = entityRect(props, entity.type);
-          const touchRects = entity.type === "tilemap" ? tilemapCellRects(props, rect) : [rect];
+          const touchRects = entity.type === "tilemap" ? tilemapSolidCellRects(props, rect) : [rect];
           if (touchRects.some((touchRect) => rectsOverlap(body, touchRect))) {
             stillTouching.add(entity.id);
             if (!touchingRef.current.has(entity.id)) {
@@ -701,7 +712,7 @@ export function SceneStage({ screen, runtime, emit, onRestart, onTrace, width, h
           // objects (emitters render through the particle canvas).
           if (component.type === "camera" || component.type === "light" || component.type === "emitter") return null;
           if (component.id === playerComponent?.id && playerBody) {
-            return <PlayerView key={component.id} id={component.id} rect={playerBody} facing={player?.facing ?? 1} color={typeof props.color === "string" ? props.color : "#46e3b4"} name={componentLabel(component)} frameSrc={frameSrcFor(component.id, props)} />;
+            return <PlayerView key={component.id} id={component.id} rect={playerBody} facing={player?.facing ?? 1} color={typeof props.color === "string" ? props.color : "#46e3b4"} name={componentLabel(component)} frameSrc={frameSrcFor(component.id, props)} orientation={spriteTransformStyle(props)} />;
           }
           return <EntityView key={component.id} component={component} props={props} frameSrc={frameSrcFor(component.id, props)} />;
         })}
@@ -824,13 +835,21 @@ function EntityView({
   const rect = entityRect(props, component.type);
   const color = typeof props.color === "string" ? props.color : "#58c7f0";
   const rotation = typeof props.rotation === "number" && Number.isFinite(props.rotation) ? props.rotation : 0;
+  // TASK 62 §10/§11: pivot + flip through the ONE canonical formula — the
+  // same helper the design canvas and the export engine use. The pivot is
+  // the rotation anchor and the fixed edge for flips; the asset never mutates.
+  const orientation = spriteTransformStyle(props);
+  const transform = [rotation ? `rotate(${rotation}deg)` : "", orientation.transform ?? ""]
+    .filter(Boolean)
+    .join(" ");
   const base: React.CSSProperties = {
     position: "absolute",
     left: rect.x,
     top: rect.y,
     width: rect.width,
     height: rect.height,
-    transform: rotation ? `rotate(${rotation}deg)` : undefined,
+    transform: transform || undefined,
+    transformOrigin: orientation.transformOrigin,
     userSelect: "none",
   };
   // A texture (Asset Studio PNG or any URL) replaces the color shape —
@@ -934,9 +953,10 @@ function EntityView({
   }
 }
 
-function PlayerView({ id, rect, facing, color, name, frameSrc }: { id: string; rect: EntityRect; facing: 1 | -1; color: string; name: string; frameSrc?: string | null }) {
+function PlayerView({ id, rect, facing, color, name, frameSrc, orientation }: { id: string; rect: EntityRect; facing: 1 | -1; color: string; name: string; frameSrc?: string | null; orientation?: { transform: string | undefined; transformOrigin: string } }) {
   // An animated player renders its state machine's current frame instead of
-  // the color shape (SLICE 3) — same rendering as animated sprites.
+  // the color shape (SLICE 3) — same rendering as animated sprites. TASK 62:
+  // canonical pivot/flip apply to the texture through the shared formula.
   if (frameSrc) {
     return (
       <div
@@ -950,6 +970,8 @@ function PlayerView({ id, rect, facing, color, name, frameSrc }: { id: string; r
           height: rect.height,
           overflow: "hidden",
           borderRadius: 9,
+          transform: orientation?.transform,
+          transformOrigin: orientation?.transformOrigin,
           userSelect: "none",
         }}
       >

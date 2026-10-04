@@ -29,7 +29,7 @@ const DEVICES: { id: ViewportDevice; labelKey: string }[] = [
 const ZOOMS = ["fit", 0.25, 0.5, 0.75, 1] as const;
 
 export function PreviewMode() {
-  const { model, project, actions } = useBuilder();
+  const { model, project, actions, setMode } = useBuilder();
   const { t } = useI18n();
   const saved = model.settings.preview;
   const [device, setDevice] = useState<ViewportDevice>(saved?.device ?? "phone");
@@ -248,10 +248,21 @@ export function PreviewMode() {
           <button
             type="button"
             onClick={start}
-            title="Restart the run with fresh state"
+            title="Reset — restart the run with fresh state"
             className="h-7 rounded-md bg-violet-deep px-3 text-[12px] font-medium text-white transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
           >
             ⟳ {t("builder.restartRun")}
+          </button>
+          {/* TASK 62 §30: explicit STOP — leaves play mode; authored state was
+              never touched (runtime state is transient). */}
+          <button
+            type="button"
+            data-preview-stop="true"
+            onClick={() => setMode("design")}
+            title="Stop — leave play mode and return to authoring"
+            className="h-7 rounded-md border border-rose/40 px-3 text-[12px] font-medium text-rose transition-colors hover:bg-rose/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+          >
+            ■ Stop
           </button>
         </div>
       </div>

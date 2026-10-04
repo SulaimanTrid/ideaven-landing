@@ -1429,6 +1429,50 @@ function ComponentInspector({ nodeId }: { nodeId: string }) {
         </Section>
       ) : null}
 
+      {def.type === "sprite" ? <SpriteTexturePanel nodeId={node.id} props={node.props} /> : null}
+      {def.type === "sprite" ? <SpritePivotPanel nodeId={node.id} props={node.props} /> : null}
+      {def.type === "tilemap" ? <TilePalettePanel nodeId={node.id} props={node.props} /> : null}
+      {def.propFields.some((f) => f.key === "sortingLayer") ? (
+        <Section title="Z order">
+          {/* TASK 62 §27: sorting shortcuts through the SAME moveComponent op
+              — no parallel z-index system. Higher layer/order draws in front. */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              data-sort-front="true"
+              onClick={() => actions.reorderTo(node.id, "front")}
+              className="h-7 rounded-md border border-line px-2 text-[11.5px] font-medium text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+            >
+              Bring to front
+            </button>
+            <button
+              type="button"
+              data-sort-forward="true"
+              onClick={() => actions.reorderTo(node.id, "forward")}
+              className="h-7 rounded-md border border-line px-2 text-[11.5px] font-medium text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+            >
+              Move forward
+            </button>
+            <button
+              type="button"
+              data-sort-backward="true"
+              onClick={() => actions.reorderTo(node.id, "backward")}
+              className="h-7 rounded-md border border-line px-2 text-[11.5px] font-medium text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+            >
+              Move backward
+            </button>
+            <button
+              type="button"
+              data-sort-back="true"
+              onClick={() => actions.reorderTo(node.id, "back")}
+              className="h-7 rounded-md border border-line px-2 text-[11.5px] font-medium text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+            >
+              Send to back
+            </button>
+          </div>
+        </Section>
+      ) : null}
+
       {def.type === "camera" ? (
         <p className="rounded-lg border border-line bg-card px-3 py-2 text-[11.5px] leading-5 text-mist">
           The runtime camera eases toward its target each frame.{" "}
@@ -1555,6 +1599,338 @@ function DangerActions({ nodeId }: { nodeId: string }) {
         Delete
       </button>
     </div>
+  );
+}
+
+// ---- TASK 62 §8: sprite asset picker ------------------------------------------------
+// A real picker for the Sprite texture: project image assets as thumbnails
+// with name + measured pixel dimensions; click to assign, Replace re-opens
+// the grid, Clear removes the texture. The canonical saved value stays the
+// `asset:<id>` reference — nobody types asset ids by hand.
+
+function SpriteTexturePanel({ nodeId, props }: { nodeId: string; props?: PropsMap }) {
+  const { project, actions } = useBuilder();
+  const [assets, setAssets] = useState<ProjectAsset[]>([]);
+  const [open, setOpen] = useState(typeof props?.src !== "string" || props.src.trim() === "");
+  const current = typeof props?.src === "string" ? props.src.trim() : "";
+  const isAssetRef = current.startsWith("asset:");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (project?.id) {
+      assetApi
+        .list(project.id)
+        .then(({ assets: list }) => {
+          if (!cancelled) setAssets(list.filter((a) => a.mime.startsWith("image/")));
+        })
+        .catch(() => setAssets([]));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id]);
+
+  const assign = (ref: string) => actions.updateProps(nodeId, { src: ref });
+  const clear = () => actions.updateProps(nodeId, { src: undefined });
+
+  return (
+    <Section title="Sprite texture">
+      <div className="flex items-center gap-2">
+        {current ? (
+          <span className="h-12 w-12 shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+            {/* eslint-disable-next-line @next/next/no-img-element -- project asset or user URL */}
+            <img src={imageUrl(current)} alt="" className="h-full w-full object-contain" data-current-texture="true" />
+          </span>
+        ) : (
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-dashed border-line text-[10px] text-mist">
+            none
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[12px] text-fog" data-texture-name="true">
+            {isAssetRef
+              ? assets.find((a) => current === `asset:${a.id}`)?.name ?? current
+              : current || "No texture — the color shape renders."}
+          </p>
+          <div className="mt-1 flex gap-1.5">
+            <button
+              type="button"
+              data-texture-replace="true"
+              onClick={() => setOpen((value) => !value)}
+              aria-pressed={open}
+              className="h-7 rounded-md border border-line px-2 text-[11.5px] font-medium text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+            >
+              {current ? "Replace" : "Choose"}
+            </button>
+            {current ? (
+              <button
+                type="button"
+                data-texture-clear="true"
+                onClick={clear}
+                className="h-7 rounded-md border border-rose/40 px-2 text-[11.5px] font-medium text-rose transition-colors hover:bg-rose/10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {open ? (
+        assets.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-line px-3 py-3 text-[11.5px] leading-4 text-mist">
+            No image assets yet — draw one in the Asset Studio or upload a PNG,
+            then come back.
+          </p>
+        ) : (
+          <div className="grid grid-cols-3 gap-1.5" data-asset-picker="true">
+            {assets.map((asset) => {
+              const ref = `asset:${asset.id}`;
+              const active = current === ref;
+              return (
+                <button
+                  key={asset.id}
+                  type="button"
+                  data-pick-asset={asset.id}
+                  aria-pressed={active}
+                  title={`${asset.name} — click to ${active ? "keep" : "assign"}`}
+                  onClick={() => {
+                    assign(ref);
+                    setOpen(false);
+                  }}
+                  className={`group flex flex-col gap-1 rounded-lg border p-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+                    active ? "border-violet bg-violet/10" : "border-line hover:border-violet/50"
+                  }`}
+                >
+                  <span className="flex h-12 items-center justify-center overflow-hidden rounded-md bg-surface">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- project asset thumbnail */}
+                    <img
+                      src={imageUrl(ref)}
+                      alt={asset.name}
+                      className="max-h-12 max-w-full object-contain"
+                      onLoad={(event) => {
+                        // Real dimensions, measured from the decoded image.
+                        const img = event.currentTarget;
+                        const label = img.parentElement?.parentElement?.querySelector("[data-asset-dims]");
+                        if (label) label.textContent = `${img.naturalWidth}×${img.naturalHeight}`;
+                      }}
+                    />
+                  </span>
+                  <span className="truncate text-[10.5px] font-medium text-fog">{asset.name}</span>
+                  <span className="font-mono text-[9.5px] text-mist" data-asset-dims="true">
+                    {asset.kind}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )
+      ) : null}
+    </Section>
+  );
+}
+
+// ---- TASK 62 §10/§11: pivot presets + flips ------------------------------------------
+
+function SpritePivotPanel({ nodeId, props }: { nodeId: string; props?: PropsMap }) {
+  const { actions } = useBuilder();
+  const pivotX = typeof props?.pivotX === "number" && Number.isFinite(props.pivotX) ? props.pivotX : 0.5;
+  const pivotY = typeof props?.pivotY === "number" && Number.isFinite(props.pivotY) ? props.pivotY : 0.5;
+  const flipX = props?.flipX === true;
+  const flipY = props?.flipY === true;
+  const setPivot = (x: number, y: number) => actions.updateProps(nodeId, { pivotX: x, pivotY: y });
+  const presets: { key: string; label: string; x: number; y: number }[] = [
+    { key: "center", label: "Center", x: 0.5, y: 0.5 },
+    { key: "top", label: "Top", x: 0.5, y: 0 },
+    { key: "bottom", label: "Bottom", x: 0.5, y: 1 },
+    { key: "left", label: "Left", x: 0, y: 0.5 },
+    { key: "right", label: "Right", x: 1, y: 0.5 },
+  ];
+  return (
+    <Section title="Pivot & flip">
+      <div className="flex flex-wrap gap-1" role="group" aria-label="Pivot preset">
+        {presets.map((preset) => {
+          const active = Math.abs(pivotX - preset.x) < 0.001 && Math.abs(pivotY - preset.y) < 0.001;
+          return (
+            <button
+              key={preset.key}
+              type="button"
+              data-pivot-preset={preset.key}
+              aria-pressed={active}
+              title={`Pivot: ${preset.label}`}
+              onClick={() => setPivot(preset.x, preset.y)}
+              className={`h-7 rounded-md border px-2 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+                active ? "border-violet bg-violet/10 text-violet" : "border-line text-fog hover:bg-surface hover:text-ink"
+              }`}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          data-flip-x="true"
+          aria-pressed={flipX}
+          title="Flip the sprite horizontally"
+          onClick={() => actions.updateProps(nodeId, { flipX: !flipX })}
+          className={`h-7 rounded-md border px-2.5 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+            flipX ? "border-violet bg-violet/10 text-violet" : "border-line text-fog hover:bg-surface hover:text-ink"
+          }`}
+        >
+          ⇋ Flip X
+        </button>
+        <button
+          type="button"
+          data-flip-y="true"
+          aria-pressed={flipY}
+          title="Flip the sprite vertically"
+          onClick={() => actions.updateProps(nodeId, { flipY: !flipY })}
+          className={`h-7 rounded-md border px-2.5 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+            flipY ? "border-violet bg-violet/10 text-violet" : "border-line text-fog hover:bg-surface hover:text-ink"
+          }`}
+        >
+          ⇵ Flip Y
+        </button>
+      </div>
+      <p className="text-[10.5px] leading-4 text-mist">
+        The pivot is the anchor for rotation and the fixed edge for flips. The
+        asset itself is never modified — design canvas, preview, published and
+        export all render the same way.
+      </p>
+    </Section>
+  );
+}
+
+// ---- TASK 62 §16: visual tile palette editor -----------------------------------------
+// Swatches, add/remove/reorder, a real color picker and per-tile SOLID
+// collision flags (§20) — all persisted through the canonical `palette`
+// string ("value:#hex:solid|pass;…") via updateProps. No shadow state.
+
+interface PaletteEntry {
+  value: number;
+  color: string;
+  solid: boolean;
+}
+
+function parsePaletteEntries(palette: string): PaletteEntry[] {
+  const out: PaletteEntry[] = [];
+  for (const part of palette.split(";")) {
+    const seg = part.trim();
+    if (!seg) continue;
+    const [value, hex, flag] = seg.split(":");
+    const num = parseInt(value ?? "", 10);
+    if (!Number.isFinite(num) || !hex) continue;
+    out.push({ value: num, color: hex.trim(), solid: (flag ?? "").trim().toLowerCase() !== "pass" });
+  }
+  return out.sort((a, b) => a.value - b.value);
+}
+
+function serializePaletteEntries(entries: PaletteEntry[]): string {
+  return [...entries]
+    .sort((a, b) => a.value - b.value)
+    .map((e) => `${e.value}:${e.color}${e.solid ? "" : ":pass"}`)
+    .join(";");
+}
+
+function TilePalettePanel({ nodeId, props }: { nodeId: string; props?: PropsMap }) {
+  const { actions } = useBuilder();
+  const entries = parsePaletteEntries(String(props?.palette ?? ""));
+  const commit = (next: PaletteEntry[]) => actions.updateProps(nodeId, { palette: serializePaletteEntries(next) });
+
+  const addTile = () => {
+    const used = new Set(entries.map((e) => e.value));
+    let value = 1;
+    while (used.has(value)) value += 1;
+    commit([...entries, { value, color: "#8f7bff", solid: true }]);
+  };
+  const removeTile = (value: number) => commit(entries.filter((e) => e.value !== value));
+  const reorder = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= entries.length) return;
+    const next = [...entries];
+    const [entry] = next.splice(index, 1);
+    next.splice(target, 0, entry!);
+    commit(next);
+  };
+  const update = (value: number, patch: Partial<PaletteEntry>) =>
+    commit(entries.map((e) => (e.value === value ? { ...e, ...patch } : e)));
+
+  return (
+    <Section title="Tile palette">
+      <ul className="flex flex-col gap-1.5" data-tile-palette="true">
+        {entries.map((entry, index) => (
+          <li key={entry.value} className="flex items-center gap-1.5 rounded-lg border border-line bg-panel px-1.5 py-1" data-tile-value={entry.value}>
+            <span className="w-6 text-center font-mono text-[11px] text-fog">{entry.value}</span>
+            <input
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(entry.color) ? entry.color : "#2a3348"}
+              aria-label={`Tile ${entry.value} color`}
+              title={`Tile ${entry.value} color`}
+              onChange={(event) => update(entry.value, { color: event.target.value })}
+              className="h-7 w-9 cursor-pointer rounded border border-line bg-panel"
+            />
+            <button
+              type="button"
+              data-tile-solid-toggle={entry.value}
+              aria-pressed={entry.solid}
+              title={entry.solid ? "Solid — painted cells block the player" : "Non-solid — painted cells are decoration"}
+              onClick={() => update(entry.value, { solid: !entry.solid })}
+              className={`h-7 rounded-md border px-1.5 text-[10.5px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+                entry.solid ? "border-mint/40 bg-mint/10 text-mint" : "border-amber/40 bg-amber/10 text-amber"
+              }`}
+            >
+              {entry.solid ? "solid" : "pass"}
+            </button>
+            <div className="ml-auto flex items-center">
+              <button
+                type="button"
+                aria-label={`Reorder tile ${entry.value} earlier`}
+                title="Reorder earlier"
+                disabled={index === 0}
+                onClick={() => reorder(index, -1)}
+                className="flex h-6 w-6 items-center justify-center rounded text-mist hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint disabled:opacity-30"
+              >
+                ◀
+              </button>
+              <button
+                type="button"
+                aria-label={`Reorder tile ${entry.value} later`}
+                title="Reorder later"
+                disabled={index === entries.length - 1}
+                onClick={() => reorder(index, 1)}
+                className="flex h-6 w-6 items-center justify-center rounded text-mist hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint disabled:opacity-30"
+              >
+                ▶
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove tile ${entry.value}`}
+                title="Remove tile"
+                onClick={() => removeTile(entry.value)}
+                className="flex h-6 w-6 items-center justify-center rounded text-mist hover:text-rose focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+              >
+                ✕
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        data-tile-add="true"
+        onClick={addTile}
+        className="h-7 w-full rounded-md border border-line px-2 text-[11.5px] font-medium text-fog transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint"
+      >
+        + Add tile
+      </button>
+      <p className="text-[10.5px] leading-4 text-mist">
+        Solid tiles block the player; non-solid tiles render as decoration.
+        The palette lives in the canonical tilemap props — painting, preview,
+        published and export all read it.
+      </p>
+    </Section>
   );
 }
 

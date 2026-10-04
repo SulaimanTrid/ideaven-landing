@@ -347,6 +347,44 @@ export function removeComponent3DMany(
   return next;
 }
 
+/**
+ * TASK 62 §25/§26: apply prop patches to MANY components of one screen as a
+ * SINGLE pure model operation — one undo entry for a whole multi-select
+ * gesture (alignment, group move). Rapid per-entity commits would clobber
+ * each other: each reads the same pre-render model snapshot.
+ */
+export function updateComponentsPropsMany(
+  model: ProjectModel,
+  patches: { id: string; props: PropsPatch }[],
+): ProjectModel {
+  let next = model;
+  for (const { id, props } of patches) {
+    const after = updateComponent(next, id, { props });
+    if (after !== next) next = after;
+  }
+  return next;
+}
+
+/** TASK 62 §25: delete many top-level scene entities as ONE undoable step. */
+export function removeComponentsMany(model: ProjectModel, ids: string[]): ProjectModel {
+  let next = model;
+  for (const id of ids) {
+    const after = removeComponent(next, id);
+    if (after !== next) next = after;
+  }
+  return next;
+}
+
+/** TASK 62 §25: duplicate many components as ONE undoable step. */
+export function duplicateComponentsMany(model: ProjectModel, ids: string[]): ProjectModel {
+  let next = model;
+  for (const id of ids) {
+    const after = duplicateComponent(next, id);
+    if (after !== next) next = after;
+  }
+  return next;
+}
+
 export interface ComponentUpdate {
   props?: PropsPatch;
   styles?: PropsPatch;
@@ -416,6 +454,39 @@ export function setStartScreen(model: ProjectModel, screenId: string): ProjectMo
   if (!findScreen(model, screenId)) return model;
   const next = clone(model);
   next.navigation.startScreenId = screenId;
+  return next;
+}
+
+/**
+ * TASK 62 §5: duplicate a scene — a full copy (components, logic, styles,
+ * input actions) inserted right after the original. The copy shares the
+ * source's internal component ids: screens are independent lists and every
+ * lookup (handlers, blocks, runtime) is screen-scoped, so nothing collides.
+ */
+export function duplicateScreen(model: ProjectModel, screenId: string): ProjectModel {
+  const source = findScreen(model, screenId);
+  if (!source) return model;
+  const next = clone(model);
+  const copy: ProjectModelScreen = JSON.parse(JSON.stringify(source));
+  copy.id = genId("screen");
+  copy.name = `${source.name} copy`;
+  const at = next.screens.findIndex((s) => s.id === screenId);
+  next.screens.splice(at + 1, 0, copy);
+  return next;
+}
+
+/**
+ * TASK 62 §5: reorder scenes by one slot (direction −1 = toward the front of
+ * the list). The start-screen designation is untouched — it travels with the
+ * screen id, not its position.
+ */
+export function moveScreen(model: ProjectModel, screenId: string, direction: -1 | 1): ProjectModel {
+  const index = model.screens.findIndex((s) => s.id === screenId);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= model.screens.length) return model;
+  const next = clone(model);
+  const [screen] = next.screens.splice(index, 1);
+  next.screens.splice(target, 0, screen!);
   return next;
 }
 

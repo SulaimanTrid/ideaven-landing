@@ -495,6 +495,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       followTarget: typeof props.followTarget === "string" ? props.followTarget : "",
       smoothing: Math.min(0.95, Math.max(0, camNum(props.smoothing, 0.12))),
       boundsEnabled: props.boundsEnabled === true,
+      pixelSnap: props.pixelSnap === true,
       minX: minX, minY: minY, maxX: maxX, maxY: maxY
     };
   }
@@ -542,17 +543,39 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
     var b = Math.round((n & 255) * factor);
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
   }
-  // Rule tiles: the cell's variant comes from its live 4-neighbor state —
-  // interior (4) darkest, edge (3) darker, corner/isolated base color.
+  // Rule tiles: the cell's variant comes from its live 4-neighborhood mask
+  // (TASK 62) — cross (4) darkest, T (3) next, straight (2 opposite) slight,
+  // corner/end/isolated keep the base color. Identical to scene.ts.
   function autoTileColor(props, col, row, paintedSet, tile) {
     var base = tileColorAt(props, tile);
     if (props.autoTile !== true) return base;
-    var n = 0;
-    if (paintedSet[col + "," + (row - 1)]) n++;
-    if (paintedSet[col + "," + (row + 1)]) n++;
-    if (paintedSet[(col - 1) + "," + row]) n++;
-    if (paintedSet[(col + 1) + "," + row]) n++;
-    return shadeHex(base, n >= 4 ? 0.72 : n === 3 ? 0.86 : 1);
+    var nU = paintedSet[col + "," + (row - 1)] ? 1 : 0;
+    var nD = paintedSet[col + "," + (row + 1)] ? 1 : 0;
+    var nL = paintedSet[(col - 1) + "," + row] ? 1 : 0;
+    var nR = paintedSet[(col + 1) + "," + row] ? 1 : 0;
+    var count = nU + nD + nL + nR;
+    if (count >= 4) return shadeHex(base, 0.72);
+    if (count === 3) return shadeHex(base, 0.8);
+    if (count === 2 && ((nU && nD) || (nL && nR))) return shadeHex(base, 0.88);
+    return base;
+  }
+  // TASK 62 §20: per-tile collision flags — a palette entry "value:#hex:pass"
+  // is NON-solid decoration; everything else (including every legacy palette
+  // with no third field) is solid, exactly as before.
+  function tileIsSolid(props, tile) {
+    var palette = String(props.palette || "").split(";");
+    for (var i = 0; i < palette.length; i++) {
+      var seg = palette[i].trim();
+      if (!seg) continue;
+      var parts = seg.split(":");
+      if (parseInt(parts[0], 10) === tile) return String(parts[2] || "").trim().toLowerCase() !== "pass";
+    }
+    return true;
+  }
+  // The SOLID subset of painted cells — what blocks the player and fires
+  // touch events (identical filter to scene.ts / the preview runtime).
+  function tilemapSolidCellRects(props, r) {
+    return tilemapCellRects(props, r).filter(function (c) { return tileIsSolid(props, c.tile); });
   }
   // One rect per painted cell — a painted cell is solid, an empty cell never is.
   function tilemapCellRects(props, r) {
@@ -881,7 +904,18 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       }
       var color = typeof props.color === "string" ? props.color : "#58c7f0";
       if (!sceneVisible(props)) el.style.display = "none";
-      if (typeof props.rotation === "number" && props.rotation) el.style.transform = "rotate(" + props.rotation + "deg)";
+      // TASK 62 SS10/SS11: pivot + flip through the ONE canonical formula -
+      // identical to the design canvas and the preview runtime. The pivot is
+      // the rotation anchor and the fixed edge for flips; the asset itself is
+      // never mutated.
+      var pivotX = typeof props.pivotX === "number" && isFinite(props.pivotX) ? Math.min(1, Math.max(0, props.pivotX)) : 0.5;
+      var pivotY = typeof props.pivotY === "number" && isFinite(props.pivotY) ? Math.min(1, Math.max(0, props.pivotY)) : 0.5;
+      var flips = (props.flipX === true || props.flipY === true) ? " scale(" + (props.flipX === true ? -1 : 1) + "," + (props.flipY === true ? -1 : 1) + ")" : "";
+      var transform = "";
+      if (typeof props.rotation === "number" && props.rotation) transform = "rotate(" + props.rotation + "deg)";
+      if (flips) transform += flips;
+      if (transform) el.style.transform = transform;
+      el.style.transformOrigin = (pivotX * 100) + "%% " + (pivotY * 100) + "%%";
       var animClip0 = activeAnimOf(props);
       var hasTex = (typeof props.src === "string" && props.src.trim() !== "") || (animClip0 && animClip0.frames.length > 0);
       if (hasTex) {
@@ -1229,8 +1263,9 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       var props = componentProps[n.id] || {};
       if (!sceneSolid(n.type, props)) return;
       var r = sceneRect(props, n.type);
-      // Tilemaps collide per painted cell; other solids are one rect.
-      var solids = n.type === "tilemap" ? tilemapCellRects(props, r) : [r];
+      // Tilemaps collide per SOLID painted cell (TASK 62 §20: "pass" palette
+      // tiles are decoration); other solids are one rect.
+      var solids = n.type === "tilemap" ? tilemapSolidCellRects(props, r) : [r];
       solids.forEach(function (s) {
         var withinX = body.x + body.width > s.x + 2 && body.x < s.x + s.width - 2;
         var feet = body.y + body.height;
@@ -1282,6 +1317,12 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       if (cc.boundsEnabled) {
         cam.x = (cc.maxX - cc.minX) <= sceneState.width ? cc.minX : Math.min(cc.maxX - sceneState.width, Math.max(cc.minX, cam.x));
         cam.y = (cc.maxY - cc.minY) <= sceneState.height ? cc.minY : Math.min(cc.maxY - sceneState.height, Math.max(cc.minY, cam.y));
+      }
+      // TASK 62 §23: pixel-safe mode — whole-pixel camera before rendering
+      // (identical to the preview runtime; authored data untouched).
+      if (cc.pixelSnap) {
+        cam.x = Math.round(cam.x);
+        cam.y = Math.round(cam.y);
       }
       var sx = 0, sy = 0;
       if (cam.shakeLeft > 0) {

@@ -93,11 +93,21 @@ export interface BuilderContextValue {
     removeComponent: (componentId: string) => void;
     duplicateComponent: (componentId: string) => void;
     reorder: (componentId: string, direction: -1 | 1) => void;
+    /** TASK 62 §27: z-order shortcuts — one undoable moveComponent each. */
+    reorderTo: (componentId: string, position: "front" | "back" | "forward" | "backward") => void;
+    /** TASK 62 §25/§26: multi-select group operations — ONE commit each. */
+    updateComponentsPropsMany: (patches: { id: string; props: PropsPatch }[]) => void;
+    removeComponentsMany: (ids: string[]) => void;
+    duplicateComponentsMany: (ids: string[]) => void;
     selectScreen: (screenId: string) => void;
     addScreen: (name: string) => void;
     renameScreen: (screenId: string, name: string) => void;
     deleteScreen: (screenId: string) => void;
     setStartScreen: (screenId: string) => void;
+    /** TASK 62 §5: duplicate a scene (copy right after the original). */
+    duplicateScreen: (screenId: string) => void;
+    /** TASK 62 §5: reorder scenes by one slot (−1 = earlier, 1 = later). */
+    moveScreen: (screenId: string, direction: -1 | 1) => void;
     updateScreenStyles: (screenId: string, patch: PropsPatch) => void;
     updatePreviewSettings: (patch: NonNullable<ProjectModel["settings"]["preview"]>) => void;
     /** TASK 15: rewrite the screen's rendering layers (one undoable commit). */

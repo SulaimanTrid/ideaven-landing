@@ -483,6 +483,72 @@ export function SpriteEditor({ projectId }: { projectId: string }) {
     setFrameIndex(Math.max(0, frameIndex - 1));
   };
 
+  // ---- TASK 62 §9: sprite-sheet import + grid slicing --------------------------------
+  // The INVERSE of the sheet export: load an existing sheet image, slice it
+  // on a real grid (columns/rows/cell size derived, padding/spacing), preview
+  // the cells, and save every cell as its OWN canonical PNG asset through the
+  // project's asset API — animation clips reference them like any frames.
+  const [sheetImg, setSheetImg] = useState<{ img: HTMLImageElement; name: string } | null>(null);
+  const [sheetCols, setSheetCols] = useState(4);
+  const [sheetRows, setSheetRows] = useState(1);
+  const [sheetSpacing, setSheetSpacing] = useState(0);
+  const [sheetPadding, setSheetPadding] = useState(0);
+  const [selectedCell, setSelectedCell] = useState(0);
+  const [slicing, setSlicing] = useState(false);
+
+  const sheetCell = (() => {
+    if (!sheetImg) return { w: 0, h: 0, cols: 0, rows: 0, pad: 0, space: 0 };
+    const cols = Math.max(1, Math.min(64, Math.floor(sheetCols)));
+    const rows = Math.max(1, Math.min(64, Math.floor(sheetRows)));
+    const pad = Math.max(0, Math.min(64, Math.floor(sheetPadding)));
+    const space = Math.max(0, Math.min(64, Math.floor(sheetSpacing)));
+    const w = Math.floor((sheetImg.img.naturalWidth - pad * 2 - space * (cols - 1)) / cols);
+    const h = Math.floor((sheetImg.img.naturalHeight - pad * 2 - space * (rows - 1)) / rows);
+    return { w, h, cols, rows, pad, space };
+  })();
+  const sheetCellCount = sheetCell.w > 0 && sheetCell.h > 0 ? sheetCell.cols * sheetCell.rows : 0;
+
+  const onSheetFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      setSheetImg({ img, name: file.name.replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9-_]+/gi, "-").toLowerCase() || "sheet" });
+      URL.revokeObjectURL(url);
+      setSelectedCell(0);
+    };
+    img.onerror = () => toastMessage("That file could not be read as an image.");
+    img.src = url;
+  };
+
+  const sliceAndSaveSheet = async () => {
+    if (!sheetImg || sheetCellCount === 0 || !sheetCell.w || !sheetCell.h) return;
+    setSlicing(true);
+    setSaveError(null);
+    try {
+      const { img, name } = sheetImg;
+      const { w, h, cols, rows, pad, space } = sheetCell;
+      let saved = 0;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const cellCanvas = document.createElement("canvas");
+          cellCanvas.width = w;
+          cellCanvas.height = h;
+          const ctx = cellCanvas.getContext("2d");
+          if (!ctx) continue;
+          ctx.drawImage(img, pad + col * (w + space), pad + row * (h + space), w, h, 0, 0, w, h);
+          const file = await dataUrlToFile(cellCanvas.toDataURL("image/png"), `${name}-r${row + 1}-c${col + 1}.png`);
+          await assetApi.upload(projectId, file);
+          saved++;
+        }
+      }
+      toastMessage(`Sliced ${saved} cells from "${sheetImg.name}" into Project Assets.`);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Slicing failed. Try again shortly.");
+    } finally {
+      setSlicing(false);
+    }
+  };
+
   // ---- saving ---------------------------------------------------------------------
   const toastMessage = (message: string) => {
     setToast(message);
@@ -890,6 +956,92 @@ export function SpriteEditor({ projectId }: { projectId: string }) {
                 <FrameThumb key={f.id} doc={doc} frame={f} active={index === frameIndex} onClick={() => { setFrameIndex(index); }} index={index} />
               ))}
             </div>
+          </div>
+
+          {/* TASK 62 §9: sprite-sheet import + grid slicing */}
+          <div className="border-t border-line p-3" data-sheet-slicer="true">
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.14em] text-mist">Import sprite sheet</h2>
+            <label className="mt-2 inline-flex h-8 cursor-pointer items-center rounded-lg border border-line bg-card px-3 text-[12px] text-fog transition-colors hover:text-ink">
+              Choose sheet image…
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) onSheetFile(file);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+            {sheetImg ? (
+              <>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <label className="flex items-center gap-1 text-[11px] text-fog">
+                    Cols
+                    <input type="number" min={1} max={64} value={sheetCols} aria-label="Sheet columns" onChange={(e) => setSheetCols(Number(e.target.value) || 1)} className="h-7 w-full rounded-md border border-line bg-panel px-1 text-center text-ink" />
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] text-fog">
+                    Rows
+                    <input type="number" min={1} max={64} value={sheetRows} aria-label="Sheet rows" onChange={(e) => setSheetRows(Number(e.target.value) || 1)} className="h-7 w-full rounded-md border border-line bg-panel px-1 text-center text-ink" />
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] text-fog">
+                    Spacing
+                    <input type="number" min={0} max={64} value={sheetSpacing} aria-label="Cell spacing" onChange={(e) => setSheetSpacing(Number(e.target.value) || 0)} className="h-7 w-full rounded-md border border-line bg-panel px-1 text-center text-ink" />
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] text-fog">
+                    Padding
+                    <input type="number" min={0} max={64} value={sheetPadding} aria-label="Sheet padding" onChange={(e) => setSheetPadding(Number(e.target.value) || 0)} className="h-7 w-full rounded-md border border-line bg-panel px-1 text-center text-ink" />
+                  </label>
+                </div>
+                <canvas
+                  data-sheet-preview="true"
+                  width={sheetImg.img.naturalWidth}
+                  height={sheetImg.img.naturalHeight}
+                  style={{ width: "100%", imageRendering: "pixelated", marginTop: 8 }}
+                  className="rounded-md border border-line"
+                  aria-label="Sprite sheet slicing preview"
+                  ref={(canvas) => {
+                    if (!canvas || !sheetImg) return;
+                    const ctx = canvas.getContext("2d");
+                    if (!ctx) return;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(sheetImg.img, 0, 0);
+                    const { w, h, cols, rows, pad, space } = sheetCell;
+                    if (!w || !h) return;
+                    ctx.strokeStyle = "rgb(143 123 255 / 0.85)";
+                    ctx.lineWidth = Math.max(1, Math.round(canvas.width / 320));
+                    for (let row = 0; row < rows; row++) {
+                      for (let col = 0; col < cols; col++) {
+                        ctx.strokeRect(pad + col * (w + space), pad + row * (h + space), w, h);
+                      }
+                    }
+                    const sel = Math.min(selectedCell, Math.max(0, sheetCellCount - 1));
+                    const sc = { col: sel % cols, row: Math.floor(sel / cols) };
+                    ctx.strokeStyle = "#46e3b4";
+                    ctx.lineWidth = ctx.lineWidth * 2;
+                    ctx.strokeRect(pad + sc.col * (w + space), pad + sc.row * (h + space), w, h);
+                  }}
+                />
+                <p className="mt-1 font-mono text-[10.5px] text-mist" data-sheet-cells="true">
+                  {sheetCellCount} cells · {sheetCell.w || 0}×{sheetCell.h || 0} px each
+                </p>
+                <button
+                  type="button"
+                  data-sheet-slice="true"
+                  onClick={() => void sliceAndSaveSheet()}
+                  disabled={slicing || sheetCellCount === 0}
+                  className="mt-1.5 h-8 w-full rounded-lg bg-violet-deep text-[12px] font-medium text-white transition-colors hover:bg-violet disabled:opacity-40"
+                >
+                  {slicing ? "Slicing…" : `Slice & save ${sheetCellCount} cells → Assets`}
+                </button>
+              </>
+            ) : (
+              <p className="mt-1.5 text-[11px] leading-4 text-mist">
+                Load a sheet, set the grid, and each cell saves as its own PNG
+                asset — ready to use as animation frames.
+              </p>
+            )}
           </div>
 
           {/* Export */}

@@ -583,9 +583,17 @@ COMPONENT_DEFS.push(
   {
     type: "sprite", label: "Sprite", category: "game", container: false,
     glyph: glyph("M4 5h16v14H4zM8 15l3-4 2.5 3L16 11l4 6"),
-    defaultProps: { name: "Sprite", x: 160, y: 300, width: 48, height: 48, color: "#58c7f0", visible: true, collider: false, layer: "default" },
+    // TASK 62 §10/§11: pivot (0..1 anchor within the sprite) and flips are
+    // canonical props — the inspector exposes presets + flips, and the ONE
+    // spriteTransformStyle formula renders them on every surface.
+    defaultProps: { name: "Sprite", x: 160, y: 300, width: 48, height: 48, color: "#58c7f0", visible: true, collider: false, layer: "default", pivotX: 0.5, pivotY: 0.5, flipX: false, flipY: false },
     defaultStyles: {},
-    propFields: entityFields(),
+    propFields: entityFields([
+      f.number("pivotX", "Pivot X (0–1)", 0, 1),
+      f.number("pivotY", "Pivot Y (0–1)", 0, 1),
+      f.boolean("flipX", "Flip X"),
+      f.boolean("flipY", "Flip Y"),
+    ]),
     styleFields: [],
   },
   {
@@ -601,6 +609,7 @@ COMPONENT_DEFS.push(
       followEnabled: true, followTarget: "", smoothing: 0.12,
       boundsEnabled: true, minX: 0, minY: 0, maxX: 2000, maxY: 1200,
       shakeDuration: 0.25, shakeStrength: 8,
+      pixelSnap: false,
     },
     defaultStyles: {},
     propFields: [
@@ -619,6 +628,8 @@ COMPONENT_DEFS.push(
       f.number("maxY", "Bounds max Y", -8192, 8192),
       f.number("shakeDuration", "Shake duration (s)", 0.05, 5, true),
       f.number("shakeStrength", "Shake strength (px)", 0, 64),
+      // TASK 62 §23: pixel-safe camera — deterministic whole-pixel rendering.
+      f.boolean("pixelSnap", "Pixel snap"),
     ],
     styleFields: [],
   },

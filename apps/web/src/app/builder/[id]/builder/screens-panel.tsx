@@ -96,6 +96,42 @@ export function ScreensPanel() {
                         <path d="M4.5 19.5l.9-3.6L16.4 4.9a2 2 0 0 1 2.8 2.8L8.1 18.6l-3.6.9Z" />
                       </svg>
                     </button>
+                    {/* TASK 62 §5: duplicate the scene (copy right after it). */}
+                    <button
+                      type="button"
+                      aria-label={`Duplicate ${screen.name}`}
+                      title="Duplicate scene"
+                      onClick={() => actions.duplicateScreen(screen.id)}
+                      className="flex h-6 w-6 items-center justify-center rounded text-mist hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+                    >
+                      ⧉
+                    </button>
+                    {/* TASK 62 §5: reorder — the start designation travels with
+                        the screen id, never its position. */}
+                    {model.screens.length > 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          aria-label={`Move ${screen.name} earlier`}
+                          title="Move scene earlier"
+                          disabled={screen.id === model.screens[0]?.id}
+                          onClick={() => actions.moveScreen(screen.id, -1)}
+                          className="flex h-6 w-6 items-center justify-center rounded text-mist hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:pointer-events-none disabled:opacity-30"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Move ${screen.name} later`}
+                          title="Move scene later"
+                          disabled={screen.id === model.screens[model.screens.length - 1]?.id}
+                          onClick={() => actions.moveScreen(screen.id, 1)}
+                          className="flex h-6 w-6 items-center justify-center rounded text-mist hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint disabled:pointer-events-none disabled:opacity-30"
+                        >
+                          ↓
+                        </button>
+                      </>
+                    ) : null}
                     {!isStart ? (
                       <button
                         type="button"

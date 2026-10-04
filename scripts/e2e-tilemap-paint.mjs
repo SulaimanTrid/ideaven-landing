@@ -104,7 +104,7 @@ check("model contains 1,1:1 from the click", tiles.includes("1,1:1"), `tiles="${
 check("model contains the drag stroke 5,1:1 and 6,1:1", tiles.includes("5,1:1") && tiles.includes("6,1:1"), `tiles="${tiles}"`);
 
 // ---- 7. Erase a cell by a real click ----------------------------------------
-await page.getByRole("button", { name: /Erase/ }).click();
+await page.getByRole("button", { name: "⌫ Erase", exact: true }).click();
 await page.waitForTimeout(200);
 await page.mouse.click(c51.x, c51.y);
 await page.waitForTimeout(400);
@@ -132,7 +132,7 @@ check("reloaded model still contains 1,1:1", tiles3.includes("1,1:1"), `tiles="$
 await tilemapNode2.click();
 await page.waitForTimeout(300);
 await page.getByRole("button", { name: "Tile 2", exact: true }).click();
-await page.getByRole("button", { name: /Paint/ }).click();
+await page.getByRole("button", { name: "▦ Paint", exact: true }).click();
 await page.waitForTimeout(200);
 let box2 = await tilemapNode2.boundingBox();
 const scale2 = box2.width / 390;
@@ -162,8 +162,10 @@ const shadeOf = (col, row) => tilemapNode2.locator(`[data-cell="${col},${row}"]`
 const interior = await shadeOf(9, 4);
 const edge = await shadeOf(9, 3);
 const corner = await shadeOf(8, 3);
+// TASK 62 rule-tile classes: cross (4) darkest, T (3) next, corner (2
+// adjacent) / end (1) / isolated keep the base color.
 check("auto-tile interior cell (4 neighbors) is darkest", interior === "rgb(103, 89, 184)", interior);
-check("auto-tile edge cell (3 neighbors) is intermediate", edge === "rgb(123, 106, 219)", edge);
+check("auto-tile T cell (3 neighbors) is intermediate", edge === "rgb(114, 98, 204)", edge);
 check("auto-tile corner cell (2 neighbors) keeps the base color", corner === "rgb(143, 123, 255)", corner);
 await waitForSaved(page);
 model = await getModel(cookie, project.id);
@@ -171,24 +173,26 @@ const tilesBlock = String(model.screens.find((s) => s.id === "screen-play").comp
 check("model carries the 3×3 block (9,4:2)", tilesBlock.includes("9,4:2"), `tiles="${tilesBlock}"`);
 
 // ---- 9c. Rule tiles one step at a time: painting a neighbor restyles the ------
-// previous cell. The rule (scene.ts autoTileFactor): interior (4 painted
-// neighbors) shades darkest, edge (3) shades slightly darker, ≤2 neighbors
-// keeps the base palette color — so a cell flips base→edge exactly when its
-// 3rd neighbor lands. Row 0 is clear of every other painted cell. Tile 2
-// palette color #8f7bff = rgb(143,123,255); edge shade ×0.86 = rgb(123,106,219).
+// previous cell. The rule (scene.ts autoTileFactor, TASK 62): cross (4
+// painted neighbors) darkest, T (3) shades 0.8, straight (2 opposite) shades
+// 0.88, corner/end/isolated keep the base — so a cell flips base→T exactly
+// when its 3rd neighbor lands. Row 0 is clear of every other painted cell.
+// Tile 2 palette color #8f7bff = rgb(143,123,255); ×0.8 = rgb(114,98,204);
+// ×0.88 = rgb(126,108,224).
 const BASE_TILE2 = "rgb(143, 123, 255)";
-const EDGE_TILE2 = "rgb(123, 106, 219)";
+const T_TILE2 = "rgb(114, 98, 204)";
+const STRAIGHT_TILE2 = "rgb(126, 108, 224)";
 await page.mouse.click(box2.x + 1.5 * cellPx2, box2.y + 0.5 * cellPx2); // col 1, row 0
 await page.mouse.click(box2.x + 2.5 * cellPx2, box2.y + 0.5 * cellPx2); // col 2, row 0
 await page.mouse.click(box2.x + 3.5 * cellPx2, box2.y + 0.5 * cellPx2); // col 3, row 0
 await page.waitForTimeout(400);
-check("cells with at most 2 painted neighbors keep the base palette color",
-  (await shadeOf(1, 0)) === BASE_TILE2 && (await shadeOf(2, 0)) === BASE_TILE2,
+check("run end (1 neighbor) and straight (2 opposite) shade distinctly from base",
+  (await shadeOf(1, 0)) === BASE_TILE2 && (await shadeOf(2, 0)) === STRAIGHT_TILE2,
   `1,0=${await shadeOf(1, 0)} 2,0=${await shadeOf(2, 0)}`);
 await page.mouse.click(box2.x + 2.5 * cellPx2, box2.y + 1.5 * cellPx2); // col 2, row 1 — 3rd neighbor of (2,0)
 await page.waitForTimeout(400);
-check("painting a neighbor restyles the previous cell (base → edge at 3 neighbors)",
-  (await shadeOf(2, 0)) === EDGE_TILE2, `2,0=${await shadeOf(2, 0)}`);
+check("painting a neighbor restyles the previous cell (straight → T at 3 neighbors)",
+  (await shadeOf(2, 0)) === T_TILE2, `2,0=${await shadeOf(2, 0)}`);
 check("the newly painted neighbor keeps the base color (1 neighbor so far)",
   (await tilemapNode2.locator('[data-cell="2,1"]').count()) === 1 &&
   (await shadeOf(2, 1)) === BASE_TILE2, `2,1=${await shadeOf(2, 1)}`);
@@ -203,19 +207,19 @@ check("canonical model keeps the autoTile flag and BASE tile values (no baked va
 // ---- 9d. Undo/redo must restore the EXACT tile state across a restyle ---------
 await page.getByRole("button", { name: "Undo", exact: true }).click();
 await waitForSaved(page);
-check("undo restores the exact previous canvas state (neighbor gone, survivor back to base)",
+check("undo restores the exact previous canvas state (neighbor gone, survivor back to straight)",
   (await tilemapNode2.locator('[data-cell="2,1"]').count()) === 0 &&
   (await tilemapNode2.locator('[data-cell="2,0"]').count()) === 1 &&
-  (await shadeOf(2, 0)) === BASE_TILE2, `2,0=${await shadeOf(2, 0)}`);
+  (await shadeOf(2, 0)) === STRAIGHT_TILE2, `2,0=${await shadeOf(2, 0)}`);
 model = await getModel(cookie, project.id);
 const tilesUndo = String(model.screens.find((s) => s.id === "screen-play").components.find((c) => c.type === "tilemap")?.props?.tiles ?? "");
 check("undo restores the exact previous canonical tiles", !tilesUndo.includes("2,1:2") && tilesUndo.includes("2,0:2"), `tiles="${tilesUndo}"`);
 
 await page.getByRole("button", { name: "Redo", exact: true }).click();
 await waitForSaved(page);
-check("redo restores the exact resulting canvas state (neighbor back, survivor edge-shaded)",
+check("redo restores the exact resulting canvas state (neighbor back, survivor T-shaded)",
   (await tilemapNode2.locator('[data-cell="2,1"]').count()) === 1 &&
-  (await shadeOf(2, 0)) === EDGE_TILE2 && (await shadeOf(2, 1)) === BASE_TILE2,
+  (await shadeOf(2, 0)) === T_TILE2 && (await shadeOf(2, 1)) === BASE_TILE2,
   `2,0=${await shadeOf(2, 0)} 2,1=${await shadeOf(2, 1)}`);
 model = await getModel(cookie, project.id);
 const tilesRedo = String(model.screens.find((s) => s.id === "screen-play").components.find((c) => c.type === "tilemap")?.props?.tiles ?? "");
@@ -230,13 +234,13 @@ check("rule-tiled cells survive reload (both present)",
   (await tilemapNode2.locator('[data-cell="2,0"]').count()) === 1 &&
   (await tilemapNode2.locator('[data-cell="2,1"]').count()) === 1);
 check("reloaded rule-tiled cells render the same variants",
-  (await shadeOf(2, 0)) === EDGE_TILE2 && (await shadeOf(2, 1)) === BASE_TILE2,
+  (await shadeOf(2, 0)) === T_TILE2 && (await shadeOf(2, 1)) === BASE_TILE2,
   `2,0=${await shadeOf(2, 0)} 2,1=${await shadeOf(2, 1)}`);
 
 // ---- 9f. Erasing a neighbor restyles the survivor (the reverse direction) -----
 await tilemapNode2.click();
 await page.waitForTimeout(300);
-await page.getByRole("button", { name: /Erase/ }).click();
+await page.getByRole("button", { name: "⌫ Erase", exact: true }).click();
 await page.waitForTimeout(200);
 box2 = await tilemapNode2.boundingBox();
 cellPx2 = 32 * (box2.width / 390);
@@ -244,7 +248,7 @@ await page.mouse.click(box2.x + 2.5 * cellPx2, box2.y + 1.5 * cellPx2); // erase
 await page.waitForTimeout(400);
 check("erasing the neighbor reverts the survivor to its base color",
   (await tilemapNode2.locator('[data-cell="2,1"]').count()) === 0 &&
-  (await shadeOf(2, 0)) === BASE_TILE2, `2,0=${await shadeOf(2, 0)}`);
+  (await shadeOf(2, 0)) === STRAIGHT_TILE2, `2,0=${await shadeOf(2, 0)}`);
 await waitForSaved(page);
 model = await getModel(cookie, project.id);
 const tilesErase = String(model.screens.find((s) => s.id === "screen-play").components.find((c) => c.type === "tilemap")?.props?.tiles ?? "");
@@ -265,7 +269,7 @@ await waitForSaved(page);
 
 // Restore the painting context for the landing-strip section below.
 await page.getByRole("button", { name: "Tile 2", exact: true }).click();
-await page.getByRole("button", { name: /Paint/ }).click();
+await page.getByRole("button", { name: "▦ Paint", exact: true }).click();
 await page.waitForTimeout(200);
 
 // ---- 10. Paint a landing strip and drop the player onto it -------------------
@@ -304,7 +308,7 @@ check("preview honors the palette color", cell42PreviewColor === "rgb(143, 123, 
 const interiorPreview = await page.locator('[data-cell="9,4"][data-tile="2"]').first().evaluate((el) => getComputedStyle(el).backgroundColor);
 check("preview auto-tiles like the design canvas", interiorPreview === "rgb(103, 89, 184)", interiorPreview);
 const survivorPreview = await page.locator('[data-cell="2,0"][data-tile="2"]').first().evaluate((el) => getComputedStyle(el).backgroundColor);
-check("preview renders the restyled survivor exactly like the editor", survivorPreview === BASE_TILE2, `color=${survivorPreview}`);
+check("preview renders the restyled survivor exactly like the editor", survivorPreview === STRAIGHT_TILE2, `color=${survivorPreview}`);
 const pBox = await player.boundingBox();
 const cBox = await cell81.first().boundingBox();
 const gap = pBox && cBox ? pBox.y + pBox.height - cBox.y : NaN;

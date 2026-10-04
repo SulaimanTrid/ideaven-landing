@@ -165,7 +165,9 @@ export function tilemapCellRects(props: PropsMap | undefined, rect: EntityRect):
   }));
 }
 
-/** Parses a "value:#hex;…" tile palette prop into a tile→color map. */
+/** Parses a "value:#hex;…" — or TASK 62 "value:#hex:solid|pass;…" — tile
+ * palette prop into a tile→color map. Unknown third fields are ignored here
+ * (solidity has its own parser) so colors never break on malformed data. */
 export function parseTilePalette(palette: string): Map<number, string> {
   const map = new Map<number, string>();
   for (const part of palette.split(";")) {
@@ -180,11 +182,89 @@ export function parseTilePalette(palette: string): Map<number, string> {
   return map;
 }
 
+/**
+ * TASK 62 §20: per-tile collision flags. A palette entry may carry a third
+ * field — "value:#hex:pass" marks a tile NON-solid; everything else
+ * (including every pre-TASK-62 palette with no third field) stays SOLID, so
+ * existing projects keep their exactly-as-before collision behavior. The
+ * canonical palette string is the only storage — no shadow state.
+ */
+export function tileIsSolid(props: PropsMap | undefined, tile: number): boolean {
+  for (const part of String(props?.palette ?? "").split(";")) {
+    const seg = part.trim();
+    if (!seg) continue;
+    const [value, , flag] = seg.split(":");
+    if (parseInt(value ?? "", 10) !== tile) continue;
+    return (flag ?? "").trim().toLowerCase() !== "pass";
+  }
+  return true; // tiles without a palette entry are solid (historic behavior)
+}
+
+/**
+ * TASK 62 §20/§21: the SOLID subset of a tilemap's painted cells — the rects
+ * that block the player and fire touch events. Non-solid ("pass") palette
+ * tiles render but never collide. ONE source of truth for the design-canvas
+ * collision overlay, the preview runtime, published pages, and export.
+ */
+export function tilemapSolidCellRects(props: PropsMap | undefined, rect: EntityRect): EntityRect[] {
+  const cell = tilemapCellSize(props);
+  const out: EntityRect[] = [];
+  for (const { col, row, tile } of parseTiles(String(props?.tiles ?? ""))) {
+    if (!tileIsSolid(props, tile)) continue;
+    out.push({ x: rect.x + col * cell, y: rect.y + row * cell, width: cell, height: cell });
+  }
+  return out;
+}
+
 /** The color a painted cell renders with: its palette entry, else the fallback tileColor. */
 export function tileColorAt(props: PropsMap | undefined, tile: number): string {
   const color = parseTilePalette(String(props?.palette ?? "")).get(tile);
   if (color) return color;
   return typeof props?.tileColor === "string" ? props.tileColor : "#2a3348";
+}
+
+// ---- Sprite pivot + flip (TASK 62 §10/§11) -------------------------------------
+// Pivot and flip are CANONICAL sprite props (pivotX/pivotY 0..1, flipX/flipY
+// booleans) resolved by ONE helper that every surface uses — design canvas,
+// preview runtime, published pages, and the export engine. The pivot is the
+// anchor within the sprite for ROTATION and the fixed edge for FLIPS; the
+// source asset is never mutated.
+
+export const SPRITE_PIVOT_MIN = 0;
+export const SPRITE_PIVOT_MAX = 1;
+
+const clampPivot = (value: unknown, fallback: number): number =>
+  typeof value === "number" && Number.isFinite(value)
+    ? Math.min(SPRITE_PIVOT_MAX, Math.max(SPRITE_PIVOT_MIN, value))
+    : fallback;
+
+/** Reads a sprite's pivot (0..1 within the rect; default center) + flips. */
+export function spriteOrientation(props: PropsMap | undefined): {
+  pivotX: number;
+  pivotY: number;
+  flipX: boolean;
+  flipY: boolean;
+} {
+  return {
+    pivotX: clampPivot(props?.pivotX, 0.5),
+    pivotY: clampPivot(props?.pivotY, 0.5),
+    flipX: props?.flipX === true,
+    flipY: props?.flipY === true,
+  };
+}
+
+/** The CSS transform + transform-origin that render pivot/flip for an entity —
+ * the ONE formula for design canvas, runtime, published, and export. */
+export function spriteTransformStyle(props: PropsMap | undefined): {
+  transform: string | undefined;
+  transformOrigin: string;
+} {
+  const { pivotX, pivotY, flipX, flipY } = spriteOrientation(props);
+  const flips = flipX || flipY ? `scale(${flipX ? -1 : 1}, ${flipY ? -1 : 1})` : "";
+  return {
+    transform: flips || undefined,
+    transformOrigin: `${pivotX * 100}% ${pivotY * 100}%`,
+  };
 }
 
 /** The tile values the palette offers for painting (sorted ascending). */
@@ -194,10 +274,10 @@ export function tilemapPaletteValues(props: PropsMap | undefined): number[] {
 
 // ---- Rule tiles (auto-tiling) -------------------------------------------------
 // When a tilemap enables `autoTile`, each painted cell's rendered variant is
-// chosen from its live 4-neighbor state: interior cells (4 painted
-// neighbors) shade darker, edge cells (3) slightly darker, corner/isolated
-// cells (≤2) keep the base palette color. The rule derives from the same
-// canonical `tiles` string at render time — deterministic, identical across
+// chosen from its live 4-neighborhood mask (TASK 62 §19). Six deterministic
+// classes — isolated, end, corner, straight, T, cross — map to stable shade
+// factors; the STORED `tiles` string never carries the derived variant. The
+// rule derives from the same canonical data at render time, identical across
 // design canvas, preview, published pages, and export.
 
 /** Multiplies a #rrggbb hex color's channels by `factor` (0..1). */
@@ -211,14 +291,26 @@ export function shadeHex(hex: string, factor: number): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
-/** Auto-tile shade factor for a cell from its 4-neighbor painted state. */
+/**
+ * Auto-tile shade factor for a cell from its 4-neighbor painted state.
+ * Neighborhood classes (TASK 62): cross (4) → 0.72, T (3) → 0.80,
+ * straight (2 opposite) → 0.88, corner (2 adjacent) / end (1) / isolated (0)
+ * → base color. The pre-TASK-62 invariants hold: 4 painted neighbors is the
+ * darkest, 3 is intermediate, corners/ends/isolated keep the base.
+ */
 export function autoTileFactor(has: (col: number, row: number) => boolean, col: number, row: number): number {
-  const neighbors =
-    (has(col, row - 1) ? 1 : 0) + (has(col, row + 1) ? 1 : 0) +
-    (has(col - 1, row) ? 1 : 0) + (has(col + 1, row) ? 1 : 0);
-  if (neighbors >= 4) return 0.72; // interior
-  if (neighbors === 3) return 0.86; // edge
-  return 1; // corner / isolated
+  const n = has(col, row - 1);
+  const s = has(col, row + 1);
+  const w = has(col - 1, row);
+  const e = has(col + 1, row);
+  const count = (n ? 1 : 0) + (s ? 1 : 0) + (w ? 1 : 0) + (e ? 1 : 0);
+  if (count >= 4) return 0.72; // cross
+  if (count === 3) return 0.8; // T-junction
+  if (count === 2) {
+    const straight = (n && s) || (w && e);
+    return straight ? 0.88 : 1; // straight segment vs corner
+  }
+  return 1; // end / isolated keep the base color
 }
 
 /** The render color of one cell: palette color, auto-tile shaded when enabled. */
@@ -257,6 +349,13 @@ export interface CameraConfig {
   viewport: { width: number; height: number };
   shakeDuration: number;
   shakeStrength: number;
+  /**
+   * TASK 62 §23: pixel-safe mode — when on, the runtime camera position is
+   * rounded to whole pixels before rendering (deterministic, no subpixel
+   * jitter; smooth follow still eases underneath). Presentation-only: never
+   * mutates authored coordinates.
+   */
+  pixelSnap: boolean;
 }
 
 const numOr = (value: unknown, fallback: number): number =>
@@ -286,6 +385,7 @@ export function cameraConfig(props: PropsMap | undefined): CameraConfig {
     },
     shakeDuration: Math.max(0.05, numOr(props?.shakeDuration, 0.25)),
     shakeStrength: Math.max(0, numOr(props?.shakeStrength, 8)),
+    pixelSnap: props?.pixelSnap === true,
   };
 }
 

@@ -30,7 +30,7 @@ const DEVICES = (["phone", "tablet", "desktop"] as const).map((id) => ({
 type DeviceId = (typeof DEVICES)[number]["id"];
 
 export function BuilderCanvas() {
-  const { model, activeScreenId, selectedId, select, setIndicator, draggingRef, applyDrop, actions } = useBuilder();
+  const { model, activeScreenId, selectedId, select, setIndicator, draggingRef, applyDrop, actions, setMode } = useBuilder();
   const { t } = useI18n();
   /** Game projects design against a dark SCENE stage, not a white device. */
   const isGame = model.type === "game";
@@ -42,6 +42,12 @@ export function BuilderCanvas() {
   const [activeTile, setActiveTile] = useState(1);
   // TASK 15: depth debugging — overlay each entity's layer name + order.
   const [showSorting, setShowSorting] = useState(false);
+  // TASK 62 §24/§29: authoring grid + debug overlays — editor preferences,
+  // never model data; debug overlays default OFF (§37).
+  const [gridVisible, setGridVisible] = useState(true);
+  const [showCollisions, setShowCollisions] = useState(false);
+  const [showTriggers, setShowTriggers] = useState(false);
+  const [showTileCollision, setShowTileCollision] = useState(false);
   const saved = model.settings.preview;
   const [device, setDevice] = useState<ViewportDevice>(saved?.device ?? "phone");
   const [orientation, setOrientation] = useState<ViewportOrientation>(saved?.orientation ?? "portrait");
@@ -292,6 +298,19 @@ export function BuilderCanvas() {
               >
                 ⌗ {snap ? t("builder.snapOn") : t("builder.snapOff")}
               </button>
+              {/* TASK 62 §24: authoring grid visibility — editor preference. */}
+              <button
+                type="button"
+                data-canvas-grid="true"
+                onClick={() => setGridVisible((value) => !value)}
+                aria-pressed={gridVisible}
+                title="Show the authoring grid"
+                className={`mr-2 h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                  gridVisible ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
+                }`}
+              >
+                ▦ Grid
+              </button>
               <button
                 type="button"
                 onClick={() => setShowSorting((value) => !value)}
@@ -302,6 +321,44 @@ export function BuilderCanvas() {
                 }`}
               >
                 ⇅ {t("builder.sortingOrder")}
+              </button>
+              {/* TASK 62 §29: debug visualization — editor preferences, OFF by
+                  default; they read the same canonical props the runtime uses. */}
+              <button
+                type="button"
+                data-debug-collisions="true"
+                onClick={() => setShowCollisions((value) => !value)}
+                aria-pressed={showCollisions}
+                title="Show collision boxes (debug)"
+                className={`mr-2 h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                  showCollisions ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
+                }`}
+              >
+                ⊞ Colliders
+              </button>
+              <button
+                type="button"
+                data-debug-triggers="true"
+                onClick={() => setShowTriggers((value) => !value)}
+                aria-pressed={showTriggers}
+                title="Show trigger areas (debug)"
+                className={`mr-2 h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                  showTriggers ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
+                }`}
+              >
+                ⬚ Triggers
+              </button>
+              <button
+                type="button"
+                data-debug-tiles="true"
+                onClick={() => setShowTileCollision((value) => !value)}
+                aria-pressed={showTileCollision}
+                title="Show solid tile cells (debug)"
+                className={`mr-2 h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
+                  showTileCollision ? "bg-surface-strong text-ink" : "text-mist hover:text-fog"
+                }`}
+              >
+                ▩ Tile solids
               </button>
               {tilemapSelected ? (
                 <div
@@ -314,6 +371,8 @@ export function BuilderCanvas() {
                       { id: "select", label: "Select", glyph: "⬉" },
                       { id: "paint", label: "Paint", glyph: "▦" },
                       { id: "erase", label: "Erase", glyph: "⌫" },
+                      { id: "fill", label: "Fill", glyph: "▨" },
+                      { id: "erasefill", label: "Erase fill", glyph: "▢" },
                     ] as const
                   ).map((item) => (
                     <button
@@ -321,10 +380,16 @@ export function BuilderCanvas() {
                       type="button"
                       onClick={() => setSceneTool(item.id)}
                       aria-pressed={sceneTool === item.id}
-                      title={`${item.label} tiles — click or drag across the tilemap`}
+                      title={
+                        item.id === "fill"
+                          ? "Fill — flood a contiguous matching region with the active tile"
+                          : item.id === "erasefill"
+                            ? "Erase fill — clear a contiguous painted region"
+                            : `${item.label} tiles — click or drag across the tilemap`
+                      }
                       className={`h-6 rounded px-2 text-[11.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint ${
                         sceneTool === item.id
-                          ? item.id === "erase"
+                          ? item.id === "erase" || item.id === "erasefill"
                             ? "bg-rose/20 text-rose"
                             : "bg-surface-strong text-ink"
                           : "text-mist hover:text-fog"
@@ -374,6 +439,20 @@ export function BuilderCanvas() {
               className="mr-2 h-7 rounded-md border border-line px-2 text-[12px] font-medium text-fog transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
             >
               {orientation === "portrait" ? `▯ ${t("viewport.portrait")}` : `▭ ${t("viewport.landscape")}`}
+            </button>
+          ) : null}
+          {/* TASK 62 §30/§40: Play enters the real preview run (transient
+              runtime state; authored data untouched); Stop/Reset live in the
+              preview toolbar. */}
+          {isScene ? (
+            <button
+              type="button"
+              data-play-button="true"
+              onClick={() => setMode("preview")}
+              title="Play — run this scene in the live preview"
+              className="mr-2 h-7 rounded-md bg-violet-deep px-3 text-[12px] font-medium text-white transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+            >
+              ▶ Play
             </button>
           ) : null}
           <button
@@ -482,6 +561,10 @@ export function BuilderCanvas() {
                       ))}
                     </div>
                     <p className="text-[10.5px] leading-4 text-[#9aa1b2]">or drag from Game Entities</p>
+                    {/* TASK 62 §31: the second layer of guidance. */}
+                    <p className="text-center text-[10.5px] leading-4 text-[#9aa1b2]">
+                      Build your scene → add graphics → add logic → press <span className="font-semibold text-[#c9cede]">Play</span>.
+                    </p>
                   </div>
                 ) : (
                   <div className="flex flex-1 select-none flex-col items-center justify-center gap-3 p-8">
@@ -511,7 +594,17 @@ export function BuilderCanvas() {
                   </div>
                 )
               ) : isScene ? (
-                <SceneEditor screen={screen} scale={scale} snap={snap} tool={sceneTool} activeTile={safeActiveTile} showSorting={showSorting} />
+                <SceneEditor
+                  screen={screen}
+                  scale={scale}
+                  snap={snap}
+                  tool={sceneTool}
+                  activeTile={safeActiveTile}
+                  showSorting={showSorting}
+                  showCollisions={showCollisions}
+                  showTriggers={showTriggers}
+                  showTileCollision={showTileCollision}
+                />
               ) : (
                 screen.components.map((child) => (
                   <ComponentNode
@@ -575,10 +668,16 @@ export function BuilderCanvas() {
                 >
                 <div
                   data-screen-frame="1"
-                  className="relative overflow-hidden text-[#0b0e16] [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.06)_1px,transparent_0)] [background-size:22px_22px]"
+                  className="relative overflow-hidden text-[#0b0e16]"
                   style={{
                     width: frame.width,
                     height: frame.height,
+                    // TASK 62 §24: the authoring grid is an editor preference —
+                    // toggleable, never model data, never exported.
+                    backgroundImage: gridVisible
+                      ? "radial-gradient(circle at 1px 1px, rgb(255 255 255 / 0.06) 1px, transparent 0)"
+                      : undefined,
+                    backgroundSize: gridVisible ? "22px 22px" : undefined,
                   }}
                   onDragOver={onRootDragOver}
                   onDrop={onRootDrop}

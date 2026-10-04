@@ -4143,3 +4143,82 @@ system. Full record in `docs/TASK61_CREATION_VISUALS_RESPONSIVE.md`.
 ### Next exact task
 
 STOP per the directive â€” await explicit approval before TASK 62.
+## 69. TASK 62 â€” Real 2D Game Engine Core + Professional 2D Authoring
+
+Session 62 (2026-10-04). Extend-only deepening of the REAL 2D engine:
+sprite authoring, professional tilemap tools, camera pixel-safety, and the
+2D editor workflow â€” no second engine/renderer/scene/sprite/tilemap/asset/
+camera/physics system. Full record in `docs/TASK62_2D_ENGINE_CORE.md`.
+
+### What was built (session 62)
+
+- **Sprite asset picker**: project image assets as thumbnails with name +
+  measured dimensions; Choose/Replace/Clear commits `asset:<id>` via
+  updateProps â€” no more typing asset ids (the URL field remains for
+  external images).
+- **Sprite pivot + flip**: canonical `pivotX/pivotY` (0..1) and
+  `flipX/flipY`; presets + toggles in the inspector; ONE formula
+  (`spriteTransformStyle`) renders them identically on design canvas,
+  preview, published, and export (rotation anchor + flip edge; the asset is
+  never mutated).
+- **Tile palette editor**: visual swatches with color picker, add/remove/
+  reorder, and per-tile collision flags â€” canonical `palette` string only,
+  extended to `value:#hex:solid|pass` (legacy palettes stay solid: zero
+  migration).
+- **Tile collision flags live**: `tileIsSolid`/`tilemapSolidCellRects`
+  (scene.ts + export mirror) â€” solid cells block + fire touches, `pass`
+  cells render as decoration only; verified in the LIVE preview (player
+  rests on a solid run, falls through the same run as pass).
+- **Flood fill / erase-fill**: bounded BFS, contiguous region, malformed
+  data safe, ONE commit per gesture (undo/redo exactness asserted).
+- **Rule tiles upgraded to six classes**: cross (4) 0.72, T (3) 0.80,
+  straight (2 opposite) 0.88, corner/end/isolated base â€” deterministic from
+  the canonical tiles; export mirror identical.
+- **Camera pixel snap**: canonical `pixelSnap` prop; runtime rounds to
+  whole pixels after ease+clamp (no subpixel jitter; authored data never
+  touched); export mirror identical.
+- **Editor workflow**: ctrl/cmd+click multi-select, marquee sweep, group
+  move/duplicate/delete/align â€” each group edit ONE pure-op commit;
+  z-order shortcuts (front/forward/backward/back) through the existing
+  moveComponent; debug overlays (collision boxes, trigger areas, tile
+  solids) all default OFF; authoring grid toggle; Play button (live
+  preview) + Stop in preview; flat GameObject list (no fake parenting);
+  scene duplicate + reorder (canonical ops); empty-state guidance line.
+- **Asset Studio sheet slicing**: import a sheet image, grid
+  columns/rows/spacing/padding with live preview, slice & save â€” every cell
+  becomes its own canonical PNG asset.
+
+### Verified (session 62)
+
+- e2e-task62-2d-engine-core.mjs **61/61, 0 console/page errors** (details in
+  the task doc Â§7) â€” including LIVE collision evidence via camera position,
+  pivot rotation-anchor evidence, flood-fill undo/redo exactness, and
+  published/export parity markers.
+- Regression sweep (directive Â§49 + TASK 60/61 guards): scene-gameplay
+  21/21, asset-studio 25/25, camera 34/34, sorting 19/19, input-actions
+  32/32, sprite-animation 18/18, animation-state-machine 20/20, 2d-lighting
+  19/19, 2d-particles 22/22, tilemap-paint 44/44, shell-integrity 35/35,
+  engine-launcher 31/31, task61 45/45, 3d-foundation 18/18, 3d-hierarchy
+  17/17, 3d-physics 24/24, 3d-material-lighting 42/42, 3d-transform-gizmos
+  34/34, 3d-character-controller 35/35, task60 47/47.
+- Gates: tsc clean; go vet clean (one real find fixed: an unescaped `%` in
+  the new export template â€” `%` verbs must be doubled inside the Sprintf
+  template); `go test -count=1 ./...` ok; next build exit 0; build:vinext
+  exit 0; verify-cf-preview 12/12 (documented backend-not-deployed
+  baseline).
+
+### Honest notes (TASK 62)
+
+- Tilemap editor LOCK deferred (visibility + ordering exist); prefab
+  ecosystem deferred (duplicate exists, linked instances need design);
+  camera dead-zone/zoom authoring not carried by the model â€” not exposed;
+  inspector section organization improved but full accordion redesign
+  deferred.
+- Straight-run shading (0.88) is a visible rule-tile upgrade for existing
+  autoTile projects â€” stored data unchanged, rendering intentionally richer.
+- e2e-community.mjs remains a legacy audit with pre-existing drift
+  (recorded in Â§68) â€” untouched this session.
+
+### Next exact task
+
+STOP per the directive â€” await explicit approval before TASK 63.

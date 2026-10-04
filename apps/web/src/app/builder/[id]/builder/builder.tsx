@@ -25,6 +25,7 @@ import type { InsufficientCreditsData } from "@/lib/api";
 import type { SyncDiagnostic } from "@/lib/project-model/code-sync";
 import {
   BuilderContext,
+  useBuilder,
   type BuilderContextValue,
   type BuilderMode,
   type DragPayload,
@@ -33,6 +34,7 @@ import {
   type SaveState,
 } from "./builder-context";
 import { useHistory } from "@/lib/project-model/use-history";
+import { entityVisible, sortedRenderOrder } from "@/lib/project-model/scene";
 import {
   addScreen,
   applyCodeSync,
@@ -57,6 +59,11 @@ import {
   removeComponent3D,
   duplicateHierarchy3DMany,
   removeComponent3DMany,
+  duplicateScreen,
+  moveScreen,
+  updateComponentsPropsMany,
+  removeComponentsMany,
+  duplicateComponentsMany,
 } from "@/lib/project-model/ops";
 import {
   addHandler,
@@ -174,6 +181,8 @@ function BuilderSession({
   const [lastSavedError, setLastSavedError] = useState<string | null>(null);
   const [indicator, setIndicator] = useState<DropIndicator | null>(null);
   const [mode, setMode] = useState<BuilderMode>("design");
+  // TASK 62 §32: game projects get the flat GameObject list in the left rail.
+  const isGameProject = model.type === "game";
 
   // M5 universal search: the platform-chrome command palette dispatches
   // context jumps (screen/component/handler) through this window event.
@@ -419,6 +428,31 @@ function BuilderSession({
       removeComponent: applyRemove,
       duplicateComponent: applyDuplicate,
       reorder: applyReorder,
+      // TASK 62 §27: z-order shortcuts through the SAME moveComponent op —
+      // no parallel z-index system. moveComponent removes first, so "back"
+      // targets siblings.length (the removal shifts the final slot by one).
+      reorderTo: (componentId, position) => {
+        const location = locateComponent(modelRef.current, componentId);
+        if (!location) return;
+        const siblings = location.parent ? location.parent.children! : location.screen.components;
+        const index =
+          position === "front" ? 0 : position === "back" ? siblings.length : location.index + (position === "forward" ? -1 : 1);
+        if (index < 0 || index === location.index) return;
+        commit(moveComponent(modelRef.current, componentId, location.screen.id, location.parent?.id ?? null, index));
+      },
+      // TASK 62 §25/§26: multi-select group ops — ONE commit each.
+      updateComponentsPropsMany: (patches) => commit(updateComponentsPropsMany(modelRef.current, patches)),
+      removeComponentsMany: (ids) => {
+        const next = removeComponentsMany(modelRef.current, ids);
+        if (next === modelRef.current) return;
+        commit(next);
+        setSelectedId(null);
+      },
+      duplicateComponentsMany: (ids) => {
+        const next = duplicateComponentsMany(modelRef.current, ids);
+        if (next === modelRef.current) return;
+        commit(next);
+      },
       selectScreen: (screenId) => {
         setActiveScreenId(screenId);
         setSelectedId(null);
@@ -430,6 +464,15 @@ function BuilderSession({
         setActiveScreenId(next.screens[next.screens.length - 1]?.id ?? "");
         setSelectedId(null);
       },
+      // TASK 62 §5: scene duplicate + reorder (the copy becomes active).
+      duplicateScreen: (screenId) => {
+        const before = modelRef.current.screens.findIndex((s) => s.id === screenId);
+        const next = duplicateScreen(modelRef.current, screenId);
+        if (next === modelRef.current) return;
+        commit(next);
+        setActiveScreenId(next.screens[before + 1]?.id ?? "");
+      },
+      moveScreen: (screenId, direction) => commit(moveScreen(modelRef.current, screenId, direction)),
       renameScreen: (screenId, name) => commit(renameScreen(modelRef.current, screenId, name)),
       deleteScreen: (screenId) => {
         const next = deleteScreen(modelRef.current, screenId);
@@ -633,7 +676,20 @@ function BuilderSession({
                 <ScreensPanel />
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
-                {mode === "design" ? <Palette /> : <BlocksSidePanel />}
+                {mode === "design" ? (
+                  isGameProject ? (
+                    <>
+                      {/* TASK 62 §32: the object list AND the canonical
+                          palette (insertion) share the rail. */}
+                      <GameObjectsPanel />
+                      <Palette />
+                    </>
+                  ) : (
+                    <Palette />
+                  )
+                ) : (
+                  <BlocksSidePanel />
+                )}
               </div>
             </aside>
           ) : null}
@@ -720,6 +776,79 @@ function BuilderMessage({ title, body }: { title: string; body: string }) {
       <ButtonLink href="/dashboard/projects" variant="secondary">
         Back to Projects
       </ButtonLink>
+    </div>
+  );
+}
+
+/**
+ * TASK 62 §32: the flat GameObject list for game scenes — the canonical
+ * scene model has no entity parenting, so the tree is an honest FLAT list in
+ * back-to-front draw order (the same deterministic order the runtime uses).
+ * Click selects (and switches scene when needed); each row duplicates or
+ * deletes through the canonical ops.
+ */
+function GameObjectsPanel() {
+  const { model, activeScreenId, selectedId, select, setActiveScreen, actions } = useBuilder();
+  const screen = model.screens.find((s) => s.id === activeScreenId) ?? model.screens[0];
+  const entities = useMemo(() => (screen ? [...sortedRenderOrder(screen)].reverse() : []), [screen]);
+  if (!screen) return null;
+  return (
+    <div className="border-b border-line p-3">
+      <h3 className="px-1 pb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-mist">
+        Game objects
+      </h3>
+      {entities.length === 0 ? (
+        <p className="px-1 pb-1 text-[11.5px] leading-4 text-mist">
+          Nothing in this scene yet — add a Player, Platform or Sprite.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-0.5" data-game-objects="true">
+          {entities.map((entity) => {
+            const active = entity.id === selectedId;
+            const label =
+              typeof entity.props?.name === "string" && entity.props.name.trim() !== ""
+                ? entity.props.name
+                : `${entity.type}`;
+            return (
+              <li key={entity.id} className="group flex h-7 items-center gap-1 rounded-md px-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (screen.id !== activeScreenId) setActiveScreen(screen.id);
+                    select(entity.id);
+                  }}
+                  aria-current={active ? "true" : undefined}
+                  className={`min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-[12px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint ${
+                    active ? "bg-surface-strong text-ink" : "text-fog hover:bg-surface"
+                  }`}
+                >
+                  <span className="font-mono text-[9.5px] uppercase text-mist">{entity.type}</span>{" "}
+                  {label}
+                  {entityVisible(entity.props) ? null : <span className="ml-1 text-mist">(hidden)</span>}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Duplicate ${label}`}
+                  title="Duplicate"
+                  onClick={() => actions.duplicateComponent(entity.id)}
+                  className="hidden h-6 w-6 shrink-0 items-center justify-center rounded text-mist hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint group-hover:flex"
+                >
+                  ⧉
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${label}`}
+                  title="Delete"
+                  onClick={() => actions.removeComponent(entity.id)}
+                  className="hidden h-6 w-6 shrink-0 items-center justify-center rounded text-mist hover:text-rose focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-mint group-hover:flex"
+                >
+                  ✕
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
