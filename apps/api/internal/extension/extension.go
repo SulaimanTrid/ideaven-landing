@@ -193,6 +193,18 @@ type Extension struct {
 	UpdatedAt      time.Time
 }
 
+// InstalledExtension is one install row joined with its extension: what the
+// palette sees. TASK 64: Enabled false removes the blocks from the active
+// palette WITHOUT uninstalling — project models keep their references.
+// InstalledVersion is the version the user actually installed; if the author
+// has published a newer one since, the client can say so honestly instead of
+// showing the current version as if it were what's installed.
+type InstalledExtension struct {
+	Extension
+	Enabled          bool
+	InstalledVersion string
+}
+
 // Version is one immutable snapshot of an extension.
 type Version struct {
 	Version   string
@@ -205,6 +217,21 @@ type Version struct {
 // ---- store ------------------------------------------------------------------------
 
 const columns = `id, owner_id, slug, name, summary, kind, status, manifest, docs, source, current_version, created_at, updated_at`
+
+const installedColumns = `e.id, e.owner_id, e.slug, e.name, e.summary, e.kind, e.status, e.manifest, e.docs, e.source, e.current_version, e.created_at, e.updated_at, i.enabled, i.version`
+
+func scanInstalled(row interface{ Scan(...any) error }) (*InstalledExtension, error) {
+	var out InstalledExtension
+	err := row.Scan(&out.ID, &out.OwnerID, &out.Slug, &out.Name, &out.Summary, &out.Kind, &out.Status,
+		&out.Manifest, &out.Docs, &out.Source, &out.CurrentVersion, &out.CreatedAt, &out.UpdatedAt, &out.Enabled, &out.InstalledVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("extension: scan installed: %w", err)
+	}
+	return &out, nil
+}
 
 func scanExtension(row interface{ Scan(...any) error }) (*Extension, error) {
 	var e Extension
@@ -438,25 +465,56 @@ func (s *Store) Uninstall(ctx context.Context, userID, extensionID string) error
 	return nil
 }
 
-// InstalledForUser lists a user's installed extensions.
-func (s *Store) InstalledForUser(ctx context.Context, userID string) ([]Extension, error) {
+// InstallUsage counts the caller's projects whose canonical model references
+// this extension's blocks (`ext:<slug>:<type>`). Powers the uninstall safety
+// prompt — the honest "used by N projects" number.
+func (s *Store) InstallUsage(ctx context.Context, ownerID, slug string) (int, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM projects
+		WHERE owner_id = $1 AND model::text LIKE $2`,
+		ownerID, "%ext:"+slug+":%")
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("extension: usage: %w", err)
+	}
+	return count, nil
+}
+
+// InstalledForUser lists a user's installed extensions with their
+// enable/disable state.
+func (s *Store) InstalledForUser(ctx context.Context, userID string) ([]InstalledExtension, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT `+columns+` FROM extensions e
+		SELECT `+installedColumns+` FROM extensions e
 		JOIN extension_installs i ON i.extension_id = e.id
 		WHERE i.user_id = $1 ORDER BY i.installed_at DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("extension: installed: %w", err)
 	}
 	defer rows.Close()
-	out := []Extension{}
+	out := []InstalledExtension{}
 	for rows.Next() {
-		found, err := scanExtension(rows)
+		found, err := scanInstalled(rows)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, *found)
 	}
 	return out, rows.Err()
+}
+
+// SetInstallEnabled flips one install's enabled flag. The install row must
+// exist (you cannot enable/disable something you have not installed).
+func (s *Store) SetInstallEnabled(ctx context.Context, userID, extensionID string, enabled bool) error {
+	tag, err := s.db.ExecContext(ctx, `
+		UPDATE extension_installs SET enabled = $3
+		WHERE user_id = $1 AND extension_id = $2`, userID, extensionID, enabled)
+	if err != nil {
+		return fmt.Errorf("extension: set enabled: %w", err)
+	}
+	if rows, _ := tag.RowsAffected(); rows == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // VersionsByExtension lists an owned extension's versions, newest first.
@@ -599,14 +657,39 @@ func (s *Service) Create(ctx context.Context, ownerID string, input CreateInput)
 	}
 
 	slug := slugify(name)
+	// TASK 64 §7: prevent double installation / duplicate IDs honestly —
+	// slugs are globally unique, so a repeated name gets a deterministic
+	// numbered slug instead of a raw constraint 500.
+	finalSlug, err := s.store.uniqueSlug(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
 	created, err := s.store.Create(ctx, NewExtension{
-		OwnerID: ownerID, Slug: slug, Name: name, Summary: summary,
+		OwnerID: ownerID, Slug: finalSlug, Name: name, Summary: summary,
 		Kind: kind, Manifest: normalized, Docs: input.Docs, Source: input.Source,
 	}, "0.1.0")
 	if err != nil {
 		return nil, fmt.Errorf("extension: create: %w", err)
 	}
 	return created, nil
+}
+
+// uniqueSlug appends -2, -3, … until the slug is free (bounded probe).
+func (s *Store) uniqueSlug(ctx context.Context, base string) (string, error) {
+	candidate := base
+	for attempt := 2; attempt <= 50; attempt++ {
+		var exists bool
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM extensions WHERE slug = $1)`, candidate).Scan(&exists); err != nil {
+			return "", fmt.Errorf("extension: slug probe: %w", err)
+		}
+		if !exists {
+			return candidate, nil
+		}
+		candidate = fmt.Sprintf("%s-%d", base, attempt)
+	}
+	return "", httpx.Errorf(http.StatusConflict, httpx.CodeValidation,
+		"Too many extensions share this name — pick a more distinctive one.")
 }
 
 // Get returns one owned extension.

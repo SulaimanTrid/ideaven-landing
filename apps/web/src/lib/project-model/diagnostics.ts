@@ -631,6 +631,18 @@ export function collectModelDiagnostics(model: ProjectModel): ModelDiagnostic[] 
       }
 
       const checkBlock = (block: DiagBlock): void => {
+        // TASK 64: extension blocks are saved references, never bundled code.
+        // The model alone cannot know the install state, so the diagnostic is
+        // an honest reminder (the preview reports the skip at run time).
+        if (block.type.startsWith("ext:")) {
+          out.push({
+            severity: "info",
+            message: `Extension block "${block.type}" runs only while its extension is installed and enabled — the preview reports a skip when it can't run.`,
+            screenId: screen.id,
+            handlerId: handler.id,
+            blockId: block.id,
+          });
+        }
         if (block.type === "navigate") {
           const target = block.inputs?.screenId;
           if (typeof target === "string" && target !== "" && !model.screens.some((s) => s.id === target)) {

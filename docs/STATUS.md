@@ -4312,3 +4312,79 @@ architecture for beginners â€” no new engine/builder/model. Full record in
 ### Next exact task
 
 STOP per the directive â€” await explicit approval before TASK 64.
+## 71. TASK 64 - Real Extension Engine + Runtime Providers + Palette Integration
+
+Session 64 (2026-10-04). ONE extension engine/registry/block registry/model/
+runtime extended: install -> validate -> register -> palette -> configure ->
+save -> render -> preview -> published -> export is now real and honest end
+to end. Full record in docs/TASK64_EXTENSION_ENGINE.md.
+
+### What was built (session 64)
+
+- **Install state is durable** (migration 057): extension_installs.enabled
+  (default true); SetInstallEnabled is owner-scoped (0 rows -> ErrNotFound);
+  InstallUsage server-counts projects referencing ext:<slug>:; the uninstall
+  dialog shows the REAL number.
+- **Slug dedupe**: slugs are GLOBALLY unique - duplicate names hit the unique
+  index as a 500; Store.uniqueSlug probes base-2..50 (create now 201 with
+  weather-beacon-ext-2 etc.).
+- **Honest wire contract** (root-cause fix): GET /api/me/extensions wrapped
+  rows {extension, enabled} while both clients read a flat Extension[] -
+  fields were undefined and palette registration silently no-oped. Now
+  installedWire{ExtensionWire; enabled; installedVersion} flattens to the
+  client contract; PATCH .../install + GET .../usage routes added.
+- **ONE palette registration owner**: BlocksWorkspace fetches installed,
+  forgets DISABLED slugs, registers enabled ones, bumps one tick that re-keys
+  canvas + palette memos; the dashboard dispatches
+  ideaven:extensions-changed on every lifecycle change.
+- **Runtime honesty**: ext: blocks never fake execution - the skip is
+  reported once per run per type via toast AND a persistent Runtime-trace
+  line. FOUND+FIXED a real dead-vocabulary bug: the Blocks rail offered a
+  Screen Initialize event the runtime never dispatched - createRuntime now
+  dispatch(null, initialize) once at run start (traced; the skip set is
+  initialized before the first dispatch).
+- **Diagnostics + export truth**: model diagnostics list every ext: block
+  (INFO: runs only while installed and enabled); export validation ALWAYS
+  flags ext: types as skipped-by-the-generated-runtime (an ENABLED extension
+  used to silence the warning even though exports never bundle providers);
+  codegen keeps the unsupported-type comment.
+- **Version honesty**: the installed list carries installedVersion (the
+  version YOU installed); the card says "v1.0.0 installed / v1.0.1
+  published" on drift instead of showing the current version as installed.
+
+### Verification (session 64)
+
+- New E2E e2e-task64-extension-engine.mjs: 34/34, 0 console errors - real
+  import dialog pipeline (file -> validate -> inspect -> register -> build
+  -> publish -> install), palette integration + real icon, real handler +
+  insert + save/reload persistence, disable flow + runtime honesty,
+  re-enable, uninstall usage safety + a REAL uninstall completing the
+  lifecycle, validation rejections (dup types / bad format / empty),
+  cross-user isolation, palette search, 390-1440 responsive, Explore shelf
+  truth, diagnostics honesty, export honesty.
+- Regression sweep (scripts/run-regressions-t64.mjs, 26 suites): 24 PASS in
+  the sweep; task62 failed once under sweep-time API contention (parallel go
+  test load) and passes 61/61 solo (re-verified); e2e-community.mjs remains
+  the documented pre-existing legacy drift (crashes on a search box the page
+  never had - STATUS 68, flagged for a rewrite task, not faked).
+- Gates: tsc clean; go vet clean; go test -count=1 ./... ALL ok (incl.
+  internal/ai 28.8s, internal/credits, internal/extension); next build
+  exit 0 (dev stopped, .next cleaned); build:vinext exit 0; verify-cf-preview
+  12/12 (API-down baseline, 9 expected API errors filtered).
+
+### Honest notes (TASK 64)
+
+- Extension components/methods/events remain declared-but-unavailable at
+  runtime (the import dialog warns; the runtime skip + diagnostics INFO +
+  export warning repeat it at every surface). No provider pretends otherwise.
+- Manifest dependencies stay informational (validated, stored, surfaced -
+  not resolved against a package ecosystem).
+- AI awareness: the AI reads the same canonical model JSON; an unresolvable
+  ext: type is just an unknown block - there is no surface for it to invent
+  extension behavior from.
+- The task64 E2E derives the real slug from the API (slugs are globally
+  unique across ALL users, so repeat runs get suffixed slugs).
+
+### Next exact task
+
+STOP per the directive - await explicit approval before TASK 65.

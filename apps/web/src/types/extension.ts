@@ -78,6 +78,19 @@ export interface Extension {
   currentVersion: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * TASK 64 §16: installed-state flag (only present on /api/me/extensions
+   * rows). False = the install is DISABLED — blocks are out of the palette
+   * while project references stay readable.
+   */
+  enabled?: boolean;
+  /**
+   * The version this user actually installed (only on /api/me/extensions
+   * rows). When it differs from currentVersion, the author has published an
+   * update since — the dashboard says so instead of showing the current
+   * version as if it were installed.
+   */
+  installedVersion?: string;
 }
 
 export interface CreateExtensionRequest {

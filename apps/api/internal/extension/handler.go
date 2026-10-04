@@ -104,6 +104,15 @@ func wire(e *Extension) ExtensionWire {
 	}
 }
 
+// installedWire is one GET /api/me/extensions row: the extension wire shape
+// with its per-user install state flattened on top (encoding/json promotes
+// the embedded fields, so clients see one flat object).
+type installedWire struct {
+	ExtensionWire
+	Enabled          bool   `json:"enabled"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
+}
+
 // PublicList handles GET /api/public/extensions — every published
 // extension, for the everyone-can-use registry. No auth: published means
 // public. Creator names and install counts make it feel like a real
@@ -528,7 +537,48 @@ func (h *Handler) Uninstall(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// Installed handles GET /api/me/extensions.
+// SetInstallEnabled handles PATCH /api/extensions/{id}/install — TASK 64
+// §16: disabling removes the blocks from the active palette WITHOUT
+// uninstalling; project models keep their references.
+func (h *Handler) SetInstallEnabled(w http.ResponseWriter, r *http.Request) {
+	current, err := h.currentUser(r)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Enabled == nil {
+		httpx.WriteError(w, httpx.Errorf(http.StatusBadRequest, httpx.CodeValidation,
+			`The body must be { "enabled": true | false }.`))
+		return
+	}
+	if err := h.service.SetInstallEnabled(r.Context(), current.ID, r.PathValue("id"), *body.Enabled); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": *body.Enabled})
+}
+
+// Usage handles GET /api/extensions/{id}/usage — TASK 64 §17: how many of
+// the caller's projects reference this extension's blocks.
+func (h *Handler) Usage(w http.ResponseWriter, r *http.Request) {
+	current, err := h.currentUser(r)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	count, err := h.service.InstallUsage(r.Context(), current.ID, r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"projects": count})
+}
+
+// Installed handles GET /api/me/extensions — each row carries its
+// enable/disable state so the palette can honor it.
 func (h *Handler) Installed(w http.ResponseWriter, r *http.Request) {
 	current, err := h.currentUser(r)
 	if err != nil {
@@ -540,9 +590,15 @@ func (h *Handler) Installed(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, err)
 		return
 	}
-	wired := make([]ExtensionWire, 0, len(items))
+	// Flat rows: the client contract is Extension[] with `enabled` on each
+	// row (the palette and dashboard read slug/manifest/enabled directly).
+	wired := make([]installedWire, 0, len(items))
 	for i := range items {
-		wired = append(wired, wire(&items[i]))
+		wired = append(wired, installedWire{
+			ExtensionWire:    wire(&items[i].Extension),
+			Enabled:          items[i].Enabled,
+			InstalledVersion: items[i].InstalledVersion,
+		})
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"extensions": wired, "total": len(wired)})
 }

@@ -1103,8 +1103,39 @@ func (s *Service) Uninstall(ctx context.Context, userID, id string) error {
 	return nil
 }
 
-// Installed lists the caller's installed extensions with owner names.
-func (s *Service) Installed(ctx context.Context, userID string) ([]Extension, error) {
+// SetInstallEnabled flips one install's enabled flag (TASK 64 §16).
+func (s *Service) SetInstallEnabled(ctx context.Context, userID, id string, enabled bool) error {
+	if err := validateID(id); err != nil {
+		return err
+	}
+	if err := s.store.SetInstallEnabled(ctx, userID, id, enabled); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return notFound()
+		}
+		return fmt.Errorf("extension: set enabled: %w", err)
+	}
+	return nil
+}
+
+// InstallUsage reports how many of the caller's projects reference the
+// extension's blocks (TASK 64 §17 uninstall safety).
+func (s *Service) InstallUsage(ctx context.Context, userID, id string) (int, error) {
+	if err := validateID(id); err != nil {
+		return 0, err
+	}
+	found, err := s.store.FindForOwnerAny(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return 0, notFound()
+		}
+		return 0, fmt.Errorf("extension: usage: find: %w", err)
+	}
+	return s.store.InstallUsage(ctx, userID, found.Slug)
+}
+
+// Installed lists the caller's installed extensions with their enabled
+// state (TASK 64 §16) — the palette must never show disabled blocks.
+func (s *Service) Installed(ctx context.Context, userID string) ([]InstalledExtension, error) {
 	items, err := s.store.InstalledForUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("extension: installed: %w", err)

@@ -96,11 +96,14 @@ export function validateModel(
   if (!model.screens.some((s) => s.id === startId)) {
     issues.push({ severity: "error", message: "The start screen no longer exists — pick one in Scenes." });
   }
-  // Unknown block types are skipped by the generator — an honest warning.
+  // Block types the generated runtime cannot run are an honest warning.
+  // Extension blocks (ext:) are ALWAYS in this set: exports never bundle
+  // extension providers — the saved reference stays in the project, and the
+  // exported runtime skips it exactly like the live preview does.
   const unknown = new Set<string>();
   const visit = (blocks: import("@/types/project").ProjectModelBlock[]) => {
     for (const block of blocks) {
-      if (!getAnyBlockDef(block.type)) unknown.add(block.type);
+      if (block.type.startsWith("ext:") || !getAnyBlockDef(block.type)) unknown.add(block.type);
       for (const slot of Object.values(block.slots ?? {})) if (slot) visit([slot]);
       visit(block.children ?? []);
       visit(block.elseChildren ?? []);

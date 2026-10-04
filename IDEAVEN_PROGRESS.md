@@ -1047,3 +1047,29 @@ providers, i18n coverage expansion, accessibility audit.
   task62 61, shell 35, tilemap 44); tsc/go vet/go test -count=1/next
   build/build:vinext/verify-cf-preview 12/12 green.
 - STOP per directive â€” awaiting approval before TASK 64.
+
+## SESSION 64 - TASK 64: Real Extension Engine + Runtime Providers + Palette Integration (2026-10-04)
+
+- Durable install state (migration 057 enabled flag): owner-scoped
+  Enable/Disable via PATCH, real DISABLED/ENABLED chips, disabling forgets
+  palette vocabulary without touching project data, re-enable restores it.
+- Uninstall safety: server-counted usage (projects referencing ext:<slug>:)
+  shown in the confirm dialog; real uninstall completes the lifecycle while
+  saved project references stay (honestly unavailable until reinstall).
+- Slug dedupe (global unique index): Store.uniqueSlug ends duplicate-name
+  500s; the E2E derives the real suffixed slug from the API.
+- Root-cause fixes: installed wire flattened to the client contract (silent
+  palette-registration no-op), ONE registration owner in BlocksWorkspace
+  (palette memo keyed on a tick that never bumped), Screen Initialize event
+  was dead vocabulary - the runtime now dispatches it at run start, export
+  validation flags ext: blocks even when the extension is enabled, skip
+  report persisted in the Runtime trace (was toast-only).
+- Version honesty: installedVersion surfaced; drift shown as "vX installed /
+  vY published".
+- Gates: task64 NEW 34/34 (0 console errors); 26-suite sweep 24 PASS with
+  task62 61/61 solo (contention flake) and community = documented legacy
+  drift; tsc/go vet/go test -count=1 ./... (incl. ai + credits) green;
+  next build 0 (dev stopped, .next cleaned); build:vinext 0;
+  verify-cf-preview 12/12 (API-down baseline).
+- STOP per directive - awaiting approval before TASK 65.
+---

@@ -446,6 +446,26 @@ export const extensionApi = {
     );
   },
 
+  /**
+   * TASK 64 §16: enable/disable an install WITHOUT uninstalling. Disabled
+   * extensions keep their project references but their blocks leave the
+   * active palette.
+   */
+  setInstallEnabled(id: string, enabled: boolean): Promise<{ ok: true; enabled: boolean }> {
+    return request<{ ok: true; enabled: boolean }>(
+      `/api/extensions/${encodeURIComponent(id)}/install`,
+      { method: "PATCH", body: { enabled } },
+    );
+  },
+
+  /** TASK 64 §17: uninstall safety — how many of the caller's projects
+   * reference this extension's blocks. */
+  usage(id: string): Promise<{ projects: number }> {
+    return request<{ projects: number }>(
+      `/api/extensions/${encodeURIComponent(id)}/usage`,
+    );
+  },
+
   uninstall(id: string): Promise<{ ok: true }> {
     return request<{ ok: true }>(`/api/extensions/${encodeURIComponent(id)}/install`, { method: "DELETE" });
   },

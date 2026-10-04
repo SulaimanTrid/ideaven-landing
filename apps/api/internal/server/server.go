@@ -195,7 +195,10 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	routeMethods(mux, "/api/extensions/{id}/install", map[string]http.Handler{
 		http.MethodPost:   http.HandlerFunc(extensionHandler.Install),
 		http.MethodDelete: http.HandlerFunc(extensionHandler.Uninstall),
+		http.MethodPatch:  http.HandlerFunc(extensionHandler.SetInstallEnabled),
 	})
+	// TASK 64 §17: uninstall safety — the honest "used by N projects" count.
+	route(mux, http.MethodGet, "/api/extensions/{id}/usage", http.HandlerFunc(extensionHandler.Usage))
 
 	// Phase 26/30–31: exports — standalone HTML and an Android WebView
 	// project archive, both owner-only downloads.

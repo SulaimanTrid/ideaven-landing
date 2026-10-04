@@ -126,6 +126,11 @@ export function createRuntime(
   // the scene loop against runtime particle sims.
   const particleCommands: { componentId: string; count: number }[] = [];
 
+  // TASK 64 §34: extension blocks skipped this run, per type — declared
+  // before the initial "initialize" dispatch so first-run skips never hit a
+  // temporal-dead-zone reference.
+  const skippedExtensionBlocks = new Set<string>();
+
   const runtime: ScreenRuntime = {
     model,
     currentScreenId: startScreenId,
@@ -257,6 +262,12 @@ export function createRuntime(
     }
   };
   startClocks();
+
+  // Screen-level "initialize" handlers run ONCE when the run starts — the
+  // Blocks palette offers this event, so the runtime must honor it (traced
+  // like every dispatch; an initialize body containing an ext: block reports
+  // the skip honestly).
+  dispatch(null, "initialize");
 
   // Accelerometer: real DeviceMotion stream (fires on capable hardware only —
   // desktop browsers without sensors produce nothing, which is honest).
@@ -480,7 +491,26 @@ export function createRuntime(
     for (const block of body) executeBlock(block);
   }
 
+  /** TASK 64 §34: skipped extension blocks are reported ONCE per run per
+   * type — honest, structured, never console spam. The toast surfaces it
+   * immediately; the runtime trace keeps a persistent line (the trace panel
+   * is the diagnostics home for "what ran / what didn't"). */
+  function skippedExtension(blockType: string) {
+    if (skippedExtensionBlocks.has(blockType)) return;
+    skippedExtensionBlocks.add(blockType);
+    options.onMessage(`Extension block "${blockType}" did not run — its extension is disabled or not installed. Re-enable it to restore this behavior.`);
+    options.onTrace?.(`⚠ Extension block "${blockType}" skipped — extension disabled or not installed`);
+  }
+
   function executeBlock(block: ProjectModelBlock) {
+    // TASK 64: extension blocks without a live provider do nothing —
+    // honestly reported once, never faked. Registered, enabled extensions
+    // add their vocabulary at runtime via the block registry; an unregistered
+    // ext: block means disabled/missing, so the skip IS the truthful state.
+    if (block.type.startsWith("ext:")) {
+      skippedExtension(block.type);
+      return;
+    }
     switch (block.type) {
       case "set-property": {
         const componentId = str(block.inputs?.componentId);
