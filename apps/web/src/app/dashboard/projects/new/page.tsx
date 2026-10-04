@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { CreateProjectClient } from "./create-project-client";
 
 export const metadata: Metadata = {
@@ -6,5 +7,10 @@ export const metadata: Metadata = {
 };
 
 export default function CreateProjectPage() {
-  return <CreateProjectClient />;
+  // useSearchParams (the ?type= deep-link) requires a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <CreateProjectClient />
+    </Suspense>
+  );
 }

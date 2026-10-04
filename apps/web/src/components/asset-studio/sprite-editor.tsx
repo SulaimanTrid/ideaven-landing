@@ -1237,8 +1237,14 @@ function FrameThumb({
         active ? "border-violet" : "border-line hover:border-violet/40",
       )}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element -- local pixel canvas data */}
-      <img src={url} alt="" width={40} height={40} style={{ imageRendering: "pixelated" }} className="rounded-sm bg-canvas" />
+      {/* TASK 65 §40: render the thumbnail only once the composite data URL
+          exists — an <img src=""> makes the browser re-download the page. */}
+      {url ? (
+        /* eslint-disable-next-line @next/next/no-img-element -- local pixel canvas data */
+        <img src={url} alt="" width={40} height={40} style={{ imageRendering: "pixelated" }} className="rounded-sm bg-canvas" />
+      ) : (
+        <span className="block h-[40px] w-[40px] rounded-sm bg-canvas" aria-hidden="true" />
+      )}
       <span className="block text-center font-mono text-[9px] text-mist">{index + 1}</span>
     </button>
   );

@@ -5,8 +5,9 @@ const LINK_GROUPS = [
   {
     title: "Product",
     links: [
-      { label: "Learn", href: "/#journey" },
-      { label: "Explore", href: "/#explore" },
+      { label: "Start Building", href: "/start" },
+      { label: "Learn", href: "/learn" },
+      { label: "Explore", href: "/explore" },
       { label: "Community", href: "/community" },
       { label: "Pricing", href: "/pricing" },
     ],
@@ -15,7 +16,7 @@ const LINK_GROUPS = [
     title: "Project",
     links: [
       { label: "Documentation", href: "/docs" },
-      { label: "Made with Ideaven", href: "/#explore" },
+      { label: "Made with Ideaven", href: "/explore" },
     ],
   },
   {
@@ -86,7 +87,7 @@ export function SiteFooter() {
             ))}
           </ul>
           <p className="font-mono text-[11px] tracking-[0.22em] text-mist uppercase">
-            Phase 1 · Foundation
+            2.0 beta
           </p>
         </div>
       </Container>

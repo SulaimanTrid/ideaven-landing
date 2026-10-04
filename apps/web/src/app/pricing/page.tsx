@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ButtonLink } from "@ideaven/ui";
 import { API_BASE_URL, type CreditPackage } from "@/lib/api";
 
 /**
@@ -155,6 +156,12 @@ export default async function PricingPage() {
           </Link>{" "}
           to start building.
         </p>
+        {/* TASK 65 §39: the pricing CTA enters the normal creation journey. */}
+        <div className="mt-6">
+          <ButtonLink href="/start" size="lg">
+            Start Building
+          </ButtonLink>
+        </div>
       </section>
     </main>
   );

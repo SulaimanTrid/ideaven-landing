@@ -1073,3 +1073,33 @@ providers, i18n coverage expansion, accessibility audit.
   verify-cf-preview 12/12 (API-down baseline).
 - STOP per directive - awaiting approval before TASK 65.
 ---
+
+
+## SESSION 65 - TASK 65: Product Coherence - Landing / Dashboard / Creation Hub / Builder (2026-10-04)
+
+- Nav truth: header + footer now point at the REAL surfaces (Learn /learn,
+  Explore /explore, Community, Pricing) plus a Create entry (/start).
+- /start is the smart front door: session truth -> Creation Hub (with
+  ?type= preselect preserved); anonymous -> /register?next=<hub>;
+  RegisterForm honors ?next= (same safeNextPath primitive); RequireAuth
+  keeps path AND query.
+- Landing: new "Three ways to create" section (App / 2D / 3D cards with
+  real CreationPreview visuals, who-they-are-for, capability descriptions,
+  canonical CTAs) + honest extensions positioning; hero Explore -> the real
+  gallery; no invented metrics.
+- Dashboard: stale "editor arrives in the next phase" line removed; "Start
+  here" strip (Templates/Learn/Community); empty state shows the three
+  canonical creation entries; project cards carry the ENGINE IDENTITY badge.
+- ONE engine vocabulary: project-meta.ts (App / 2D Game / 3D Game) feeds
+  cards, public pages, explore filters, and the builder's identity chip.
+- Public project page: "IDEAVEN - <name>" metadata + OG, engine badge, no
+  editor chrome; pricing + learn gained Start Building CTAs (no dead ends).
+- i18n: all new strings in EN + ID. Fixed a pre-existing <img src="">
+  console error in sprite-editor frame thumbnails.
+- Gates: task65 NEW 49/49 (0 console errors); 29-suite sweep 26 PASS with
+  task64 34/34 solo (contention flake), asset-studio 25/25 after the img
+  fix, community = documented legacy drift; tsc/go vet/go test (extension,
+  ai, credits) green; next build 0; build:vinext 0; verify-cf-preview
+  12/12 (API-down baseline).
+- STOP per directive - awaiting approval before TASK 66.
+---

@@ -57,7 +57,7 @@ export function FinalCta() {
               <IconArrowRight size={16} />
             </ButtonLink>
             <ButtonLink href="#explore" variant="secondary" size="lg">
-              Explore Ideaven
+              See it in action
             </ButtonLink>
           </div>
         </Reveal>

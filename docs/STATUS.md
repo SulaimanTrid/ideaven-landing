@@ -4388,3 +4388,88 @@ to end. Full record in docs/TASK64_EXTENSION_ENGINE.md.
 ### Next exact task
 
 STOP per the directive - await explicit approval before TASK 65.
+
+## 72. TASK 65 - Product Coherence: Landing -> Dashboard -> Creation Hub -> Builder
+
+Session 65 (2026-10-04). One product voice across every surface - no second
+dashboard/creation hub/model/design system created; every fix reuses
+existing primitives. Full record in docs/TASK65_PRODUCT_COHERENCE.md.
+
+### Root causes fixed (the "several unrelated web apps" feeling)
+
+- **Nav drift**: header/footer "Learn"/"Explore" pointed at landing anchors
+  while real /learn and /explore pages existed. Now: Learn / Explore /
+  Community / Pricing / CREATE - all real routes (header + footer + a
+  Start Building entry in the footer).
+- **/start was a dumb redirect to /register.** Now a smart front door on
+  real session truth (useAuth): authenticated -> the Creation Hub
+  preserving ?type=; anonymous -> /register?next=<hub>. RegisterForm now
+  honors ?next= via the SAME safeNextPath primitive as login; RequireAuth
+  keeps path AND query in the next return.
+- **Engine identity split-brain**: cards/public pages said "Game"/"3D
+  Scene" while the builder said "2D GAME"/"3D GAME". project-meta.ts is now
+  THE vocabulary (app/Game->2D Game/3d->3D Game) and dashboard cards +
+  public project pages carry data-engine-badge using engineIdentityLabel.
+- **Stale honesty**: dashboard claimed "the editor arrives in the next
+  phase" - gone (the editor has existed since TASK 60).
+
+### What was added (reusing existing primitives)
+
+- Landing **"Three ways to create"** section (#ways-to-create): Application
+  / 2D Game / 3D Game cards with who each is for, real CreationPreview
+  visuals (TASK 61 system, no mocks), CTAs Start App / Start 2D Game /
+  Start 3D Game -> /start?type=... and an honest extensions line (publish
+  your own blocks -> Blocks palette) linking to the dashboard.
+- Creation Hub reads a validated ?type= preselect (unknown values ignored;
+  "Change environment" still returns to the full choice) - ONE canonical
+  flow, deeper entry.
+- Dashboard home: "Start here" strip (Templates / Learn / Community, real
+  routes + honest descriptions) and the zero-project empty state shows the
+  three canonical creation entries above "Create your first project".
+- Hero: Start Building -> /start; Explore -> the REAL /explore gallery.
+  Final CTA secondary anchor relabeled honestly ("See it in action").
+- Authenticated header gains a primary Home CTA + Extensions in the menu
+  (discovery preserved, no auto-redirect).
+- SEO: public project pages titled "IDEAVEN - <Project Name>" with
+  public-safe Open Graph; /explore gains real metadata via a server layout;
+  pricing CTA "Start Building" enters the normal creation journey; Learn
+  gained a Start Building CTA (no dead ends).
+- i18n: every new string in BOTH dictionaries (nav.create, landing.path*,
+  dash.startHere, dash.emptyCreate*).
+- Fixed a real pre-existing console error: sprite-editor frame thumbnails
+  rendered <img src=""> before the data URL resolved (React error-class
+  warning); now renders only with a real URL.
+
+### Verification (session 65)
+
+- New E2E e2e-task65-product-coherence.mjs: 49/49, 0 console errors -
+  all 36 directive areas (nav truth, canonical routing for all three
+  environments, builder identities, dashboard return/empty states,
+  publish -> public page -> remix with two real users, EN + ID, light +
+  dark, 390-1440 overflow, a11y, metadata, private-data safety, error
+  hygiene), cross-surface flows with no dead ends, and screenshots at
+  390/768/1280/1440 (landing x4, dashboard, hub, public project; captured
+  to scripts/screenshots-task65/ and asserted non-trivial).
+- Regression sweep (run-regressions-t65.mjs, 29 suites incl. asset-studio +
+  task65): 26 PASS in the sweep; task64 34/34 solo (sweep-time API
+  contention flake, re-verified); asset-studio fixed (see above) and green
+  25/25 solo; e2e-community.mjs remains the documented pre-existing drift
+  (STATUS 68).
+- Gates: tsc clean; go vet clean; go test -count=1 ok (extension/ai/
+  credits); next build exit 0 (dev stopped, .next cleaned); build:vinext
+  exit 0; verify-cf-preview 12/12 (API-down baseline).
+
+### Honest notes (TASK 65)
+
+- /start performs its session check client-side through the app's real
+  auth provider (brief branded splash) - no second auth path was added.
+- Landing sections predating this task remain English-first (existing
+  coverage state; the new surfaces are fully bilingual EN/ID).
+- A blank game screen honestly renders no scene canvas (a scene requires
+  an entity) - the E2E seeds a real player before publishing so the public
+  page proves the real runtime.
+- Builder chrome untouched: Tasks 58-63 preserved (sweeps green).
+
+### Next exact task
+
+STOP per the directive - await explicit approval before TASK 66.

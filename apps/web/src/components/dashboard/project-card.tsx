@@ -4,7 +4,7 @@ import Link from "next/link";
 import { DropdownMenu } from "@/components/dashboard/menu";
 import { formatRelativeDate } from "@/lib/format";
 import type { ProjectSummary } from "@/types/project";
-import { projectTypeLabel } from "@/lib/project-meta";
+import { engineIdentityLabel } from "@/lib/project-meta";
 import { CreationPreview, type CreationPreviewType } from "@/components/visuals/creation-preview";
 import {
   IconArchive,
@@ -93,10 +93,20 @@ export function ProjectCard({
           ) : null}
         </div>
 
-        <p className="text-[13px] leading-5 text-mist">
-          {projectTypeLabel(project.type)}
-          {project.description ? ` · ${project.description}` : ""}
-        </p>
+        {/* TASK 65 §13/§14: the ENGINE IDENTITY badge — the same vocabulary
+            the builder header uses (APP / 2D GAME / 3D GAME), never a bare
+            "Project". Description rides below, quiet. */}
+        <div className="flex items-center gap-2">
+          <span
+            data-engine-badge={project.type}
+            className="rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fog"
+          >
+            {engineIdentityLabel(project.type)}
+          </span>
+        </div>
+        {project.description ? (
+          <p className="line-clamp-1 text-[12.5px] leading-5 text-mist">{project.description}</p>
+        ) : null}
 
         <p className="mt-auto pt-2 text-[12px] text-mist">
           Updated {formatRelativeDate(project.updatedAt)}

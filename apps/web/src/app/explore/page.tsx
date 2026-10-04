@@ -79,7 +79,7 @@ export default function ExplorePage() {
           </p>
           {publications.length === 0 ? (
             <Link
-              href="/dashboard/templates"
+              href="/start"
               className="mt-6 inline-flex h-10 items-center rounded-lg bg-violet-deep px-5 text-[13px] font-medium text-white transition-colors hover:bg-violet"
             >
               Start building

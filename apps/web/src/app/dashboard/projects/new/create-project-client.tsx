@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button, ButtonLink, Chip } from "@ideaven/ui";
 import { projectApi, templateApi, type TemplateBrief } from "@/lib/api";
 import { ApiError } from "@/types/auth";
@@ -84,6 +84,7 @@ const ENVIRONMENTS: EnvironmentCard[] = [
 
 export function CreateProjectClient() {
   const router = useRouter();
+  const params = useSearchParams();
   /** `creatingRef` guards double activation (click + Enter) at the source. */
   const creatingRef = useRef(false);
 
@@ -98,6 +99,19 @@ export function CreateProjectClient() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // TASK 65 §8/§32: "Start 2D Game" etc. from the landing page deep-link
+  // here with ?type=… — the SAME hub, with the environment preselected so
+  // the canonical flow starts at the method step. Unknown types are ignored.
+  const preselected = params.get("type");
+  useEffect(() => {
+    if (!preselected) return;
+    if (!PROJECT_TYPES.includes(preselected as ProjectType)) return;
+    setProjectType(preselected as ProjectType);
+    setStep(2);
+    // Consume the param so a manual "Change environment" stays respected.
+    router.replace("/dashboard/projects/new", { scroll: false });
+  }, [preselected, router]);
 
   const environment = ENVIRONMENTS.find((e) => e.type === projectType);
 

@@ -47,6 +47,16 @@ export default function LearnPage() {
         ))}
       </ol>
 
+      {/* TASK 65 §38/§45: Learn connects onward — no dead end. */}
+      <div className="mt-8">
+        <Link
+          href="/start"
+          className="inline-flex h-10 items-center rounded-lg bg-violet-deep px-5 text-[13px] font-medium text-white transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
+        >
+          Start Building
+        </Link>
+      </div>
+
       <p className="mt-10 text-[13px] text-fog">
         Prefer reference material? Read the{" "}
         <Link href="/docs" className="text-violet hover:text-ink">

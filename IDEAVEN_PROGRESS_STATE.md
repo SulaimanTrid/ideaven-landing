@@ -4,7 +4,7 @@ IDEAVEN PROGRESS STATE — portable development handoff
 > The repository is the source of truth; this file only points at it.
 
 CURRENT_DATE: 2026-10-04
-CURRENT_COMMIT: see `git log -1` (TASK 64 commit, pushed to origin/main)
+CURRENT_COMMIT: see `git log -1` (TASK 65 commit, pushed to origin/main)
 PUSHED: YES — https://github.com/SulaimanTrid/ideaven-landing.git
 CURRENT_BRANCH: main
 
@@ -20,51 +20,56 @@ TOOLCHAIN (Windows):
 - DO NOT run `next build` while `next dev` is live (corrupts .next).
 
 CURRENT_OBJECTIVE:
-TASK 64 (Real Extension Engine + Runtime Providers + Palette Integration)
-is COMPLETE and verified (session 64): the full install → validate →
-register → palette → configure → save → render → preview → published →
-export flow is real and honest. Durable per-install enable/disable
-(migration 057, owner-scoped PATCH); uninstall safety with server-counted
-usage; global-slug dedupe (uniqueSlug); ONE palette registration owner in
-BlocksWorkspace honoring enabled state + ideaven:extensions-changed; runtime
-skips ext: blocks honestly (toast + persistent Runtime-trace line, once per
-type); FIXED dead vocabulary — the runtime now dispatches the Screen
-"initialize" event at run start; diagnostics INFO + export validation
-always flag ext: blocks; installedVersion surfaced ("vX installed / vY
-published"). e2e-task64 34/34 (0 console errors); 26-suite sweep 24 PASS
-(task62 61/61 solo after a contention flake; community = documented legacy
-drift); all gates green (tsc, go vet, go test ./... incl. ai+credits,
-next build, build:vinext, verify-cf-preview 12/12).
+TASK 65 (Product Coherence: Landing → Dashboard → Creation Hub → Builder)
+is COMPLETE and verified (session 65): one product voice across surfaces
+with NO second system created. Nav points at the REAL surfaces (Learn
+/learn, Explore /explore, Community, Pricing, Create /start); /start is the
+smart front door into the ONE canonical Creation Hub (session truth →
+/dashboard/projects/new with ?type= preselect; anonymous →
+/register?next=<hub>; RegisterForm honors ?next=; RequireAuth keeps path +
+query). Landing gained the "Three ways to create" section (real
+CreationPreview visuals, canonical CTAs, honest extensions line); the
+dashboard lost its stale "editor arrives next phase" line and gained the
+"Start here" strip + three-entry empty state; ONE engine vocabulary
+(project-meta.ts: App / 2D Game / 3D Game) feeds cards, public pages,
+Explore and the builder identity chip; public project pages use
+"IDEAVEN — <name>" metadata with OG and carry no editor chrome. e2e-task65
+49/49 (0 console errors); 29-suite sweep green (task64 34/34 solo after a
+contention flake; asset-studio 25/25 after fixing a pre-existing
+<img src=""> console error; community = documented legacy drift); all
+gates green (tsc, go vet, go test, next build, build:vinext,
+verify-cf-preview 12/12).
 
 FILES / MODULES TO CONTINUE FROM:
-- apps/api/internal/extension/extension.go (InstalledExtension + enabled +
-  installedVersion; SetInstallEnabled; InstallUsage; uniqueSlug)
-- apps/api/internal/extension/handler.go (installedWire — the installed
-  list is a FLAT Extension[] with enabled/installedVersion on each row;
-  do not re-wrap as {extension, enabled})
-- apps/api/migrations/057_extension_install_enabled.sql
-- apps/web/src/app/builder/[id]/builder/blocks-mode.tsx (BlocksWorkspace
-  owns THE extension registration effect — keep the enabled filter + tick)
-- apps/web/src/lib/project-model/runtime.ts (ext: skip → toast + onTrace;
-  dispatch(null, "initialize") at run start — keep the skip Set above it)
-- apps/web/src/lib/project-model/diagnostics.ts (ext: INFO diagnostic)
-- apps/web/src/app/builder/[id]/builder/export-button.tsx (validateModel
-  flags ext: types ALWAYS — exports never bundle providers)
-- apps/web/src/components/extensions/extensions-client.tsx (state chips,
-  toggle, uninstall confirm with real usage, version drift line)
-- scripts/e2e-task64-extension-engine.mjs (34 checks — TASK 64 gate;
-  derives the real slug from the API)
-- scripts/run-regressions-t64.mjs (26-suite regression sweep runner)
-- docs/TASK64_EXTENSION_ENGINE.md + docs/STATUS.md section 71
+- apps/web/src/lib/project-meta.ts (THE engine vocabulary — projectTypeLabel
+  is "App"/"2D Game"/"3D Game"; engineIdentityLabel uppercases for badges;
+  do not reintroduce "Game"/"3D Scene")
+- apps/web/src/components/auth/start-redirect.tsx + app/start/page.tsx
+  (the /start router: authenticated → hub with ?type=, anonymous →
+  register?next=)
+- apps/web/src/app/dashboard/projects/new/create-project-client.tsx
+  (hub ?type= preselect — keep the PROJECT_TYPES validation)
+- apps/web/src/auth/require-auth.tsx (next = path AND query, Suspense-wrapped)
+- apps/web/src/components/sections/creation-paths.tsx (landing "Three ways
+  to create" — client component, uses useI18n)
+- apps/web/src/components/nav/site-header.tsx + footer/site-footer.tsx
+  (real routes; authenticated Home CTA; footer "2.0 beta")
+- apps/web/src/components/dashboard/dashboard-content.tsx (Start here strip,
+  three-entry empty state), project-card.tsx (data-engine-badge)
+- apps/web/src/app/p/[slug]/page.tsx ("IDEAVEN — <name>" metadata, engine
+  badge), apps/web/src/app/explore/layout.tsx (gallery metadata)
+- scripts/e2e-task65-product-coherence.mjs (49 checks — TASK 65 gate)
+- scripts/run-regressions-t65.mjs (29-suite regression sweep runner)
+- docs/TASK65_PRODUCT_COHERENCE.md + docs/STATUS.md section 72
 
 KNOWN HONEST LIMITS / QUEUED:
-- Extension components/methods/events are declared but unavailable at
-  runtime (warned at import, skipped honestly at runtime, flagged in
-  diagnostics and export). Real providers are a later phase.
-- Manifest dependencies stay informational (not package-resolved).
+- Landing sections predating TASK 65 remain English-first (new surfaces
+  are bilingual EN/ID); deep builder strings follow the existing roadmap.
 - e2e-community.mjs legacy drift (STATUS §68) — needs a rewrite task.
-- Mode strip left-aligns when overflowing (deliberate TASK 63 fix).
+- Extension components/methods/events remain declared-but-unavailable at
+  runtime (TASK 64 honesty surfaces).
+- /start checks the session client-side via the real auth provider.
 
 NEXT_TASK:
-STOP - awaiting explicit approval per the TASK 64 directive. Queued:
-TASK 65 onward.
+STOP - awaiting explicit approval per the TASK 65 directive. Queued:
+TASK 66 onward.

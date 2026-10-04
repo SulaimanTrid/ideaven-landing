@@ -8,8 +8,8 @@ import type { ProjectType } from "@/types/project";
 
 export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   app: "App",
-  game: "Game",
-  "3d": "3D Scene",
+  game: "2D Game",
+  "3d": "3D Game",
   website: "Website",
   backend: "Backend",
   api: "API",

@@ -7,6 +7,7 @@ import { useAuth } from "@/auth/auth-provider";
 import { FormAlert, SubmitButton } from "@/components/auth/form-alert";
 import { FormField, PasswordInput, TextInput } from "@/components/auth/form-field";
 import { ApiError } from "@/types/auth";
+import { safeNextPath } from "@/components/auth/login-form";
 import { useI18n, type TranslationKey } from "@/lib/i18n/i18n";
 
 /** Mirrors the backend's rules (apps/api/internal/auth/validate.go). */
@@ -91,7 +92,9 @@ export function RegisterForm() {
         password: form.password,
         displayName: form.displayName.trim() || undefined,
       });
-      router.replace("/dashboard");
+      // TASK 65: honor ?next= (the /start router sends creation intent here)
+      // so "Start 2D Game" continues into the hub after sign-up.
+      router.replace(safeNextPath(new URLSearchParams(window.location.search).get("next")));
     } catch (err) {
       if (err instanceof ApiError) {
         setFormError(err.message);

@@ -1,5 +1,6 @@
 import { Hero } from "@/components/hero/hero";
 import { CoreIdea } from "@/components/sections/core-idea";
+import { CreationPaths } from "@/components/sections/creation-paths";
 import { Journey } from "@/components/sections/journey";
 import { AiSection } from "@/components/sections/ai";
 import { Creations } from "@/components/sections/creations";
@@ -14,6 +15,7 @@ export default function HomePage() {
     <>
       <Hero />
       <CoreIdea />
+      <CreationPaths />
       <Journey />
       <AiSection />
       <Creations />

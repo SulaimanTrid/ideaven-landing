@@ -149,23 +149,52 @@ export function DashboardContent() {
 
               <p className="mt-8 text-lg font-medium">{t("dash.emptyTitle")}</p>
               <p className="mt-1 text-fog">Your next idea could start here.</p>
-              <ButtonLink href="/dashboard/projects/new" className="mt-6">
+              {/* TASK 65 §35: the three creation entries — all route through
+                  the ONE canonical hub (preselected via ?type=). */}
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                <ButtonLink href="/dashboard/projects/new?type=app" variant="secondary">
+                  {t("dash.emptyCreateApp")}
+                </ButtonLink>
+                <ButtonLink href="/dashboard/projects/new?type=game" variant="secondary">
+                  {t("dash.emptyCreateGame")}
+                </ButtonLink>
+                <ButtonLink href="/dashboard/projects/new?type=3d" variant="secondary">
+                  {t("dash.emptyCreate3d")}
+                </ButtonLink>
+              </div>
+              <ButtonLink href="/dashboard/projects/new" className="mt-3">
                 {t("dash.createFirst")}
               </ButtonLink>
             </div>
           )}
+        </section>
 
-          {!hasProjects && !recent.error ? (
-            <p className="mt-6 text-center text-[13px] text-mist">
-              Blocks, TypeScript, and a live preview — the editor arrives in the next phase.{" "}
-              <Link
-                href="/#journey"
-                className="underline underline-offset-4 hover:text-ink"
-              >
-                See the roadmap
-              </Link>
-            </p>
-          ) : null}
+        {/* TASK 65 §12: creation is primary; Learn / Templates / Community are
+            the secondary doors — real routes, no analytics-first dashboard. */}
+        <section aria-labelledby="start-here-heading" className="mt-12">
+          <h2 id="start-here-heading" className="text-[19px] font-semibold tracking-tight text-ink">
+            {t("dash.startHere")}
+          </h2>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="flex flex-col items-start gap-1.5 rounded-2xl border border-line bg-card p-4">
+              <ButtonLink href="/dashboard/templates" variant="secondary" size="sm">
+                {t("dash.templates")}
+              </ButtonLink>
+              <p className="text-[12.5px] leading-5 text-mist">{t("dash.templatesSub")}</p>
+            </div>
+            <div className="flex flex-col items-start gap-1.5 rounded-2xl border border-line bg-card p-4">
+              <ButtonLink href="/learn" variant="secondary" size="sm">
+                {t("nav.learn")}
+              </ButtonLink>
+              <p className="text-[12.5px] leading-5 text-mist">{t("dash.learnSub")}</p>
+            </div>
+            <div className="flex flex-col items-start gap-1.5 rounded-2xl border border-line bg-card p-4">
+              <ButtonLink href="/community" variant="secondary" size="sm">
+                {t("nav.community")}
+              </ButtonLink>
+              <p className="text-[12.5px] leading-5 text-mist">{t("dash.communitySub")}</p>
+            </div>
+          </div>
         </section>
 
         <section aria-labelledby="extensions-heading" className="mt-12">

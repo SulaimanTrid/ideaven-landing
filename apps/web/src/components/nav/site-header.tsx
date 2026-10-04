@@ -12,10 +12,11 @@ import { ThemeToggle } from "@/theme/theme-toggle";
 import { useAuth } from "@/auth/auth-provider";
 
 const NAV_LINKS = [
-  { labelKey: "nav.learn", href: "/#journey" },
-  { labelKey: "nav.explore", href: "/#explore" },
+  { labelKey: "nav.learn", href: "/learn" },
+  { labelKey: "nav.explore", href: "/explore" },
   { labelKey: "nav.community", href: "/community" },
   { labelKey: "nav.pricing", href: "/pricing" },
+  { labelKey: "nav.create", href: "/start" },
 ] as const;
 
 const USER_LINKS = [
@@ -122,64 +123,81 @@ export function SiteHeader() {
         <div className="hidden items-center gap-2 md:flex">
           <LanguageSwitcher compact />
           {authenticated ? (
-            <div ref={menuRef} className="relative">
-              <button
-                type="button"
-                aria-expanded={menuOpen}
-                aria-haspopup="menu"
-                aria-controls="user-menu"
-                aria-label="Account menu"
-                onClick={() => setMenuOpen((value) => !value)}
-                className="flex items-center gap-2 rounded-lg p-1 pr-2 transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
-              >
-                <Avatar
-                  displayName={user?.displayName ?? "?"}
-                  avatarUrl={user?.avatarUrl}
-                  size="sm"
-                />
-                <span className="max-w-32 truncate text-sm text-fog">
-                  {user?.displayName}
-                </span>
-              </button>
-              {menuOpen ? (
-                <div
-                  id="user-menu"
-                  role="menu"
-                  aria-label="Account"
-                  className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-xl border border-line bg-canvas shadow-xl shadow-black/40"
+            <>
+              {/* TASK 65 §34: the primary CTA flips to the workspace without
+                  removing discovery — the menu keeps everything else. */}
+              <ButtonLink size="sm" href="/dashboard">
+                {t("dash.home")}
+              </ButtonLink>
+              <div ref={menuRef} className="relative">
+                <button
+                  type="button"
+                  aria-expanded={menuOpen}
+                  aria-haspopup="menu"
+                  aria-controls="user-menu"
+                  aria-label="Account menu"
+                  onClick={() => setMenuOpen((value) => !value)}
+                  className="flex items-center gap-2 rounded-lg p-1 pr-2 transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
                 >
-                  <div className="border-b border-line px-4 py-3">
-                    <p className="truncate text-sm font-medium">{user?.displayName}</p>
-                    <p className="truncate text-[12px] text-mist">@{user?.username}</p>
-                  </div>
-                  <ul className="p-1.5">
-                    {USER_LINKS.map((link) => (
-                      <li key={link.href} role="none">
+                  <Avatar
+                    displayName={user?.displayName ?? "?"}
+                    avatarUrl={user?.avatarUrl}
+                    size="sm"
+                  />
+                  <span className="max-w-32 truncate text-sm text-fog">
+                    {user?.displayName}
+                  </span>
+                </button>
+                {menuOpen ? (
+                  <div
+                    id="user-menu"
+                    role="menu"
+                    aria-label="Account"
+                    className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-xl border border-line bg-canvas shadow-xl shadow-black/40"
+                  >
+                    <div className="border-b border-line px-4 py-3">
+                      <p className="truncate text-sm font-medium">{user?.displayName}</p>
+                      <p className="truncate text-[12px] text-mist">@{user?.username}</p>
+                    </div>
+                    <ul className="p-1.5">
+                      {USER_LINKS.map((link) => (
+                        <li key={link.href} role="none">
+                          <Link
+                            role="menuitem"
+                            href={link.href}
+                            onClick={() => setMenuOpen(false)}
+                            className="block rounded-lg px-3 py-2 text-sm text-fog transition-colors hover:bg-surface hover:text-ink"
+                          >
+                            {t(link.labelKey)}
+                          </Link>
+                        </li>
+                      ))}
+                      <li role="none">
                         <Link
                           role="menuitem"
-                          href={link.href}
+                          href="/dashboard/extensions"
                           onClick={() => setMenuOpen(false)}
                           className="block rounded-lg px-3 py-2 text-sm text-fog transition-colors hover:bg-surface hover:text-ink"
                         >
-                          {t(link.labelKey)}
+                          {t("dash.extensions")}
                         </Link>
                       </li>
-                    ))}
-                  </ul>
-                  <div className="border-t border-line p-1.5">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={handleSignOut}
-                      disabled={signingOut}
-                      className="block w-full rounded-lg px-3 py-2 text-left text-sm text-fog transition-colors hover:bg-surface hover:text-ink disabled:opacity-60"
-                    >
-                      {signingOut ? "Signing out…" : "Sign out"}
-                    </button>
+                    </ul>
+                    <div className="border-t border-line p-1.5">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={handleSignOut}
+                        disabled={signingOut}
+                        className="block w-full rounded-lg px-3 py-2 text-left text-sm text-fog transition-colors hover:bg-surface hover:text-ink disabled:opacity-60"
+                      >
+                        {signingOut ? "Signing out…" : "Sign out"}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </div>
+                ) : null}
+              </div>
+            </>
           ) : (
             <>
               <ButtonLink variant="ghost" size="sm" href="/login">

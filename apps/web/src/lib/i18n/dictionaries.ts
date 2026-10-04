@@ -18,6 +18,30 @@ export const dictionaries = {
     "nav.community": "Community",
     "nav.pricing": "Pricing",
     "nav.docs": "Docs",
+    "nav.create": "Create",
+
+    "landing.pathsKicker": "Three ways to create",
+    "landing.pathsTitle": "Pick the way that fits your idea.",
+    "landing.pathsLead":
+      "Applications, 2D games, and 3D worlds are three real engines with one workflow — every path opens the same builder flow and keeps its environment.",
+    "landing.pathAppTitle": "Application",
+    "landing.pathAppFor": "For tools, dashboards, and interactive references",
+    "landing.pathAppDesc":
+      "Compose real UI components, wire them with blocks or TypeScript, and preview on a real device frame.",
+    "landing.pathAppCta": "Start App",
+    "landing.pathGameTitle": "2D Game",
+    "landing.pathGameFor": "For platformers, arcade rounds, and little simulations",
+    "landing.pathGameDesc":
+      "Scenes, sprites, physics, tilemaps, animation, and effects — play it in the preview the moment it runs.",
+    "landing.pathGameCta": "Start 2D Game",
+    "landing.path3dTitle": "3D Game",
+    "landing.path3dFor": "For spatial worlds and first-person experiments",
+    "landing.path3dDesc":
+      "Real 3D objects, cameras, lighting, physics, and character control in an editor built for scenes.",
+    "landing.path3dCta": "Start 3D Game",
+    "landing.extensionsLine":
+      "And every path is extensible — publish your own blocks as extensions and they appear in your Blocks palette.",
+    "landing.extensionsLink": "Explore extensions",
 
     "dash.home": "Home",
     "dash.projects": "Projects",
@@ -39,6 +63,13 @@ export const dictionaries = {
     "dash.inPalette": "in your builder palette",
     "dash.published": "Published for everyone",
     "dash.onShelf": "on the public shelf",
+    "dash.startHere": "Start here",
+    "dash.templatesSub": "Ready-made projects built on the real model.",
+    "dash.learnSub": "Short lessons about the real editor.",
+    "dash.communitySub": "Ask questions and share what you built.",
+    "dash.emptyCreateApp": "Create Application",
+    "dash.emptyCreateGame": "Create 2D Game",
+    "dash.emptyCreate3d": "Create 3D Game",
 
     "builder.design": "Design",
     "builder.blocks": "Blocks",
@@ -392,11 +423,42 @@ export const dictionaries = {
     "nav.community": "Komunitas",
     "nav.pricing": "Harga",
     "nav.docs": "Dokumen",
+    "nav.create": "Buat",
+
+    "landing.pathsKicker": "Tiga cara mencipta",
+    "landing.pathsTitle": "Pilih cara yang cocok dengan idemu.",
+    "landing.pathsLead":
+      "Aplikasi, game 2D, dan dunia 3D adalah tiga engine nyata dengan satu alur kerja — setiap jalur membuka alur builder yang sama dan mempertahankan environment-nya.",
+    "landing.pathAppTitle": "Aplikasi",
+    "landing.pathAppFor": "Untuk alat kerja, dasbor, dan referensi interaktif",
+    "landing.pathAppDesc":
+      "Susun komponen UI nyata, hubungkan dengan blok atau TypeScript, dan pratinjau di frame perangkat sungguhan.",
+    "landing.pathAppCta": "Mulai Aplikasi",
+    "landing.pathGameTitle": "Game 2D",
+    "landing.pathGameFor": "Untuk platformer, ronde arcade, dan simulasi kecil",
+    "landing.pathGameDesc":
+      "Scene, sprite, fisika, tilemap, animasi, dan efek — mainkan di pratinjau begitu jalan.",
+    "landing.pathGameCta": "Mulai Game 2D",
+    "landing.path3dTitle": "Game 3D",
+    "landing.path3dFor": "Untuk dunia spasial dan eksperimen first-person",
+    "landing.path3dDesc":
+      "Objek 3D nyata, kamera, pencahayaan, fisika, dan kontrol karakter dalam editor yang dibangun untuk scene.",
+    "landing.path3dCta": "Mulai Game 3D",
+    "landing.extensionsLine":
+      "Dan setiap jalur bisa diperluas — terbitkan blok-blokmu sendiri sebagai ekstensi dan mereka muncul di palet Blok-mu.",
+    "landing.extensionsLink": "Jelajahi ekstensi",
 
     "dash.home": "Beranda",
     "dash.projects": "Proyek",
     "dash.templates": "Template",
     "dash.extensions": "Ekstensi",
+    "dash.startHere": "Mulai dari sini",
+    "dash.templatesSub": "Proyek jadi yang dibangun di atas model nyata.",
+    "dash.learnSub": "Pelajaran singkat tentang editor yang nyata.",
+    "dash.communitySub": "Bertanya dan bagikan hasil bangunanmu.",
+    "dash.emptyCreateApp": "Buat Aplikasi",
+    "dash.emptyCreateGame": "Buat Game 2D",
+    "dash.emptyCreate3d": "Buat Game 3D",
     "dash.settings": "Pengaturan",
     "dash.welcome": "Selamat datang kembali.",
     "dash.welcomeSub": "Apa yang akan kamu buat hari ini?",

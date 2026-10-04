@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { projectTypeLabel } from "@/lib/project-meta";
+import { engineIdentityLabel } from "@/lib/project-meta";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { API_BASE_URL, publicApi, type CommunityPost } from "@/lib/api";
@@ -47,9 +47,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params;
   const publication = await load(slug).catch(() => null);
   if (!publication) return { title: "Not published — Ideaven" };
+  // TASK 65 §31/§42: public-safe fields only (name, type, description).
+  const description =
+    publication.description || `An interactive ${engineIdentityLabel(publication.type)} built with Ideaven.`;
   return {
-    title: `${publication.name} — built with Ideaven`,
-    description: publication.description || `An interactive ${publication.type} built with Ideaven.`,
+    title: `IDEAVEN — ${publication.name}`,
+    description,
+    openGraph: {
+      title: `IDEAVEN — ${publication.name}`,
+      description,
+      type: "website",
+    },
   };
 }
 
@@ -77,7 +85,16 @@ export default async function PublishedProjectPage({ params }: PageProps) {
             <span className="rounded-full border border-violet/40 bg-violet/10 px-2.5 py-1 text-[11.5px] font-medium text-violet">
               Built with Ideaven
             </span>{" "}
-            · {projectTypeLabel(publication.type)} · by{" "}
+            ·{" "}
+            {/* TASK 65 §14: the same engine identity vocabulary as the
+                builder (APP / 2D GAME / 3D GAME). */}
+            <span
+              data-engine-badge={publication.type}
+              className="rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fog"
+            >
+              {engineIdentityLabel(publication.type)}
+            </span>{" "}
+            · by{" "}
             <Link
               href={`/creators/${publication.author}`}
               className="text-violet transition-colors hover:text-ink"

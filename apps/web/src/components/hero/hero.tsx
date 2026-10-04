@@ -52,8 +52,10 @@ export function Hero() {
                 {t("landing.startBuilding")}
                 <IconArrowRight size={16} />
               </ButtonLink>
-              <ButtonLink href="#explore" variant="secondary" size="lg">
-                Explore Ideaven
+              {/* TASK 65 §6/§37: "Explore" opens the REAL gallery, where every
+                  card runs and connects onward to creation. */}
+              <ButtonLink href="/explore" variant="secondary" size="lg">
+                Explore
               </ButtonLink>
             </div>
             <p className="mt-5 text-sm text-mist">
