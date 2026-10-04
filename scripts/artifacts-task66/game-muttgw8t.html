@@ -1,323 +1,12 @@
-﻿package project
-
-import (
-	"archive/zip"
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"regexp"
-	"strings"
-
-	"ideaven/apps/api/internal/httpx"
-)
-
-// Exports (roadmap 26/30â€“31): the model is interpreted by a self-contained
-// vanilla-JS runtime inlined into one HTML file. That file is the standalone
-// web export AND the asset an Android WebView project loads â€” one runtime,
-// two targets. The exported app runs the same block IR as the editor's
-// Preview, so what the owner tested is what visitors and the APK get.
-
-var slugSafe = regexp.MustCompile(`[^a-z0-9]+`)
-
-func exportFilename(slug, suffix string) string {
-	clean := strings.Trim(slugSafe.ReplaceAllString(strings.ToLower(slug), "-"), "-")
-	if clean == "" {
-		clean = "project"
-	}
-	return clean + suffix
-}
-
-func androidPackage(slug string) string {
-	clean := slugSafe.ReplaceAllString(strings.ToLower(slug), "")
-	if clean == "" {
-		clean = "project"
-	}
-	if len(clean) > 24 {
-		clean = clean[:24]
-	}
-	return "dev.ideaven.export." + clean
-}
-
-// validatedExportModel (TASK 66 Â§30): an export consumes the canonical model
-// and a FATAL validation failure must stop the export before any artifact is
-// produced - the response carries the real reason, never a broken download.
-func validatedExportModel(modelJSON []byte) (*Model, error) {
-	var model Model
-	if err := json.Unmarshal(modelJSON, &model); err != nil {
-		return nil, httpx.Errorf(http.StatusUnprocessableEntity, httpx.CodeValidation,
-			fmt.Sprintf("The project model could not be read (%s) - fix the project and try again.", err.Error()))
-	}
-	if err := ValidateModel(&model); err != nil {
-		return nil, httpx.Errorf(http.StatusUnprocessableEntity, httpx.CodeValidation,
-			fmt.Sprintf("Export validation failed: %s", err.Error()))
-	}
-	return &model, nil
-}
-
-// ExportHTML writes the standalone single-file web export.
-func (h *Handler) ExportHTML(w http.ResponseWriter, r *http.Request) {
-	current, err := h.currentUser(r)
-	if err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	project, err := h.service.Get(r.Context(), current.ID, r.PathValue("id"))
-	if err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	if _, err := validatedExportModel(project.Model); err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-
-	html, err := StandaloneHTML(project.Name, project.Model, requestBase(r))
-	if err != nil {
-		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal, "Could not build the export. Try again shortly."))
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", exportFilename(project.Slug, ".html")))
-	_, _ = w.Write(html)
-}
-
-// ExportAndroid writes a ready-to-build Android WebView project (zip):
-// open it in Android Studio or let the included GitHub Actions workflow
-// build an APK (assembleDebug) or an AAB (bundleDebug) â€” no local SDK
-// required for the workflow path. ?format=aab switches the configured task.
-func (h *Handler) ExportAndroid(w http.ResponseWriter, r *http.Request) {
-	current, err := h.currentUser(r)
-	if err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	project, err := h.service.Get(r.Context(), current.ID, r.PathValue("id"))
-	if err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	if _, err := validatedExportModel(project.Model); err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	format := r.URL.Query().Get("format")
-	if format != "apk" && format != "aab" {
-		format = "apk"
-	}
-
-	// No asset base for the WebView build: a phone cannot reach this server's
-	// local API, so stored images render as the honest placeholder.
-	html, err := StandaloneHTML(project.Name, project.Model, "")
-	if err != nil {
-		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal, "Could not build the export. Try again shortly."))
-		return
-	}
-
-	var buf bytes.Buffer
-	zipName := exportFilename(project.Slug, "-android-"+format+".zip")
-	if err := writeAndroidProject(&buf, project.Name, project.Slug, html, format); err != nil {
-		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal, "Could not build the Android project. Try again shortly."))
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", zipName))
-	_, _ = w.Write(buf.Bytes())
-}
-
-// StandaloneHTML inlines the model document and the vanilla runtime into one
-// HTML document.
-// requestBase derives the API origin the export should use for its own
-// stored assets (the project must stay published for them to resolve).
-func requestBase(r *http.Request) string {
-	if r.TLS != nil {
-		return "https://" + r.Host
-	}
-	return "http://" + r.Host
-}
-
-// exportManifest is the ONE canonical machine-readable manifest embedded in
-// every exported artifact (TASK 66 Â§31): what the artifact runs and what it
-// needs â€” no secrets, no session data, no local paths, no timestamps
-// (deterministic for the same project state, Â§32).
-type exportManifest struct {
-	Format        int      `json:"format"`
-	SchemaVersion int      `json:"schemaVersion"`
-	ProjectType   string   `json:"projectType"`
-	Runtime       string   `json:"runtime"`
-	Screens       int      `json:"screens"`
-	Assets        int      `json:"assets"`
-	Extensions    []string `json:"extensions"`
-	Capabilities  []string `json:"capabilities"`
-}
-
-var manifestEntityTypes = map[string]bool{
-	"player": true, "platform": true, "coin": true, "enemy": true,
-	"trigger": true, "sprite": true, "tilemap": true, "camera": true,
-}
-
-var manifest3DTypes = map[string]bool{
-	"cube3d": true, "sphere3d": true, "plane3d": true, "camera3d": true, "light3d": true,
-}
-
-// buildExportManifest derives the manifest from the canonical model JSON.
-// Unknown fields are ignored on purpose: the manifest describes what the
-// runtime consumes, never editor state (Â§50).
-func buildExportManifest(modelJSON []byte) []byte {
-	var model struct {
-		SchemaVersion int    `json:"schemaVersion"`
-		Type          string `json:"type"`
-		Screens       []struct {
-			Components []struct {
-				Type     string `json:"type"`
-				Children []struct {
-					Type string `json:"type"`
-				} `json:"children"`
-			} `json:"components"`
-			Logic *struct {
-				Handlers []struct {
-					Event       string           `json:"event"`
-					Body        []map[string]any `json:"body"`
-					ElseChildren []map[string]any `json:"elseChildren"`
-				} `json:"handlers"`
-			} `json:"logic"`
-		} `json:"screens"`
-		Assets []struct {
-			ID   string `json:"id"`
-			Kind string `json:"kind"`
-		} `json:"assets"`
-	}
-	manifest := exportManifest{
-		Format: 1, Runtime: "standalone-vanilla/2", ProjectType: "app",
-		Extensions: []string{}, Capabilities: []string{},
-	}
-	if err := json.Unmarshal(modelJSON, &model); err != nil {
-		// The model itself failed to parse â€” the manifest still records that
-		// honestly rather than inventing defaults.
-		manifest.Capabilities = append(manifest.Capabilities, "model:unparseable")
-		b, _ := json.Marshal(manifest)
-		return b
-	}
-	manifest.SchemaVersion = model.SchemaVersion
-	manifest.ProjectType = model.Type
-	manifest.Screens = len(model.Screens)
-	manifest.Assets = len(model.Assets)
-	extSet := map[string]bool{}
-	hasScene, has3D, hasUI, hasAudio, hasCanvas := false, false, false, false, false
-	var walkBlocks func(blocks []map[string]any)
-	walkBlocks = func(blocks []map[string]any) {
-		for _, b := range blocks {
-			if t, _ := b["type"].(string); t != "" {
-				if strings.HasPrefix(t, "ext:") {
-					if slug := strings.Split(strings.TrimPrefix(t, "ext:"), ":")[0]; slug != "" {
-						extSet[slug] = true
-					}
-				}
-				switch t {
-				case "play-sound", "stop-sound":
-					hasAudio = true
-				case "canvas-clear", "canvas-draw-circle":
-					hasCanvas = true
-				}
-			}
-			if children, ok := b["children"].([]any); ok {
-				next := []map[string]any{}
-				for _, c := range children {
-					if m, ok := c.(map[string]any); ok {
-						next = append(next, m)
-					}
-				}
-				walkBlocks(next)
-			}
-			if children, ok := b["elseChildren"].([]any); ok {
-				next := []map[string]any{}
-				for _, c := range children {
-					if m, ok := c.(map[string]any); ok {
-						next = append(next, m)
-					}
-				}
-				walkBlocks(next)
-			}
-		}
-	}
-	for _, screen := range model.Screens {
-		for _, component := range screen.Components {
-			if manifestEntityTypes[component.Type] {
-				hasScene = true
-			}
-			if manifest3DTypes[component.Type] {
-				has3D = true
-			}
-			switch component.Type {
-			case "text", "button", "icon", "image", "text-input", "password-input",
-				"checkbox", "switch", "listview", "notifier", "canvas":
-				hasUI = true
-			case "sound":
-				hasAudio = true
-			}
-			for _, child := range component.Children {
-				if manifestEntityTypes[child.Type] {
-					hasScene = true
-				}
-				if manifest3DTypes[child.Type] {
-					has3D = true
-				}
-			}
-		}
-		if screen.Logic != nil {
-			for _, handler := range screen.Logic.Handlers {
-				walkBlocks(handler.Body)
-				walkBlocks(handler.ElseChildren)
-			}
-		}
-	}
-	manifest.Capabilities = append(manifest.Capabilities,
-		"app-ui", "scene-2d", "scene-3d", "audio", "canvas-draw", "extensions")
-	for slug := range extSet {
-		manifest.Extensions = append(manifest.Extensions, slug)
-	}
-	sortStrings(manifest.Extensions)
-	if hasUI {
-		manifest.Capabilities = append(manifest.Capabilities, "app-ui")
-	}
-	if hasScene {
-		manifest.Capabilities = append(manifest.Capabilities, "scene-2d")
-	}
-	if has3D {
-		manifest.Capabilities = append(manifest.Capabilities, "scene-3d")
-	}
-	if hasAudio {
-		manifest.Capabilities = append(manifest.Capabilities, "audio")
-	}
-	if hasCanvas {
-		manifest.Capabilities = append(manifest.Capabilities, "canvas-draw")
-	}
-	if len(extSet) > 0 {
-		manifest.Capabilities = append(manifest.Capabilities, "extensions")
-	}
-	b, err := json.Marshal(manifest)
-	if err != nil {
-		return []byte(`{"format":1,"runtime":"standalone-vanilla/2"}`)
-	}
-	return b
-}
-
-func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, error) {
-	// "</" inside the JSON could close the script tag early; escape it.
-	safeModel := bytes.ReplaceAll(modelJSON, []byte("</"), []byte(`<\/`))
-	safeManifest := bytes.ReplaceAll(buildExportManifest(modelJSON), []byte("</"), []byte(`<\/`))
-
-	page := fmt.Sprintf(`<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>%s â€” Ideaven export</title>
+<title>Parity Runner muttgw8t â€” Ideaven export</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%%; background: #0a0c12; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  html, body { height: 100%; background: #0a0c12; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   body { display: flex; flex-direction: column; align-items: center; }
   #stage { width: 390px; max-width: 100vw; height: 844px; max-height: 100vh; background: #fff;
            overflow: hidden; position: relative; border-radius: 24px; margin: 16px 0; }
@@ -328,15 +17,15 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
 </style>
 </head>
 <body>
-<div id="stage"><div id="root" style="display:flex;flex-direction:column;min-height:100%%;width:100%%"></div></div>
+<div id="stage"><div id="root" style="display:flex;flex-direction:column;min-height:100%;width:100%"></div></div>
 <div id="toast" role="status"></div>
-<script type="application/json" id="ideaven-model">%s</script>
-<script type="application/json" id="ideaven-manifest">%s</script>
+<script type="application/json" id="ideaven-model">{"type": "game", "assets": [], "screens": [{"id": "screen-scene-1", "name": "Scene 1", "components": [{"id": "e-player", "type": "player", "props": {"x": 60, "y": 200, "name": "Player", "color": "#46e3b4", "width": 36, "height": 36, "visible": true, "collider": true}}, {"id": "e-platform", "type": "platform", "props": {"x": 0, "y": 420, "name": "Ground", "color": "#2a3348", "width": 390, "height": 40, "visible": true, "collider": true}}, {"id": "e-coin", "type": "coin", "props": {"x": 220, "y": 380, "name": "Coin", "color": "#ffd970", "width": 28, "height": 28, "trigger": true, "visible": true}}, {"id": "e-tiles", "type": "tilemap", "props": {"x": 0, "y": 700, "cols": 10, "name": "Terrain", "rows": 3, "tiles": "0,0:1;1,0:1;2,0:1", "width": 320, "height": 96, "palette": "1:#2a3348;2:#46e3b4:pass", "visible": true, "cellSize": 32, "collider": true}}, {"id": "e-cam", "type": "camera", "props": {"x": 0, "y": 0, "name": "Camera", "width": 390, "height": 844, "followTarget": "e-player", "followEnabled": true}}], "inputActions": [{"id": "move-left", "keys": ["arrowleft", "a"], "name": "Move left", "enabled": true}, {"id": "move-right", "keys": ["arrowright", "d"], "name": "Move right", "enabled": true}, {"id": "jump", "keys": ["arrowup", "w", " "], "name": "Jump", "enabled": true}]}], "settings": {"theme": "light"}, "variables": [], "navigation": {"startScreenId": "screen-scene-1"}, "schemaVersion": 1}</script>
+<script type="application/json" id="ideaven-manifest">{"format":1,"schemaVersion":1,"projectType":"game","runtime":"standalone-vanilla/2","screens":1,"assets":0,"extensions":[],"capabilities":["app-ui","scene-2d","scene-3d","audio","canvas-draw","extensions","scene-2d"]}</script>
 <script>
 (function () {
   "use strict";
   var model = JSON.parse(document.getElementById("ideaven-model").textContent);
-  var ASSET_BASE = %q;
+  var ASSET_BASE = "http://localhost:8090";
 
   // ---- state -----------------------------------------------------------------
   var variables = {};
@@ -890,7 +579,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
   function clipFrameIndex(clip, elapsed) {
     if (!clip.frames.length) return 0;
     var index = Math.floor(Math.max(0, elapsed) * clip.fps);
-    return clip.loop ? index %% clip.frames.length : Math.min(index, clip.frames.length - 1);
+    return clip.loop ? index % clip.frames.length : Math.min(index, clip.frames.length - 1);
   }
   function clipCompleted(clip, elapsed) {
     return !clip.loop && clip.frames.length > 0 && Math.floor(Math.max(0, elapsed) * clip.fps) >= clip.frames.length;
@@ -1132,12 +821,12 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       if (typeof props.rotation === "number" && props.rotation) transform = "rotate(" + props.rotation + "deg)";
       if (flips) transform += flips;
       if (transform) el.style.transform = transform;
-      el.style.transformOrigin = (pivotX * 100) + "%% " + (pivotY * 100) + "%%";
+      el.style.transformOrigin = (pivotX * 100) + "% " + (pivotY * 100) + "%";
       var animClip0 = activeAnimOf(props);
       var hasTex = (typeof props.src === "string" && props.src.trim() !== "") || (animClip0 && animClip0.frames.length > 0);
       if (hasTex) {
         var tex = document.createElement("img");
-        tex.style.cssText = "width:100%%;height:100%%;object-fit:fill;image-rendering:pixelated;pointer-events:none";
+        tex.style.cssText = "width:100%;height:100%;object-fit:fill;image-rendering:pixelated;pointer-events:none";
         tex.alt = "";
         var ref0 = animClip0 && animClip0.frames.length ? animClip0.frames[0] : props.src.trim();
         tex.src = ref0.indexOf("asset:") === 0 ? assetSrc(ref0) : ref0;
@@ -1158,7 +847,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
           el.style.boxShadow = "inset 0 2px 0 rgb(255 255 255 / .12)";
           break;
         case "coin":
-          el.style.borderRadius = "50%%"; el.style.background = color;
+          el.style.borderRadius = "50%"; el.style.background = color;
           el.style.boxShadow = "inset -3px -3px 0 rgb(0 0 0 / .28)";
           break;
         case "enemy":
@@ -1256,7 +945,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
         if (l.intensity <= 0) return;
         var glow = document.createElement("div");
         glow.setAttribute("data-light-point", l.id);
-        glow.style.cssText = "position:absolute;border-radius:50%%;mix-blend-mode:screen;opacity:" + Math.min(1, l.intensity) + ";background:radial-gradient(circle, " + l.color + " 0%%, rgba(0,0,0,0) 72%%)";
+        glow.style.cssText = "position:absolute;border-radius:50%;mix-blend-mode:screen;opacity:" + Math.min(1, l.intensity) + ";background:radial-gradient(circle, " + l.color + " 0%, rgba(0,0,0,0) 72%)";
         glow.style.left = (l.cx - l.radius - camInit.x) + "px";
         glow.style.top = (l.cy - l.radius - camInit.y) + "px";
         glow.style.width = (l.radius * 2) + "px";
@@ -1426,7 +1115,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
       machine.values["isGrounded"] = isPlayerEntity && pbody ? pbody.grounded : true;
       var total = st3.clip.frames.length / Math.max(1, st3.clip.fps);
       var rawProgress = total > 0 ? st3.elapsed / total : 1;
-      var progress = st3.clip.loop && rawProgress >= 1 ? rawProgress %% 1 : Math.min(rawProgress, 1);
+      var progress = st3.clip.loop && rawProgress >= 1 ? rawProgress % 1 : Math.min(rawProgress, 1);
       var taken = evaluateAnimatorTransitions(machine.def, machine.values, machine.currentId, progress);
       if (taken) {
         var target = null;
@@ -1678,7 +1367,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
           var rowBtn = document.createElement("button");
           rowBtn.type = "button";
           rowBtn.textContent = item;
-          rowBtn.style.cssText = "display:block;width:100%%;text-align:left;padding:10px 12px;cursor:pointer;color:#0b0e16;font-size:inherit;background:" + (item === props.selection ? "#efecff" : "transparent") + ";border:none;" + (i === 0 ? "" : "border-top:1px solid #eef0f4;");
+          rowBtn.style.cssText = "display:block;width:100%;text-align:left;padding:10px 12px;cursor:pointer;color:#0b0e16;font-size:inherit;background:" + (item === props.selection ? "#efecff" : "transparent") + ";border:none;" + (i === 0 ? "" : "border-top:1px solid #eef0f4;");
           rowBtn.addEventListener("click", function () {
             componentProps[node.id].selection = item;
             emit(node.id, "itemClick");
@@ -1692,7 +1381,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
         cv.setAttribute("data-canvas", "1");
         cv.width = 390; cv.height = typeof styles.height === "number" ? styles.height : 220;
         applyCSS(cv, styles);
-        cv.style.width = "100%%"; cv.style.display = "block"; cv.style.touchAction = "none";
+        cv.style.width = "100%"; cv.style.display = "block"; cv.style.touchAction = "none";
         var cctx = cv.getContext("2d");
         cctx.fillStyle = typeof props.background === "string" ? props.background : "#ffffff";
         cctx.fillRect(0, 0, cv.width, cv.height);
@@ -2253,7 +1942,7 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
     var canvas = document.createElement("canvas");
     canvas.setAttribute("data-3d-canvas", "true");
     canvas.width = 390; canvas.height = 844;
-    canvas.style.cssText = "width:100%%;height:100%%;display:block";
+    canvas.style.cssText = "width:100%;height:100%;display:block";
     root.style.background = "#0c0f17";
     root.appendChild(canvas);
     var ctx = canvas.getContext("2d");
@@ -2647,263 +2336,3 @@ func StandaloneHTML(name string, modelJSON []byte, assetBase string) ([]byte, er
 </script>
 </body>
 </html>
-`, name, safeModel, safeManifest, assetBase)
-	return []byte(page), nil
-}
-
-// writeAndroidProject assembles the zip: Gradle Kotlin WebView shell whose
-// asset/index.html is the standalone export. The included GitHub Actions
-// workflow builds a debug APK without any local Android SDK.
-func writeAndroidProject(buf *bytes.Buffer, name, slug string, html []byte, format string) error {
-	pkg := androidPackage(slug)
-	projPath := "app/src/main"
-	files := map[string][]byte{
-		"settings.gradle.kts": []byte(`pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-dependencyResolutionManagement { repositories { google(); mavenCentral() } }
-rootProject.name = "ideaven-export"
-include(":app")
-`),
-		"build.gradle.kts": []byte(`plugins { id("com.android.application") version "8.5.2" apply false; id("org.jetbrains.kotlin.android") version "2.0.0" apply false }
-`),
-		"gradle.properties": []byte("org.gradle.jvmargs=-Xmx2048m\nandroid.useAndroidX=true\n"),
-		"app/build.gradle.kts": []byte(fmt.Sprintf(`plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
-
-android {
-    namespace = "%[1]s"
-    compileSdk = 34
-    defaultConfig {
-        applicationId = "%[1]s"
-        minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-    }
-    buildTypes { release { isMinifyEnabled = false } }
-    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-    kotlinOptions { jvmTarget = "17" }
-}
-
-dependencies { implementation("androidx.appcompat:appcompat:1.7.0") }
-`, pkg)),
-		projPath + "/AndroidManifest.xml": []byte(fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="%s" android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>
-`, name)),
-		projPath + "/java/" + strings.ReplaceAll(pkg, ".", "/") + "/MainActivity.kt": []byte(fmt.Sprintf(`package %s
-
-import android.os.Bundle
-import android.webkit.WebView
-import androidx.appcompat.app.AppCompatActivity
-
-/** Ideaven export: the standalone runtime runs in a local WebView asset. */
-class MainActivity : AppCompatActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val webView = WebView(this)
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        setContentView(webView)
-        webView.loadUrl("file:///android_asset/index.html")
-    }
-}
-`, pkg)),
-		"app/src/main/assets/index.html": html,
-		"app/src/main/res/values/styles.xml": []byte(`<?xml version="1.0" encoding="utf-8"?>
-<resources></resources>
-`),
-		"README.md":                           []byte(androidReadme(name, format)),
-		".github/workflows/build-android.yml": []byte(androidWorkflow(format)),
-	}
-
-	zw := zip.NewWriter(buf)
-	names := []string{}
-	for fileName := range files {
-		names = append(names, fileName)
-	}
-	sortStrings(names)
-	for _, fileName := range names {
-		w, err := zw.Create(fileName)
-		if err != nil {
-			return err
-		}
-		if _, err := w.Write(files[fileName]); err != nil {
-			return err
-		}
-	}
-	return zw.Close()
-}
-
-// androidReadme documents the chosen target honestly: the zip is a
-// ready-to-build project; the actual APK/AAB compilation happens in Android
-// Studio, on the command line with an SDK, or in the included CI workflow.
-func androidReadme(name, format string) string {
-	bt := "`" // markdown code tick
-	if format == "aab" {
-		return fmt.Sprintf("# %s \u2014 Ideaven Android export (AAB)\n\n"+
-			"The app runs from %sapp/src/main/assets/index.html%s inside a WebView.\n\n"+
-			"## Build the AAB (Play Store bundle)\n\n"+
-			"This project is preconfigured for %sbundleDebug%s.\n\n"+
-			"- **CI (no local SDK):** push to GitHub \u2014 %s.github/workflows/build-android.yml%s uploads the bundle artifact on every push.\n"+
-			"- **Android Studio:** open this folder, then Build \u2192 Generate Signed Bundle.\n"+
-			"- **Command line (SDK installed):** %sgradle bundleDebug%s \u2014 output at %sapp/build/outputs/bundle/debug/%s.\n",
-			name, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt)
-	}
-	return fmt.Sprintf("# %s \u2014 Ideaven Android export (APK)\n\n"+
-		"The app runs from %sapp/src/main/assets/index.html%s inside a WebView.\n\n"+
-		"## Build the APK\n\n"+
-		"This project is preconfigured for %sassembleDebug%s.\n\n"+
-		"- **CI (no local SDK):** push to GitHub \u2014 %s.github/workflows/build-android.yml%s builds %sapp-debug.apk%s on every push and uploads it as an artifact.\n"+
-		"- **Android Studio:** open this folder and Run.\n"+
-		"- **Command line (SDK installed):** %sgradle assembleDebug%s \u2014 output at %sapp/build/outputs/apk/debug/%s.\n\n"+
-		"Prefer a Play Store bundle? Re-export with the AAB option (or run %sgradle bundleDebug%s).\n",
-		name, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt, bt)
-}
-
-func androidWorkflow(format string) string {
-	task, artifactPath, artifactName := "assembleDebug", "app/build/outputs/apk/debug/app-debug.apk", "app-debug"
-	if format == "aab" {
-		task, artifactPath, artifactName = "bundleDebug", "app/build/outputs/bundle/debug/app-debug.aab", "app-bundle"
-	}
-	return fmt.Sprintf(`name: build-android
-on: [push]
-jobs:
-  android:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: "17" }
-      - uses: gradle/actions/setup-gradle@v3
-      - run: gradle %[1]s
-      - uses: actions/upload-artifact@v4
-        with:
-          name: %[3]s
-          path: %[2]s
-`, task, artifactPath, artifactName)
-}
-
-// ExportWindows writes an Electron wrapper project (zip) around the same
-// standalone runtime. Compilation to a signed .exe needs a desktop OS with
-// Node â€” the project is ready for `npm install && npm run dist` there; this
-// server does not pretend to emit Windows binaries.
-func (h *Handler) ExportWindows(w http.ResponseWriter, r *http.Request) {
-	current, err := h.currentUser(r)
-	if err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	project, err := h.service.Get(r.Context(), current.ID, r.PathValue("id"))
-	if err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	if _, err := validatedExportModel(project.Model); err != nil {
-		httpx.WriteError(w, err)
-		return
-	}
-	html, err := StandaloneHTML(project.Name, project.Model, "")
-	if err != nil {
-		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal, "Could not build the export. Try again shortly."))
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := writeWindowsProject(&buf, project.Name, html); err != nil {
-		httpx.WriteError(w, httpx.Errorf(http.StatusInternalServerError, httpx.CodeInternal, "Could not build the Windows project. Try again shortly."))
-		return
-	}
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", exportFilename(project.Slug, "-windows.zip")))
-	_, _ = w.Write(buf.Bytes())
-}
-
-func writeWindowsProject(buf *bytes.Buffer, name string, html []byte) error {
-	files := map[string][]byte{
-		"package.json": []byte(fmt.Sprintf(`{
-  "name": "ideaven-export",
-  "productName": %[1]q,
-  "version": "1.0.0",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "dist": "electron-builder --win portable"
-  },
-  "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
-  },
-  "build": {
-    "appId": "dev.ideaven.export",
-    "files": ["main.js", "app/**"],
-    "win": { "target": ["portable"] }
-  }
-}
-`, name)),
-		"main.js": []byte(`const { app, BrowserWindow } = require("electron");
-const path = require("path");
-
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 420,
-    height: 900,
-    autoHideMenuBar: true,
-    backgroundColor: "#0a0c12",
-  });
-  win.removeMenu();
-  win.loadFile(path.join(__dirname, "app", "index.html"));
-}
-
-app.whenReady().then(createWindow);
-app.on("window-all-closed", () => app.quit());
-`),
-		"app/index.html": html,
-		"README.md": []byte(fmt.Sprintf(`# %[1]s â€” Ideaven Windows export
-
-A ready-to-build Electron project wrapping the standalone runtime.
-
-## Build the .exe (needs a desktop OS with Node.js installed)
-
-1. Install Node.js 18+ (on Windows or macOS/Linux).
-2. In this folder: `+"`npm install`"+`
-3. `+"`npm run dist`"+` â€” electron-builder produces a portable .exe under `+"`dist/`"+`.
-
-Ideaven does not compile Windows binaries on its server â€” this project is
-the honest, buildable path to one.
-`, name)),
-	}
-
-	zw := zip.NewWriter(buf)
-	names := []string{}
-	for fileName := range files {
-		names = append(names, fileName)
-	}
-	sortStrings(names)
-	for _, fileName := range names {
-		w, err := zw.Create(fileName)
-		if err != nil {
-			return err
-		}
-		if _, err := w.Write(files[fileName]); err != nil {
-			return err
-		}
-	}
-	return zw.Close()
-}
-
-func sortStrings(items []string) {
-	for i := 1; i < len(items); i++ {
-		for j := i; j > 0 && items[j] < items[j-1]; j-- {
-			items[j], items[j-1] = items[j-1], items[j]
-		}
-	}
-}
-
-var _ = context.Background

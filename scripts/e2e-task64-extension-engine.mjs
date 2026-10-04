@@ -312,11 +312,25 @@ await page.setViewportSize({ width: 1440, height: 950 });
   // Explore is the default shelf: published means public, so the extension
   // installed above appears here with an honest "In your palette" marker
   // (no second install path, no invented install counts).
-  const exploreCard = page.locator("li").filter({ hasText: "Weather Beacon" }).first();
+  // The public Explore shelf lists EVERYONE's published extensions — past
+  // runs left other users' "Weather Beacon" cards, so scope to THIS run's
+  // creator handle (globally unique username).
+  const exploreCard = page
+    .locator("li")
+    .filter({ hasText: `t64${stamp}` })
+    .filter({ hasText: "Weather Beacon" })
+    .first();
   check("K1: the published extension appears on the public Explore shelf",
     (await exploreCard.count()) >= 1);
+  // The marker appears once the installed list settles (race-proof): the
+  // extension IS installed, so "In your palette" MUST show up.
+  const markerShown = await exploreCard
+    .getByText("In your palette")
+    .waitFor({ timeout: 6000 })
+    .then(() => true)
+    .catch(() => false);
   check("K2: Explore marks it honestly as already in the palette",
-    /In your palette/i.test((await exploreCard.textContent()) ?? ""));
+    markerShown && /In your palette/i.test((await exploreCard.textContent()) ?? ""));
 }
 
 // ---- L. Builder diagnostics surface extension references honestly ------------------------

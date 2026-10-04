@@ -5,6 +5,7 @@ import { createRuntime, screenOf, type ScreenRuntime } from "@/lib/project-model
 import { RuntimeNode } from "@/components/runtime/runtime-node";
 import { SceneStage } from "@/components/runtime/scene-stage";
 import { Viewport3D } from "@/components/runtime/viewport-3d";
+import { RuntimeBoundary } from "@/components/runtime/runtime-error-boundary";
 import { ViewportFrame } from "@/components/builder/viewport";
 import { isSceneScreen } from "@/lib/project-model/scene";
 import type { ProjectModel, PropsMap } from "@/types/project";
@@ -24,6 +25,8 @@ export function LiveApp({ model }: { model: ProjectModel }) {
   const toastTimer = useRef<number | null>(null);
   const [, setTick] = useState(0);
   const [runId, setRunId] = useState(0);
+  // TASK 66 §36/§44: the real published-run state, shown honestly.
+  const [runError, setRunError] = useState<string | null>(null);
   const runtimeRef = useRef<ScreenRuntime | null>(null);
   const canvasesRef = useRef(new Map<string, HTMLCanvasElement>());
 
@@ -36,12 +39,21 @@ export function LiveApp({ model }: { model: ProjectModel }) {
   const start = useCallback(() => {
     runtimeRef.current?.dispose();
     const startScreen = model.navigation.startScreenId || model.screens[0]?.id || "";
-    runtimeRef.current = createRuntime(model, startScreen, {
-      onMessage: showToast,
-      onNavigate: (id) => setScreenId(id),
-      onUpdate: () => setTick((t) => t + 1),
-      canvases: canvasesRef.current,
-    });
+    try {
+      runtimeRef.current = createRuntime(model, startScreen, {
+        onMessage: showToast,
+        onNavigate: (id) => setScreenId(id),
+        onUpdate: () => setTick((t) => t + 1),
+        canvases: canvasesRef.current,
+      });
+    } catch (err) {
+      // TASK 66 §36: a published runtime that cannot start shows the actual
+      // reason — never a blank page pretending success.
+      setRunError(err instanceof Error ? err.message : String(err));
+      setRunId((r) => r + 1);
+      return;
+    }
+    setRunError(null);
     setScreenId(startScreen);
     setRunId((r) => r + 1);
     setTick((t) => t + 1);
@@ -90,7 +102,11 @@ export function LiveApp({ model }: { model: ProjectModel }) {
         settings={{ device: "phone", orientation: "portrait", safeArea: model.settings.preview?.safeArea }}
         className="max-w-full"
       >
+      {/* TASK 66 §37: the same runtime boundary the builder uses — a fault in
+          one published project never takes the page down unhandled. */}
+      <RuntimeBoundary key={runId} surface="Published" onRetry={start}>
       <div
+        data-runtime-state={runError ? "failed" : "running"}
         className="relative overflow-hidden text-[#0b0e16]"
         style={{
           width: 390,
@@ -138,6 +154,17 @@ export function LiveApp({ model }: { model: ProjectModel }) {
           </div>
         )}
 
+        {runError ? (
+          <div
+            role="alert"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0c0f17] p-6 text-center"
+          >
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-rose">Runtime failed</p>
+            <p className="max-w-[300px] text-[13px] leading-5 text-fog">
+              The published app could not start: {runError}
+            </p>
+          </div>
+        ) : null}
         {toast ? (
           <div
             role="status"
@@ -148,6 +175,7 @@ export function LiveApp({ model }: { model: ProjectModel }) {
           </div>
         ) : null}
       </div>
+      </RuntimeBoundary>
       </ViewportFrame>
     </div>
   );

@@ -5,6 +5,7 @@ import { projectPackageUrl, projectApi } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/i18n";
 import { useBuilder } from "./builder-context";
 import { getAnyBlockDef } from "@/lib/project-model/block-registry";
+import { EXPORT_TARGET_NOTES } from "@/lib/capabilities";
 import { IconClose } from "@/components/visuals/icons";
 
 /**
@@ -252,6 +253,24 @@ export function ExportButton() {
       const blob = new Blob(chunks, {
         type: target.id === "web" ? "text/html" : "application/zip",
       });
+      // TASK 66 §46: verify the artifact BEFORE declaring success — an HTML
+      // export starts with a doctype, a zip with the PK magic. A wrong body
+      // is a FAILED build, never a fake download.
+      const headBytes = chunks[0] instanceof ArrayBuffer ? new Uint8Array((chunks[0] as ArrayBuffer).slice(0, 16)) : new Uint8Array(0);
+      const magic = String.fromCharCode(...Array.from(headBytes.subarray(0, 8)));
+      const expectedHtml = /^\s*<!DOCTYPE|^\s*<html|^\s*<\?xml/i.test(magic) || magic.startsWith("<");
+      const expectedZip = magic.startsWith("PK");
+      const artifactOk = target.id === "web" ? expectedHtml : expectedZip;
+      if (!artifactOk || blob.size === 0) {
+        setStage("package", "failed");
+        setFailed(true);
+        setIssues((current) => [
+          ...(current ?? []),
+          { severity: "error", message: `The artifact did not pass verification (received ${blob.size} bytes, expected a valid ${target.id === "web" ? "HTML document" : "zip archive"}). Nothing was offered for download.` },
+        ]);
+        window.dispatchEvent(new CustomEvent("ideaven:open-diagnostics"));
+        return;
+      }
       setStage("package", "done");
       const objectUrl = URL.createObjectURL(blob);
       objectUrlRef.current = objectUrl;
@@ -343,11 +362,21 @@ export function ExportButton() {
                 setActiveTarget(null);
                 setFailed(false);
               }}
-              className="rounded-md p-1 text-mist transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-mint"
+              className="rounded-md p-1 text-mist transition-colors hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
             >
               <IconClose size={13} />
             </button>
           </div>
+
+          {/* TASK 66 §48: honest per-target capability notes from THE matrix —
+              a target never silently drops a capability it cannot run. */}
+          {(EXPORT_TARGET_NOTES[activeTarget.id] ?? []).length > 0 ? (
+            <ul className="mt-2 flex flex-col gap-1 rounded-lg border border-amber/30 bg-amber/[0.06] p-2.5 text-[11.5px] leading-4 text-amber">
+              {(EXPORT_TARGET_NOTES[activeTarget.id] ?? []).map((note) => (
+                <li key={note}>• {note}</li>
+              ))}
+            </ul>
+          ) : null}
 
           <ol className="mt-3 flex flex-col gap-2.5">
             {stages.map((stage, index) => (

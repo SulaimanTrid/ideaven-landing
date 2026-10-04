@@ -6,6 +6,7 @@ import { createRuntime, screenOf, type ScreenRuntime } from "@/lib/project-model
 import { RuntimeNode } from "@/components/runtime/runtime-node";
 import { SceneStage } from "@/components/runtime/scene-stage";
 import { Viewport3D } from "@/components/runtime/viewport-3d";
+import { RuntimeBoundary } from "@/components/runtime/runtime-error-boundary";
 import { viewportSize, ViewportFrame, type ViewportDevice, type ViewportOrientation } from "@/components/builder/viewport";
 import { isSceneScreen } from "@/lib/project-model/scene";
 import { useI18n } from "@/lib/i18n/i18n";
@@ -49,6 +50,9 @@ export function PreviewMode() {
   const [runId, setRunId] = useState(0);
   const [trace, setTrace] = useState<string[]>([]);
   const [traceOpen, setTraceOpen] = useState(false);
+  // TASK 66 §44: the real run state — RUNNING while the runtime is live,
+  // FAILED when it could not start or crashed at the boundary. Never faked.
+  const [runError, setRunError] = useState<string | null>(null);
 
   const persistViewport = (patch: {
     device?: ViewportDevice;
@@ -74,14 +78,27 @@ export function PreviewMode() {
   const start = useCallback(() => {
     runtimeRef.current?.dispose();
     const startScreen = model.navigation.startScreenId || model.screens[0]?.id || "";
-    runtimeRef.current = createRuntime(model, startScreen, {
-      onMessage: showToast,
-      onNavigate: (id) => setScreenId(id),
-      projectId: project.id,
-      onUpdate: () => setTick((t) => t + 1),
-      canvases: canvasesRef.current,
-      onTrace: pushTrace,
-    });
+    try {
+      runtimeRef.current = createRuntime(model, startScreen, {
+        onMessage: showToast,
+        onNavigate: (id) => setScreenId(id),
+        projectId: project.id,
+        onUpdate: () => setTick((t) => t + 1),
+        canvases: canvasesRef.current,
+        onTrace: pushTrace,
+      });
+    } catch (err) {
+      // TASK 66 §36/§37: a runtime that cannot start is reported honestly —
+      // FAILED state, a real trace line, and the diagnostics drawer opens.
+      const message = err instanceof Error ? err.message : String(err);
+      setRunError(message);
+      pushTrace(`ERROR runtime could not start: ${message}`);
+      window.dispatchEvent(new CustomEvent("ideaven:open-diagnostics"));
+      setRunId((r) => r + 1);
+      setTick((t) => t + 1);
+      return;
+    }
+    setRunError(null);
     setTrace([]);
     setScreenId(startScreen);
     setRunId((r) => r + 1);
@@ -214,6 +231,16 @@ export function PreviewMode() {
           <span className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] text-mist">
             {screen?.name ?? "—"}
           </span>
+          {/* TASK 66 §44: the actual runtime state — RUNNING (live run) or
+              FAILED (could not start / crashed). Never a fake status. */}
+          <span
+            data-preview-state={runError ? "failed" : "running"}
+            className={`rounded-md border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] ${
+              runError ? "border-rose/40 bg-rose/10 text-rose" : "border-mint/40 bg-mint/10 text-mint"
+            }`}
+          >
+            {runError ? "FAILED" : "RUNNING"}
+          </span>
           {device === "custom" ? (
             <span className="flex items-center gap-1 text-[11px] text-mist">
               <input
@@ -291,6 +318,17 @@ export function PreviewMode() {
           style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}
         >
           <ViewportFrame kind={isScene ? "game" : "app"} settings={viewportSettings}>
+          {/* TASK 66 §37: runtime faults are caught at THIS boundary — the
+              Builder shell survives, the failure is honest and retriable. */}
+          <RuntimeBoundary
+            key={runId}
+            surface="Preview"
+            onRuntimeError={(message) => {
+              pushTrace(`ERROR runtime fault: ${message}`);
+              window.dispatchEvent(new CustomEvent("ideaven:open-diagnostics"));
+            }}
+            onRetry={start}
+          >
           <div
             className="relative overflow-hidden text-[#0b0e16]"
             style={{
@@ -352,6 +390,7 @@ export function PreviewMode() {
               </div>
             ) : null}
           </div>
+          </RuntimeBoundary>
           </ViewportFrame>
         </div>
       </div>

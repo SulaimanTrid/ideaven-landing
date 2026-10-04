@@ -4473,3 +4473,101 @@ existing primitives. Full record in docs/TASK65_PRODUCT_COHERENCE.md.
 ### Next exact task
 
 STOP per the directive - await explicit approval before TASK 66.
+
+## 73. TASK 66 - Real Preview + Published + Export Parity + Runtime Integrity
+
+Session 66 (2026-10-04). ONE canonical model, TWO runtime faces (web React
+runtime for editor/preview/published; the export's vanilla mirror) - now
+PROVEN equivalent by tests, with three real export-runtime bugs found and
+fixed. Full record in docs/TASK66_RUNTIME_PARITY.md.
+
+### Root causes fixed (parity defects the new suite caught)
+
+- **Exported 2D scenes were completely dead**: the vanilla runtime
+  referenced `animCommands` without declaring it - every frame threw and
+  the scene loop never ran (no physics/input/camera in ANY exported 2D
+  game). No earlier suite had run an exported 2D scene. Declared at module
+  scope.
+- **`emitterSims` scope bug**: declared function-local in buildScene but
+  read at module scope by sceneTick - same crash class (the old duplicate
+  var masked it). Moved to module scope.
+- **Export camera froze at the spawn framing**: follow-target read AUTHORED
+  componentProps (which never move) instead of the live player - divergent
+  from the preview. Now follows live player state.
+- **Export interaction race**: emit() rebuilt the whole DOM synchronously,
+  so an input blur firing "change" during mousedown destroyed the button
+  before its click fired (silent interaction drop). Rerenders now defer to
+  the next task (scheduleRerender).
+- **ext: blocks were silently ignored in exports** (web reports the skip):
+  now reported once per type with the same message + a
+  data-extension-skipped attribute + manifest listing.
+- **Export never dispatched screen "initialize" handlers** (preview does
+  since TASK 64): now dispatched once at startup, identical semantics.
+- **No export startup error handling**: broken projects rendered a blank
+  page; now "Runtime could not start - <reason>" + data-runtime-error.
+
+### Runtime integrity added (no duplicate systems)
+
+- ONE shared RuntimeBoundary (components/runtime/runtime-error-boundary)
+  wraps the preview surface AND the published app: a runtime fault is
+  caught at the boundary, shown honestly with retry, pushed to the runtime
+  trace, and opens Diagnostics (collapsed by default). The builder shell
+  survives any single project fault.
+- Honest run states: data-preview-state="running|failed" in preview;
+  data-runtime-state on the published stage + inline failure reason.
+- Export validation (30): validatedExportModel runs canonical ValidateModel
+  before HTML/Android/Windows exports (422 + real reason, no artifact);
+  the model PUT runs the same validator, so invalid state cannot enter the
+  store at all (proven: broken start screen rejected 400).
+- Export manifest (31): every artifact embeds ideaven-manifest JSON
+  (format, schemaVersion, type, runtime, screens/assets, extension slugs,
+  capabilities) - deterministic, no secrets/paths/editor state (50).
+- Download integrity (46): the export dialog verifies magic bytes (HTML
+  doctype / zip PK) BEFORE declaring success; wrong body = FAILED.
+- Capability matrix (47): apps/web/src/lib/capabilities.ts is THE
+  machine-readable source (8 capabilities x 6 targets, SUPPORTED/PARTIAL/
+  UNSUPPORTED with mandatory notes); the export dialog renders per-target
+  notes from it (48). Key truths: custom TypeScript is code-only (never
+  executed by runtimes); extension providers do not run on any target
+  (honest skip everywhere); stored assets in Android/Windows exports are
+  PARTIAL (placeholder by design; HTML export derives its asset base from
+  the request Host - portable in production, never hardcoded localhost).
+- 2D export observability (39): data-entity per element; data-camera-x/y
+  and data-player-x/y/grounded per tick - the same attributes the editor
+  preview exposes.
+
+### Verification (session 66)
+
+- New E2E e2e-task66-runtime-parity.mjs: 66/66, 0 console errors - runs
+  the SAME authored projects in preview, on published pages, and INSIDE
+  the actual exported HTML artifacts (opened from disk in a real browser):
+  app navigation/input parity, 2D physics/collision/camera parity (3-way),
+  3D gravity/collision parity (3-way), extension skip honesty + manifest,
+  artifact validation/secrets/paths checks, restart/stop lifecycle without
+  canvas accumulation, missing-asset honesty, 390-1440 overflow sweep.
+- Regression sweep (run-regressions-t66.mjs, 30 suites incl. task66):
+  28 PASS in the sweep. task64 failed one check in-sweep - a SUITE bug, not
+  a product bug: the Explore shelf lists every user's published extensions,
+  and past runs' "Weather Beacon" cards sorted ahead of this run's user's
+  card, so the locator matched a card that is honestly NOT in the palette.
+  Fixed by scoping the locator to this run's unique creator handle; task64
+  passes 34/34 solo (re-verified). e2e-community.mjs remains the documented
+  pre-existing legacy drift (STATUS 68).
+- Gates: tsc clean; go vet clean; go test -count=1 ok (project incl. export
+  tests); next build exit 0 (dev stopped, .next cleaned); build:vinext
+  exit 0; verify-cf-preview 12/12 (API-down baseline).
+
+### Honest notes (TASK 66)
+
+- The export runtime is a deliberate vanilla mirror (single-file, no
+  framework); TASK 66 proves equivalence for the supported vocabulary -
+  future blocks must land on BOTH faces (1:1 case enumeration recorded).
+- Custom TypeScript remains unexecuted outside Code mode (stored verbatim;
+  matrix says so at every surface). Extension providers remain a later
+  phase (TASK 64 honesty unchanged).
+- Android/Windows shells ship without stored assets by design; external
+  URLs work.
+
+### Next exact task
+
+STOP per the directive - await explicit approval before TASK 67.

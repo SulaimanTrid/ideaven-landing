@@ -1103,3 +1103,33 @@ providers, i18n coverage expansion, accessibility audit.
   12/12 (API-down baseline).
 - STOP per directive - awaiting approval before TASK 66.
 ---
+
+
+## SESSION 66 - TASK 66: Real Preview + Published + Export Parity + Runtime Integrity (2026-10-04)
+
+- Audited the real architecture: ONE model, web React runtime
+  (editor/preview/published) + the export's vanilla mirror; block
+  vocabulary proven 1:1 (34 cases each side).
+- THREE real export bugs found and fixed by the new parity suite:
+  undeclared animCommands (ALL exported 2D scenes were dead - loop threw
+  every frame), emitterSims scope bug (same crash class), and the export
+  camera following authored props instead of the live player. Plus the
+  emit-rerender race that dropped interactions (input blur rebuilt the DOM
+  before the click fired).
+- Export honesty: ext: skip reported (was silent), initialize handlers
+  dispatched, startup error surface ("Runtime could not start - reason"),
+  ideaven-manifest embedded in every artifact (deterministic, no secrets),
+  export validation via canonical ValidateModel (422, no artifact), dialog
+  verifies magic bytes before offering the download.
+- Runtime integrity: ONE shared RuntimeBoundary for preview + published
+  (fault caught, retry offered, trace ERROR, diagnostics opened); honest
+  RUNNING/FAILED states via data attributes; dispose/restart lifecycle
+  asserted free of canvas accumulation.
+- Capability matrix: lib/capabilities.ts (8x6, SUPPORTED/PARTIAL/
+  UNSUPPORTED + notes) wired into the export dialog; documents custom-code
+  (code-only), extension providers (not yet), asset PARTIALs per target.
+- Gates: task66 NEW 66/66 (0 console errors; exported artifacts actually
+  executed from disk); 30-suite sweep green (results in STATUS 73);
+  tsc/go vet/go test/next build/build:vinext/verify-cf-preview 12/12.
+- STOP per directive - awaiting approval before TASK 67.
+---
