@@ -147,10 +147,14 @@ func (s *Service) ImportPackage(ctx context.Context, ownerID string, r io.Reader
 	var meta projectPackageMeta
 	var model []byte
 	assetFiles := map[string][]byte{}
+	budget := int64(0)
+	if len(zr.File) > zipMaxEntries {
+		return nil, httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "The package contains too many entries.")
+	}
 	for _, zf := range zr.File {
 		switch {
 		case zf.Name == "package.json":
-			data, err := readZipFile(zf)
+			data, err := readZipFile(zf, &budget)
 			if err != nil {
 				return nil, err
 			}
@@ -158,13 +162,13 @@ func (s *Service) ImportPackage(ctx context.Context, ownerID string, r io.Reader
 				return nil, httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "package.json is not valid.")
 			}
 		case zf.Name == "model.json":
-			data, err := readZipFile(zf)
+			data, err := readZipFile(zf, &budget)
 			if err != nil {
 				return nil, err
 			}
 			model = data
 		case strings.HasPrefix(zf.Name, "assets/"):
-			data, err := readZipFile(zf)
+			data, err := readZipFile(zf, &budget)
 			if err != nil {
 				return nil, err
 			}
@@ -243,15 +247,35 @@ func packageFileName(name, mime string) string {
 	return base
 }
 
-func readZipFile(f *zip.File) ([]byte, error) {
+// Zip budget (TASK 67 §13): a 32MB upload may decompress to gigabytes, so
+// every entry is read through a hard per-entry cap and the package carries a
+// total decompressed-bytes budget. Declared zip sizes are untrusted — the
+// limit readers enforce reality, not the header.
+const (
+	zipMaxEntryBytes = 32 << 20
+	zipMaxTotalBytes = 64 << 20
+	zipMaxEntries    = 512
+)
+
+func readZipFile(f *zip.File, budget *int64) ([]byte, error) {
+	if f.UncompressedSize64 > zipMaxEntryBytes {
+		return nil, httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "Package entry is too large.")
+	}
 	rc, err := f.Open()
 	if err != nil {
 		return nil, httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "Package entry could not be read.")
 	}
 	defer rc.Close()
-	data, err := io.ReadAll(rc)
+	data, err := io.ReadAll(io.LimitReader(rc, zipMaxEntryBytes+1))
 	if err != nil {
 		return nil, httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "Package entry could not be read.")
+	}
+	if int64(len(data)) > zipMaxEntryBytes {
+		return nil, httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "Package entry is too large.")
+	}
+	*budget += int64(len(data))
+	if *budget > zipMaxTotalBytes {
+		return nil, httpx.Errorf(http.StatusBadRequest, httpx.CodeInvalidBody, "The package decompresses beyond the allowed size.")
 	}
 	return data, nil
 }

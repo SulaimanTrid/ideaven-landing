@@ -4571,3 +4571,81 @@ fixed. Full record in docs/TASK66_RUNTIME_PARITY.md.
 ### Next exact task
 
 STOP per the directive - await explicit approval before TASK 67.
+
+## 74. TASK 67 - QA + Security + Performance Hardening
+
+Session 66 (2026-10-04). No new features: correctness, security,
+performance, stability. Every security claim traced to implementation +
+test; four hardening fixes applied. Full record in
+docs/TASK67_QA_SECURITY_PERFORMANCE.md; machine-readable release readiness
+in docs/RELEASE_READINESS.json.
+
+### Hardening applied (all traced to code + tests)
+
+- **P1 - zip decompression budget**: package import decompressed without
+  bounds (a <=32MB upload could be a zip bomb). Now: per-entry 32MB cap
+  (LimitReader, header-declared sizes untrusted), 64MB total budget, 512
+  entries max. Probed with a real 160MB-decompressing upload -> rejected.
+- **P2 - AI operation batch cap**: parseAndValidateOperations now rejects
+  changesets over 100 operations wholesale (never partially applied).
+- **P2 - missing rate limits**: extension build + SSE build (spawns the
+  worker) capped 10/min; HTML/Android/Windows exports (CPU-bound) capped
+  10/min; community votes/reports capped 30/min.
+- Verified existing posture by probes (not by trusting docs): Argon2id
+  passwords, session TTL/touch/revoke/cleanup, logout invalidation, forged
+  session 401, per-IP limiters with Retry-After, SecureHeaders incl. CSP
+  default-src none on the API, asset ownership rides the project (public
+  raw only while published), upload MIME sniffing + filename sanitization
+  (traversal probes stored clean), package import validated-before-create
+  (atomic on validation failure), AI closed op vocabulary + authorization
+  before provider calls + 60s dedupe + success-only ledger, XSS stored
+  text renders inert (React escaping), export/public/SSR secret scans
+  clean.
+
+### New suites (existing Playwright infra, shared fixtures)
+
+- scripts/fixtures-task67.mjs - shared model fixtures + API helpers.
+- scripts/e2e-task67-security-hardening.mjs: 59/59 - IDOR across
+  projects/assets/publications/extensions/AI, malformed/oversized/deep
+  input, traversal filenames, malicious/bomb packages, extension
+  ownership, AI credit integrity (unauthenticated/cross-user charge
+  nothing; dedupe; concurrency), XSS inert, session lifecycle, rate
+  limits, artifact/public/SSR secret scans, concurrency/duplicate
+  requests.
+- scripts/e2e-task67-performance.mjs: 19/19 - MEASURED baselines recorded
+  to scripts/artifacts-task66/perf-baseline.json (landing ~2.1-3.4s,
+  dashboard ~2.2-3.6s, builder ~2.8-4.6s, preview start ~1.6s, stop
+  ~0.8s, repeated x3 ~4.1s; APP 10-250 comps 2.6-3.6s; 2D 50-1000
+  entities 3.1-4.6s all rendered; 3D 10-100 authored bodies 3.3-4.0s with
+  the DOCUMENTED 64-body physics bound; no cliff, near-linear curves).
+- scripts/e2e-task67-full-journey.mjs: 27/27 - four complete journeys
+  through the REAL UI (register/login forms -> dashboard -> hub creation
+  for APP/2D/3D -> edit/blocks/code/preview -> publish -> public; 2D/3D
+  exports; extension author->build->publish->install->enable->use with
+  honest skip in preview).
+
+### Verification (session 66)
+
+- Regression sweep (run-regressions-t67.mjs, 33 suites incl. the three
+  new ones): 30 PASS in-sweep; task67-performance and task67-full-journey
+  failed under sweep contention and pass 19/19 + 27/27 solo (re-verified
+  twice); e2e-community.mjs remains the documented legacy drift (STATUS
+  68). Effective regressions: zero.
+- Gates: tsc clean; go vet clean; go test -count=1 ./... ALL ok; next
+  build exit 0 (dev stopped, .next cleaned); build:vinext exit 0;
+  verify-cf-preview 12/12 (API-down baseline).
+
+### Honest notes (TASK 67)
+
+- 3D physics caps at 64 bodies by design (TASK 54 bound) - documented in
+  the capability matrix and recorded by the perf suite.
+- Release readiness (docs/RELEASE_READINESS.json): all product dimensions
+  PASS; ACCESSIBILITY and I18N PARTIAL (no automated a11y auditor; deep
+  builder strings on the translation roadmap; nonce-CSP for the Next app
+  planned). No FAIL, no BLOCKED, no open P0/P1.
+- In-memory per-IP rate limits are per-instance (single-node deployment);
+  a shared store becomes worthwhile when the API scales out.
+
+### Next exact task
+
+STOP per the directive - await explicit approval before TASK 68.

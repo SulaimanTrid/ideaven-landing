@@ -1,0 +1,2338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journey World mutwmgpo â€” Ideaven export</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #0a0c12; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; }
+  #stage { width: 390px; max-width: 100vw; height: 844px; max-height: 100vh; background: #fff;
+           overflow: hidden; position: relative; border-radius: 24px; margin: 16px 0; }
+  @media (max-width: 420px) { #stage { margin: 0; border-radius: 0; height: 100vh; } }
+  #toast { position: absolute; left: 16px; right: 16px; bottom: 20px; background: rgb(14 17 25 / .92);
+           color: #fff; padding: 12px 16px; border-radius: 12px; font-size: 13px; display: none; }
+  input, button { font: inherit; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="root" style="display:flex;flex-direction:column;min-height:100%;width:100%"></div></div>
+<div id="toast" role="status"></div>
+<script type="application/json" id="ideaven-model">{"type": "3d", "assets": [], "screens": [{"id": "screen-home", "name": "World", "components": [{"id": "o-floor", "type": "plane3d", "props": {"px": 0, "py": 0, "pz": 0, "sx": 8, "sz": 8, "name": "Floor", "color": "#33415c", "visible": true, "bodyType": "static", "colliderType": "box", "colliderSizeX": 8, "colliderSizeZ": 8}}, {"id": "o-cube", "type": "cube3d", "props": {"px": 0, "py": 2.5, "pz": 0, "mass": 1, "name": "Crate", "color": "#8f7bff", "visible": true, "bodyType": "dynamic", "colliderType": "box", "colliderSizeX": 0.5, "colliderSizeY": 0.5, "colliderSizeZ": 0.5}}, {"id": "o-light", "type": "light3d", "props": {"px": 2, "py": 4, "pz": 2, "name": "Sun", "color": "#ffd9a0", "radius": 14, "enabled": true, "intensity": 1.2}}, {"id": "o-cam", "type": "camera3d", "props": {"px": 0, "py": 3.2, "pz": 7, "rx": -24, "fov": 60, "name": "Cam", "active": true}}, {"id": "o-mat", "type": "cube3d", "props": {"px": 2, "py": 0.5, "pz": 0, "name": "Colored", "color": "#e38f7b", "visible": true}}, {"id": "o-ctl", "type": "cube3d", "props": {"px": 0, "py": 1.5, "pz": 3, "mass": 1, "name": "Hero", "color": "#46e3b4", "visible": true, "bodyType": "dynamic", "colliderType": "box", "colliderSizeX": 0.5, "colliderSizeY": 0.5, "colliderSizeZ": 0.5, "controllerEnabled": true}}]}], "settings": {"theme": ""}, "variables": [], "navigation": {"startScreenId": "screen-home"}, "schemaVersion": 1}</script>
+<script type="application/json" id="ideaven-manifest">{"format":1,"schemaVersion":1,"projectType":"3d","runtime":"standalone-vanilla/2","screens":1,"assets":0,"extensions":[],"capabilities":["app-ui","scene-2d","scene-3d","audio","canvas-draw","extensions","scene-3d"]}</script>
+<script>
+(function () {
+  "use strict";
+  var model = JSON.parse(document.getElementById("ideaven-model").textContent);
+  var ASSET_BASE = "http://localhost:8090";
+
+  // ---- state -----------------------------------------------------------------
+  var variables = {};
+  (model.variables || []).forEach(function (v) {
+    variables[v.name] = v.type === "number" ? 0 : v.type === "boolean" ? false : "";
+  });
+  var componentProps = {};
+  var currentScreenId = model.navigation.startScreenId || (model.screens[0] && model.screens[0].id);
+  var toastTimer = null;
+
+  model.screens.forEach(function (s) { seedProps(s.components); });
+  function seedProps(nodes) {
+    (nodes || []).forEach(function (n) {
+      componentProps[n.id] = Object.assign({}, n.props || {});
+      seedProps(n.children);
+    });
+  }
+
+  // ---- styles ----------------------------------------------------------------
+  function px(v, fallback) {
+    if (typeof v === "number") return v + "px";
+    if (typeof v === "string" && v.trim() !== "") return v;
+    return fallback || undefined;
+  }
+  function flexValue(v) {
+    return { start: "flex-start", end: "flex-end", between: "space-between", center: "center", stretch: "stretch" }[v];
+  }
+  function styleCSS(styles) {
+    var s = styles || {}, css = {};
+    if (typeof s.background === "string") css.background = s.background;
+    if (typeof s.color === "string") css.color = s.color;
+    var fs = px(s.fontSize); if (fs) css["font-size"] = fs;
+    if (s.fontWeight != null) css["font-weight"] = s.fontWeight;
+    if (typeof s.textAlign === "string") css["text-align"] = s.textAlign;
+    var p = px(s.padding); if (p) css.padding = p;
+    var r = px(s.radius); if (r) css["border-radius"] = r;
+    if (typeof s.borderWidth === "number" && s.borderWidth > 0) {
+      css.border = s.borderWidth + "px solid " + (typeof s.borderColor === "string" ? s.borderColor : "#d5d9e2");
+    }
+    var g = px(s.gap); if (g) css.gap = g;
+    var a = flexValue(s.align); if (a) css["align-items"] = a;
+    var j = flexValue(s.justify); if (j) css["justify-content"] = j;
+    var w = px(s.width); if (w) css.width = w;
+    var h = px(s.height); if (h) css.height = h;
+    if (s.fit === "contain" || s.fit === "cover") css["object-fit"] = s.fit;
+    var m = px(s.margin); if (m) css.margin = m;
+    if (s.grow === true) css["flex-grow"] = 1;
+    return css;
+  }
+  function applyCSS(el, styles) {
+    var css = styleCSS(styles);
+    for (var key in css) el.style[key] = css[key];
+  }
+
+  // ---- block evaluation ------------------------------------------------------
+  function evalBlock(b) {
+    if (b && typeof b.type === "string" && b.type.indexOf("ext:") === 0) { skippedExtension(b.type); return undefined; }
+    switch (b.type) {
+      case "text": return String((b.inputs && b.inputs.value) != null ? b.inputs.value : "");
+      case "number": return Number(b.inputs && b.inputs.value) || 0;
+      case "boolean": return b.inputs && b.inputs.value === true;
+      case "get-variable": return variables[b.inputs.name];
+      case "get-property": {
+        var props = componentProps[b.inputs.componentId];
+        return props ? props[b.inputs.property] : undefined;
+      }
+      case "join": return String(evalBlock(b.slots.a)) + String(evalBlock(b.slots.b));
+      case "equals": return evalBlock(b.slots.a) === evalBlock(b.slots.b);
+      case "add": return Number(evalBlock(b.slots.a)) + Number(evalBlock(b.slots.b));
+      case "tinydb-get":
+        try { var tv = localStorage.getItem(TINYDB_PREFIX + (b.inputs.key || "")); return tv === null ? "" : JSON.parse(tv); } catch (e) { return ""; }
+      case "clock-now": {
+        var now = new Date();
+        var p2 = function (n) { return String(n).length < 2 ? "0" + n : String(n); };
+        return now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()) + " " + p2(now.getHours()) + ":" + p2(now.getMinutes()) + ":" + p2(now.getSeconds());
+      }
+      case "location-latitude":
+      case "location-longitude": {
+        var lid = firstComponentIdOf("location-sensor");
+        var lp = lid ? componentProps[lid] : null;
+        if (!lp) return 0;
+        return b.type === "location-latitude" ? (lp.latitude || 0) : (lp.longitude || 0);
+      }
+      default: return undefined;
+    }
+  }
+
+  function runBody(blocks) {
+    (blocks || []).forEach(function (b) {
+      if (b.type.indexOf("ext:") === 0) { skippedExtension(b.type); return; }
+      switch (b.type) {
+        case "set-property": {
+          var props = componentProps[b.inputs.componentId];
+          if (props) props[b.inputs.property] = evalBlock(b.slots.value);
+          break;
+        }
+        case "set-variable":
+          variables[b.inputs.name] = evalBlock(b.slots.value);
+          break;
+        case "change-variable": {
+          var current = Number(variables[b.inputs.name]) || 0;
+          var delta = Number(evalBlock(b.slots.amount)) || 0;
+          variables[b.inputs.name] = current + delta;
+          break;
+        }
+        case "play-sound":
+          playSound(String((b.inputs && b.inputs.sound) != null ? b.inputs.sound : ""));
+          break;
+        case "stop-sound":
+          if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; currentAudio = null; }
+          break;
+        case "tinydb-store":
+          try { localStorage.setItem(TINYDB_PREFIX + (b.inputs.key || ""), JSON.stringify(evalBlock(b.slots.value))); } catch (e) { showToast("\u26A0 TinyDB could not write"); }
+          break;
+        case "notifier-alert":
+          showToast(evalBlock(b.slots.message));
+          break;
+        case "web-get":
+          fetch(String((b.inputs && b.inputs.url) || "")).then(function (r) { return r.text(); }).then(function (text) {
+            componentProps[firstComponentIdOf("web")].response = String(text).slice(0, 20000);
+            rerender();
+          }).catch(function (err) {
+            componentProps[firstComponentIdOf("web")].response = "Error: " + String(err).slice(0, 200);
+            rerender();
+          });
+          break;
+        case "location-request":
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function (pos) {
+              componentProps[firstComponentIdOf("location-sensor")].latitude = Number(pos.coords.latitude.toFixed(6));
+              componentProps[firstComponentIdOf("location-sensor")].longitude = Number(pos.coords.longitude.toFixed(6));
+              componentProps[firstComponentIdOf("location-sensor")].available = true;
+              emit(firstComponentIdOf("location-sensor"), "location");
+            }, function (err) {
+              showToast("\u26A0 Location unavailable \u2014 " + err.message);
+            });
+          } else {
+            showToast("\u26A0 Location is not available in this browser");
+          }
+          break;
+        case "tts-speak":
+          if (window.speechSynthesis) {
+            var u = new SpeechSynthesisUtterance(String(evalBlock(b.slots.message) || ""));
+            window.speechSynthesis.speak(u);
+          } else { showToast("\u26A0 TextToSpeech is not available"); }
+          break;
+        case "canvas-clear": {
+          var cc = document.querySelector("canvas[data-canvas]");
+          if (cc) { var cx2 = cc.getContext("2d"); cx2.fillStyle = "#ffffff"; cx2.fillRect(0, 0, cc.width, cc.height); }
+          break;
+        }
+        case "canvas-draw-circle": {
+          var dc = document.querySelector("canvas[data-canvas]");
+          if (dc) {
+            var dx2 = dc.getContext("2d");
+            dx2.beginPath();
+            dx2.arc(Number(b.inputs.x) || 0, Number(b.inputs.y) || 0, Math.max(0.5, Number(b.inputs.r) || 10), 0, Math.PI * 2);
+            dx2.fillStyle = String(b.inputs.color || "#5743d9");
+            dx2.fill();
+          }
+          break;
+        }
+        case "show-message":
+          showToast(evalBlock(b.slots.message));
+          break;
+        case "camera-shake": {
+          // TASK 14: transient runtime state â€” restarts the bounded shake
+          // envelope, never accumulates.
+          if (sceneState && sceneState.cameraComponentId) {
+            var shD = Number(b.inputs && b.inputs.duration);
+            if (!isFinite(shD) || shD <= 0) shD = 0.25;
+            var shS = Number(b.inputs && b.inputs.strength);
+            if (!isFinite(shS) || shS < 0) shS = 8;
+            var camCmd = sceneState.cam;
+            camCmd.shakeTotal = Math.max(0.05, shD);
+            camCmd.shakeLeft = camCmd.shakeTotal;
+            camCmd.strength = shS;
+          }
+          break;
+        }
+        case "camera-set-target": {
+          // Retarget the camera entity's live followTarget (runtime props).
+          var newTarget = String((b.inputs && b.inputs.componentId) || "");
+          (model.screens || []).forEach(function (cs) {
+            (cs.components || []).forEach(function (n) {
+              if (n.type === "camera") {
+                componentProps[n.id] = componentProps[n.id] || {};
+                componentProps[n.id].followTarget = newTarget;
+              }
+            });
+          });
+          break;
+        }
+        case "play-animation":
+          // SLICE 2: transient playback command â€” drained by the scene loop
+          // against runtime animation state, never the model.
+          if (sceneState && String((b.inputs && b.inputs.componentId) || "") !== "") {
+            animCommands.push({ id: String(b.inputs.componentId), op: "play", clipId: String((b.inputs && b.inputs.animationId) || "") });
+          }
+          break;
+        case "stop-animation":
+          if (sceneState && String((b.inputs && b.inputs.componentId) || "") !== "") {
+            animCommands.push({ id: String(b.inputs.componentId), op: "stop" });
+          }
+          break;
+        case "set-animation-param":
+          if (sceneState && String((b.inputs && b.inputs.componentId) || "") !== "" && String((b.inputs && b.inputs.name) || "") !== "") {
+            animCommands.push({ id: String(b.inputs.componentId), op: "param", name: String(b.inputs.name), value: evalBlock(b.slots.value) });
+          }
+          break;
+        case "trigger-animation-param":
+          if (sceneState && String((b.inputs && b.inputs.componentId) || "") !== "" && String((b.inputs && b.inputs.name) || "") !== "") {
+            animCommands.push({ id: String(b.inputs.componentId), op: "trigger", name: String(b.inputs.name) });
+          }
+          break;
+        case "burst-particle":
+          if (sceneState && String((b.inputs && b.inputs.componentId) || "") !== "") {
+            particleCommands.push({ id: String(b.inputs.componentId), count: Number(b.inputs && b.inputs.count) || 10 });
+          }
+          break;
+        case "navigate":
+          if (model.screens.some(function (s) { return s.id === b.inputs.screenId; })) {
+            currentScreenId = b.inputs.screenId;
+          }
+          break;
+        case "if":
+          if (evalBlock(b.slots.condition) === true) runBody(b.children);
+          else runBody(b.elseChildren);
+          break;
+      }
+    });
+  }
+
+  function showToast(text) {
+    var el = document.getElementById("toast");
+    el.textContent = String(text == null ? "" : text);
+    el.style.display = "block";
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.style.display = "none"; }, 2600);
+  }
+
+  // TASK 66 Â§26/Â§36: extension blocks have no provider in the export runtime
+  // (extensions are server-side source; exports never bundle them). The skip
+  // is reported ONCE per type â€” the same honest message as the web preview â€”
+  // and recorded on the root for observability instead of being ignored.
+  var skippedExtensionTypes = [];
+  function skippedExtension(blockType) {
+    if (skippedExtensionTypes.indexOf(blockType) !== -1) return;
+    skippedExtensionTypes.push(blockType);
+    showToast("Extension block \"" + blockType + "\" did not run - its extension is disabled or not installed. Re-enable it to restore this behavior.");
+    var root = document.getElementById("root");
+    if (root) root.setAttribute("data-extension-skipped", skippedExtensionTypes.join("|"));
+  }
+
+  // ---- audio ------------------------------------------------------------------
+  // play-sound resolves real project media: an "asset:<id>" reference, a name
+  // from the project's asset library, or an external URL. Unresolvable sounds
+  // warn once per session â€” never a fake playback.
+  var currentAudio = null;
+  var warnedSounds = {};
+
+  function assetSrc(ref) {
+    return ASSET_BASE + "/api/assets/" + encodeURIComponent(ref.slice(6)) + "/raw";
+  }
+
+  function playSound(name) {
+    var asset = null;
+    (model.assets || []).forEach(function (a) {
+      if (a.name === name && (asset === null || a.kind === "audio")) asset = a;
+    });
+    var src = name.indexOf("asset:") === 0
+      ? assetSrc(name)
+      : asset !== null
+        ? assetSrc("asset:" + asset.id)
+        : /^https?:\/\//.test(name) ? name : null;
+    if (!src) {
+      if (!warnedSounds[name]) {
+        warnedSounds[name] = true;
+        showToast("\u26A0 Sound \u201C" + name + "\u201D was not found \u2014 add it in Assets");
+      }
+      return;
+    }
+    try {
+      var audio = new Audio(src);
+      audio.play().catch(function () {});
+      currentAudio = audio;
+    } catch (e) { void e; }
+  }
+
+  // ---- app-studio capabilities -------------------------------------------------
+  var TINYDB_PREFIX = "ideaven-tinydb:" + (document.title || "app") + ":default:";
+
+  function firstComponentIdOf(type) {
+    var id = null;
+    model.screens.forEach(function (sc) {
+      (function walk(nodes) {
+        (nodes || []).forEach(function (n) {
+          if (id) return;
+          if (n.type === type) { id = n.id; return; }
+          walk(n.children);
+        });
+      })(sc.components);
+    });
+    return id;
+  }
+
+  function wireSensors() {
+    // Clock timers: real intervals for every enabled Clock.
+    model.screens.forEach(function (sc) {
+      (function walk(nodes) {
+        (nodes || []).forEach(function (n) {
+          if (n.type === "clock" && n.props && n.props.enabled === true && Number(n.props.interval) >= 100) {
+            setInterval(function () { emit(n.id, "timer"); }, Number(n.props.interval));
+          }
+          if (n.type === "accelerometer-sensor" && window.DeviceMotionEvent) {
+            var lastShake = 0;
+            window.addEventListener("devicemotion", function (ev) {
+              var a = ev.accelerationIncludingGravity;
+              if (!a) return;
+              componentProps[n.id].x = Number((a.x || 0).toFixed(2));
+              componentProps[n.id].y = Number((a.y || 0).toFixed(2));
+              componentProps[n.id].z = Number((a.z || 0).toFixed(2));
+              componentProps[n.id].available = true;
+              var mag = Math.hypot(componentProps[n.id].x, componentProps[n.id].y, componentProps[n.id].z);
+              if (mag > 18 && Date.now() - lastShake > 800) { lastShake = Date.now(); emit(n.id, "shake"); }
+            });
+          }
+          walk(n.children);
+        });
+      })(sc.components);
+    });
+  }
+
+  // ---- 2D scene engine (TASK 08) ---------------------------------------------
+  // Screens containing game entities (player/platform/coin/enemy/trigger/
+  // sprite) play as real scenes: input, gravity, AABB collision, and dynamic
+  // touches-<id> events dispatched into the same block runtime. Only the
+  // player moves; solids block landing; triggers fire events.
+  var ENTITY_TYPES = { player: 1, platform: 1, coin: 1, enemy: 1, trigger: 1, sprite: 1, tilemap: 1, camera: 1 };
+  var ENTITY_DEFAULTS = {
+    player: { x: 24, y: 560, width: 36, height: 36 },
+    platform: { x: 24, y: 640, width: 160, height: 20 },
+    coin: { x: 120, y: 520, width: 28, height: 28 },
+    enemy: { x: 220, y: 560, width: 32, height: 32 },
+    trigger: { x: 260, y: 480, width: 100, height: 80 },
+    sprite: { x: 160, y: 300, width: 48, height: 48 },
+    tilemap: { x: 0, y: 620, width: 390, height: 224 },
+    camera: { x: 0, y: 0, width: 390, height: 844 }
+  };
+  var SCENE_GRAVITY = 1500, SCENE_MOVE = 190, SCENE_JUMP = 520;
+  var SHAKE_FREQUENCY = 38; // Hz â€” same oscillation rate as the editor preview
+  var sceneState = null; // persists the player across handler-triggered rerenders
+
+  // TASK 14: camera configuration â€” the same semantic model as the editor
+  // preview (follow target, smoothing, normalized bounds, shake defaults).
+  function camNum(v, f) { return typeof v === "number" && isFinite(v) ? v : f; }
+  function cameraConfigOf(props) {
+    var minX = camNum(props.minX, 0), maxX = camNum(props.maxX, 2000);
+    var minY = camNum(props.minY, 0), maxY = camNum(props.maxY, 1200);
+    if (minX > maxX) { var t = minX; minX = maxX; maxX = t; }
+    if (minY > maxY) { var t2 = minY; minY = maxY; maxY = t2; }
+    return {
+      followEnabled: props.followEnabled !== false,
+      followTarget: typeof props.followTarget === "string" ? props.followTarget : "",
+      smoothing: Math.min(0.95, Math.max(0, camNum(props.smoothing, 0.12))),
+      boundsEnabled: props.boundsEnabled === true,
+      pixelSnap: props.pixelSnap === true,
+      minX: minX, minY: minY, maxX: maxX, maxY: maxY
+    };
+  }
+
+  function isSceneScreen(sc) {
+    return (sc.components || []).some(function (c) { return ENTITY_TYPES[c.type] === 1; });
+  }
+  function sceneRect(props, type) {
+    var d = ENTITY_DEFAULTS[type] || { x: 16, y: 16, width: 40, height: 40 };
+    var num = function (v, f) { return typeof v === "number" && isFinite(v) ? v : f; };
+    return { x: num(props.x, d.x), y: num(props.y, d.y), width: num(props.width, d.width), height: num(props.height, d.height) };
+  }
+  function sceneVisible(props) { return props.visible !== false; }
+  function sceneTrigger(type, props) {
+    if (props.collider === false) return false;
+    if (type === "coin" || type === "enemy" || type === "trigger") return props.trigger !== false;
+    return props.trigger === true;
+  }
+  function sceneSolid(type, props) {
+    return sceneVisible(props) && props.collider !== false && !sceneTrigger(type, props);
+  }
+  function overlap(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  }
+  function tilemapCellSize(props) {
+    return typeof props.cellSize === "number" && props.cellSize >= 8 ? props.cellSize : 32;
+  }
+  // Palette "value:#hex;â€¦" â†’ tile color; falls back to the tileColor prop.
+  function tileColorAt(props, tile) {
+    var palette = String(props.palette || "").split(";");
+    for (var i = 0; i < palette.length; i++) {
+      var seg = palette[i].trim();
+      if (!seg) continue;
+      var pair = seg.split(":");
+      if (parseInt(pair[0], 10) === tile && pair[1]) return pair[1].trim();
+    }
+    return typeof props.tileColor === "string" ? props.tileColor : "#2a3348";
+  }
+  function shadeHex(hex, factor) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+    if (!m) return hex;
+    var n = parseInt(m[1], 16);
+    var r = Math.round(((n >> 16) & 255) * factor);
+    var g = Math.round(((n >> 8) & 255) * factor);
+    var b = Math.round((n & 255) * factor);
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  }
+  // Rule tiles: the cell's variant comes from its live 4-neighborhood mask
+  // (TASK 62) â€” cross (4) darkest, T (3) next, straight (2 opposite) slight,
+  // corner/end/isolated keep the base color. Identical to scene.ts.
+  function autoTileColor(props, col, row, paintedSet, tile) {
+    var base = tileColorAt(props, tile);
+    if (props.autoTile !== true) return base;
+    var nU = paintedSet[col + "," + (row - 1)] ? 1 : 0;
+    var nD = paintedSet[col + "," + (row + 1)] ? 1 : 0;
+    var nL = paintedSet[(col - 1) + "," + row] ? 1 : 0;
+    var nR = paintedSet[(col + 1) + "," + row] ? 1 : 0;
+    var count = nU + nD + nL + nR;
+    if (count >= 4) return shadeHex(base, 0.72);
+    if (count === 3) return shadeHex(base, 0.8);
+    if (count === 2 && ((nU && nD) || (nL && nR))) return shadeHex(base, 0.88);
+    return base;
+  }
+  // TASK 62 Â§20: per-tile collision flags â€” a palette entry "value:#hex:pass"
+  // is NON-solid decoration; everything else (including every legacy palette
+  // with no third field) is solid, exactly as before.
+  function tileIsSolid(props, tile) {
+    var palette = String(props.palette || "").split(";");
+    for (var i = 0; i < palette.length; i++) {
+      var seg = palette[i].trim();
+      if (!seg) continue;
+      var parts = seg.split(":");
+      if (parseInt(parts[0], 10) === tile) return String(parts[2] || "").trim().toLowerCase() !== "pass";
+    }
+    return true;
+  }
+  // The SOLID subset of painted cells â€” what blocks the player and fires
+  // touch events (identical filter to scene.ts / the preview runtime).
+  function tilemapSolidCellRects(props, r) {
+    return tilemapCellRects(props, r).filter(function (c) { return tileIsSolid(props, c.tile); });
+  }
+  // One rect per painted cell â€” a painted cell is solid, an empty cell never is.
+  function tilemapCellRects(props, r) {
+    var cell = tilemapCellSize(props);
+    var out = [];
+    String(props.tiles || "").split(";").forEach(function (seg) {
+      seg = seg.trim();
+      if (!seg) return;
+      var parts = seg.split(":");
+      var pos = parts[0].split(",");
+      var col = parseInt(pos[0], 10), row = parseInt(pos[1], 10);
+      if (!isFinite(col) || !isFinite(row)) return;
+      out.push({ x: r.x + col * cell, y: r.y + row * cell, width: cell, height: cell, tile: parseInt(parts[1], 10) || 1 });
+    });
+    return out;
+  }
+
+  // TASK 15: sorting layers â€” ONE deterministic render-order pipeline, the
+  // same semantics as the editor preview (layer â†’ order â†’ model index).
+  var DEFAULT_LAYERS = [
+    { name: "Background", order: 0 }, { name: "World", order: 100 },
+    { name: "Characters", order: 200 }, { name: "Effects", order: 300 },
+    { name: "Foreground", order: 400 }, { name: "UI", order: 1000 }
+  ];
+  function sortingLayersOf(sc) {
+    var ls = (sc.sortingLayers && sc.sortingLayers.length) ? sc.sortingLayers : DEFAULT_LAYERS;
+    return ls.slice(0).sort(function (a, b) {
+      return a.order - b.order || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    });
+  }
+  function layerOrderOf(ls, name) {
+    var wanted = name || "World";
+    for (var i = 0; i < ls.length; i++) if (ls[i].name === wanted) return ls[i].order;
+    for (var j = 0; j < ls.length; j++) if (ls[j].name === "World") return ls[j].order;
+    return ls.length ? ls[0].order : 0;
+  }
+  function sortedRenderOrder(sc) {
+    var ls = sortingLayersOf(sc);
+    return (sc.components || []).map(function (c, i) { return { c: c, i: i }; }).sort(function (a, b) {
+      var ap = a.c.props || {}, bp = b.c.props || {};
+      var ld = layerOrderOf(ls, String(ap.sortingLayer || "")) - layerOrderOf(ls, String(bp.sortingLayer || ""));
+      if (ld) return ld;
+      var ao = typeof ap.sortingOrder === "number" ? ap.sortingOrder : 0;
+      var bo = typeof bp.sortingOrder === "number" ? bp.sortingOrder : 0;
+      if (ao - bo) return ao - bo;
+      return a.i - b.i;
+    }).map(function (e) { return e.c; });
+  }
+
+  // Input abstraction (SLICE 1): gameplay reasons about ACTION ids, never
+  // raw keys. Same semantics as the preview runtime â€” default set when the
+  // screen defines none (identical to the previously hardcoded keys), OS key
+  // repeat absorbed by the pressed guard, just-pressed edges consumed once
+  // per tick.
+  var DEFAULT_INPUT_ACTIONS = [
+    { id: "move-left", name: "Move left", keys: ["arrowleft", "a"], enabled: true },
+    { id: "move-right", name: "Move right", keys: ["arrowright", "d"], enabled: true },
+    { id: "jump", name: "Jump", keys: ["arrowup", "w", " "], enabled: true }
+  ];
+  function inputActionsOf(sc) {
+    var as = (sc.inputActions && sc.inputActions.length) ? sc.inputActions : DEFAULT_INPUT_ACTIONS;
+    var out = [];
+    as.forEach(function (a) {
+      var seen = {};
+      var keys = [];
+      (a.keys || []).forEach(function (k) { k = String(k).toLowerCase(); if (!seen[k]) { seen[k] = true; keys.push(k); } });
+      out.push({ id: String(a.id || ""), name: String(a.name || a.id || ""), keys: keys, enabled: a.enabled !== false });
+    });
+    return out;
+  }
+  function inputKeyIndex(actions) {
+    var index = {};
+    actions.forEach(function (a) {
+      if (!a.enabled) return;
+      a.keys.forEach(function (k) {
+        if (!index[k]) index[k] = [];
+        index[k].push(a.id);
+      });
+    });
+    return index;
+  }
+
+  // Sprite animation (SLICE 2): clips live on the entity as the canonical
+  // string payload ("id~name~fps~loop~f1,f2;â€¦"), frames referencing the same
+  // asset refs as src. Mirrors scene.ts exactly.
+  function parseAnimations(raw) {
+    var out = [];
+    String(raw || "").split(";").forEach(function (part) {
+      var f = part.split("~");
+      if (f.length < 4 || !String(f[0] || "").trim()) return;
+      var fps = Math.round(Number(f[2]));
+      var frames = String(f[4] || "").split(",").map(function (s) { return s.trim(); }).filter(function (s) { return s !== ""; });
+      out.push({ id: String(f[0]).trim(), name: String(f[1] || f[0]).trim(), fps: isFinite(fps) && fps >= 1 ? Math.min(fps, 60) : 8, loop: String(f[3]) !== "0", frames: frames });
+    });
+    return out;
+  }
+  function activeAnimOf(props) {
+    var clips = parseAnimations(props.animations);
+    if (!clips.length) return null;
+    var active = String(props.animation || "");
+    for (var i = 0; i < clips.length; i++) if (clips[i].id === active) return clips[i];
+    return clips[0];
+  }
+  function clipFrameIndex(clip, elapsed) {
+    if (!clip.frames.length) return 0;
+    var index = Math.floor(Math.max(0, elapsed) * clip.fps);
+    return clip.loop ? index % clip.frames.length : Math.min(index, clip.frames.length - 1);
+  }
+  function clipCompleted(clip, elapsed) {
+    return !clip.loop && clip.frames.length > 0 && Math.floor(Math.max(0, elapsed) * clip.fps) >= clip.frames.length;
+  }
+  // SYSTEM 18: bounded particle simulation â€” vanilla mirror of the web core
+  // (particles.ts). Emissive: drawn on a canvas above the lighting layer.
+  function parseEmitter(props) {
+    var clamp = function (v, lo, hi) { v = Number(v); return isFinite(v) ? Math.min(Math.max(v, lo), hi) : lo; };
+    var maxParticles = Math.round(clamp(props.maxParticles, 1, 1000));
+    return {
+      enabled: props.enabled !== false,
+      emissionRate: clamp(props.emissionRate, 0, 500),
+      lifetime: clamp(props.lifetime, 0.05, 30),
+      speed: clamp(props.speed, 0, 2000),
+      direction: clamp(props.direction, -3600, 3600),
+      spread: clamp(props.spread, 0, 360),
+      startSize: clamp(props.startSize, 0, 500),
+      endSize: clamp(props.endSize, 0, 500),
+      startOpacity: clamp(props.startOpacity, 0, 1),
+      endOpacity: clamp(props.endOpacity, 0, 1),
+      gravity: clamp(props.gravity, -2000, 2000),
+      color: /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(props.color || "")) ? String(props.color).trim() : "#ffd9a0",
+      maxParticles: maxParticles,
+      loop: props.loop !== false,
+      texture: String(props.texture || "")
+    };
+  }
+  function createParticleSim(capacity) {
+    return { particles: [], accumulator: 0, window: 0, capacity: Math.max(1, Math.round(capacity)) };
+  }
+  function simSpawn(sim, config, cx, cy) {
+    if (sim.particles.length >= Math.min(config.maxParticles, sim.capacity)) return;
+    var half = (config.spread / 2) * (Math.PI / 180);
+    var angle = (config.direction * Math.PI) / 180 + (Math.random() * 2 - 1) * half;
+    sim.particles.push({ x: cx, y: cy, vx: Math.sin(angle) * config.speed, vy: -Math.cos(angle) * config.speed, age: 0, lifetime: config.lifetime, startSize: config.startSize, endSize: config.endSize, startOpacity: config.startOpacity, endOpacity: config.endOpacity, color: config.color });
+  }
+  function simBurst(sim, config, cx, cy, count) {
+    var bounded = Math.round(Math.min(Math.max(count, 0), config.maxParticles));
+    for (var i = 0; i < bounded; i++) simSpawn(sim, config, cx, cy);
+  }
+  function simStep(sim, config, dt, cx, cy) {
+    var emitting = config.enabled && (config.loop || sim.window < config.lifetime);
+    if (emitting && config.emissionRate > 0) {
+      sim.window += dt;
+      sim.accumulator += dt * config.emissionRate;
+      while (sim.accumulator >= 1) { simSpawn(sim, config, cx, cy); sim.accumulator -= 1; }
+    }
+    for (var i = sim.particles.length - 1; i >= 0; i--) {
+      var p = sim.particles[i];
+      p.age += dt;
+      if (p.age >= p.lifetime) {
+        var last = sim.particles.pop();
+        if (i < sim.particles.length) sim.particles[i] = last;
+        continue;
+      }
+      p.vy += config.gravity * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+  var particleCommands = [];
+  // TASK 66 §23: the animation command queue (play/stop/param/trigger drained
+  // by the scene loop) and the particle sims are MODULE-scoped — sceneTick
+  // reads them outside buildScene (the old function-local duplicate declared
+  // inside buildScene threw "not defined" every frame in the export and
+  // silently killed the exported 2D scene loop).
+  var animCommands = [];
+  var emitterSims = [];
+
+  // SYSTEM 5 ambient light: from the screen styles, clamped to 0..1, invalid
+  // colors fall back to near-black.
+  function ambientOf(styles) {
+    var intensity = Number(styles && styles.ambientIntensity);
+    var color = String((styles && styles.ambientColor) || "#000010");
+    var ok = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color);
+    return { color: ok ? color : "#000010", intensity: isFinite(intensity) ? Math.min(Math.max(intensity, 0), 1) : 1 };
+  }
+
+  // Animation state machine (SLICE 3): mirrors scene.ts exactly. The machine
+  // lives in the entity's canonical "animator" prop; states reference clips
+  // by id; the runtime feeds parameters and evaluates transitions.
+  var ANIM_OPS = ["==", "!=", ">=", "<=", ">", "<"];
+  function parseAnimatorConditions(raw) {
+    var conds = [];
+    String(raw || "").split("&&").forEach(function (part) {
+      var seg = part.trim();
+      if (!seg) return;
+      var op = "";
+      for (var i = 0; i < ANIM_OPS.length; i++) { if (seg.indexOf(ANIM_OPS[i]) !== -1) { op = ANIM_OPS[i]; break; } }
+      if (!op) return;
+      var at = seg.indexOf(op);
+      var name = seg.slice(0, at).trim();
+      var value = seg.slice(at + op.length).trim();
+      if (name) conds.push({ name: name, op: op, value: value });
+    });
+    return conds;
+  }
+  function parseAnimator(raw) {
+    var states = [], params = [], transitions = [], defaultId = "";
+    String(raw || "").split(";").forEach(function (entry) {
+      var seg = entry.trim();
+      if (!seg) return;
+      if (seg.indexOf("D:") === 0) { defaultId = seg.slice(2).trim(); return; }
+      var body = seg.slice(2);
+      var f = body.split("~");
+      if (seg.indexOf("S:") === 0) {
+        var sid = String(f[0] || "").trim();
+        var speed = Math.round(Number(f[3] || "1"));
+        if (sid) states.push({ id: sid, name: String(f[1] || sid).trim(), clip: String(f[2] || "").trim(), speed: isFinite(speed) && speed > 0 ? Math.min(speed, 10) : 1 });
+      } else if (seg.indexOf("P:") === 0) {
+        var pname = String(f[0] || "").trim();
+        var ptype = String(f[1] || "");
+        if (pname) params.push({ name: pname, type: ptype === "bool" || ptype === "trigger" ? ptype : "number", initial: String(f[2] || "").trim() });
+      } else if (seg.indexOf("T:") === 0) {
+        var from = String(f[0] || "").trim(), to = String(f[1] || "").trim();
+        var order = Math.round(Number(f[2] || "0")), exitTime = Number(f[3] || "0");
+        if (from && to) transitions.push({ from: from, to: to, order: isFinite(order) ? order : 0, exitTime: isFinite(exitTime) ? Math.min(Math.max(exitTime, 0), 1) : 0, conds: parseAnimatorConditions(f[4] || "") });
+      }
+    });
+    if (!states.length) return null;
+    var hasDefault = false;
+    states.forEach(function (s) { if (s.id === defaultId) hasDefault = true; });
+    return { states: states, params: params, transitions: transitions, defaultId: hasDefault ? defaultId : states[0].id };
+  }
+  function animatorConditionSatisfied(cond, values) {
+    var actual = values[cond.name];
+    if (actual === undefined) return false;
+    if (typeof actual === "boolean") {
+      var wanted = cond.value === "true" || cond.value === "1";
+      var equals = actual === wanted;
+      return cond.op === "==" ? equals : cond.op === "!=" ? !equals : false;
+    }
+    var num = Number(cond.value);
+    if (!isFinite(num)) return false;
+    if (cond.op === "==") return actual === num;
+    if (cond.op === "!=") return actual !== num;
+    if (cond.op === ">") return actual > num;
+    if (cond.op === ">=") return actual >= num;
+    if (cond.op === "<") return actual < num;
+    if (cond.op === "<=") return actual <= num;
+    return false;
+  }
+  function evaluateAnimatorTransitions(machine, values, currentStateId, progress) {
+    var candidates = [];
+    machine.transitions.forEach(function (t, i) {
+      if (t.from === currentStateId || t.from === "*") candidates.push({ t: t, i: i });
+    });
+    candidates.sort(function (a, b) { return a.t.order - b.t.order || a.i - b.i; });
+    for (var ci = 0; ci < candidates.length; ci++) {
+      var transition = candidates[ci].t;
+      if (transition.exitTime > 0 && progress < transition.exitTime) continue;
+      var ok = true;
+      for (var ki = 0; ki < transition.conds.length; ki++) {
+        var cond = transition.conds[ki];
+        var isTrigger = false;
+        machine.params.forEach(function (p) { if (p.name === cond.name && p.type === "trigger") isTrigger = true; });
+        if (isTrigger) {
+          var fired = values[cond.name] === true;
+          if (cond.op === "==" ? !fired : cond.op === "!=" ? fired : true) { ok = false; break; }
+        } else if (!animatorConditionSatisfied(cond, values)) { ok = false; break; }
+      }
+      if (ok) return transition;
+    }
+    return null;
+  }
+
+  function buildScene(screen) {
+    var keepState = sceneState && sceneState.screenId === currentScreenId ? sceneState : null;
+    root.innerHTML = "";
+    var bg = screen.styles && typeof screen.styles.background === "string" ? screen.styles.background : "#0c0f17";
+    root.style.background = bg;
+    var vw = root.clientWidth || 390, vh = root.clientHeight || 844;
+    var stage = document.createElement("div");
+    stage.style.cssText = "position:relative;overflow:hidden;touch-action:none";
+    stage.style.width = vw + "px";
+    stage.style.height = vh + "px";
+    var refs = {};
+    var playerComponent = null;
+    var cameraComponentId = null;
+    var lightConfigs = [];
+    var lightLayerEl = null;
+    var emitterConfigs = [];
+    // emitterSims is module-scoped (see above) — the scene loop drains it.
+    // TASK 15: every renderable (entities AND world-positioned text) appends
+    // in the sorted back-to-front order â€” DOM order IS the draw order.
+    sortedRenderOrder(screen).forEach(function (n) {
+      // The camera is configuration, not a visible object in the export.
+      if (n.type === "camera") { cameraComponentId = n.id; return; }
+      var props = componentProps[n.id] || {};
+      var r = sceneRect(props, n.type);
+      // SYSTEM 5: lights are configuration â€” collected for the compositing
+      // layer (clamped), never rendered as objects.
+      if (n.type === "light") {
+        if (props.enabled === false) return;
+        var le = Number(props.intensity);
+        var lr = Number(props.radius);
+        var lc = String(props.color || "#ffd9a0");
+        lightConfigs.push({
+          id: n.id,
+          cx: r.x + r.width / 2, cy: r.y + r.height / 2,
+          radius: isFinite(lr) ? Math.min(Math.max(lr, 8), 2000) : 140,
+          intensity: isFinite(le) ? Math.min(Math.max(le, 0), 5) : 1,
+          color: /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(lc) ? lc : "#ffd9a0"
+        });
+        return;
+      }
+      // SYSTEM 18: emitters are configuration â€” collected for the particle
+      // canvas, never rendered as objects.
+      if (n.type === "emitter") {
+        emitterConfigs.push({ id: n.id, config: parseEmitter(props), cx: r.x + r.width / 2, cy: r.y + r.height / 2 });
+        return;
+      }
+      var el = document.createElement("div");
+      el.style.cssText = "position:absolute;user-select:none";
+      // TASK 66 Â§39: the same observability attributes as the editor preview
+      // (data-entity, camera state) so tests read identical state everywhere.
+      el.setAttribute("data-entity", n.id);
+      el.style.left = r.x + "px"; el.style.top = r.y + "px";
+      el.style.width = r.width + "px"; el.style.height = r.height + "px";
+      // World-positioned text participates in sorting (HUD parity with the
+      // editor preview) â€” assigned to the UI layer it renders above gameplay.
+      if (ENTITY_TYPES[n.type] !== 1) {
+        el.style.cssText += "color:#e8ecf6;font-weight:800;letter-spacing:2px;white-space:pre-wrap";
+        el.style.fontSize = (typeof props.fontSize === "number" ? props.fontSize : 20) + "px";
+        el.textContent = String(props.text || "");
+        stage.appendChild(el);
+        return;
+      }
+      var color = typeof props.color === "string" ? props.color : "#58c7f0";
+      if (!sceneVisible(props)) el.style.display = "none";
+      // TASK 62 SS10/SS11: pivot + flip through the ONE canonical formula -
+      // identical to the design canvas and the preview runtime. The pivot is
+      // the rotation anchor and the fixed edge for flips; the asset itself is
+      // never mutated.
+      var pivotX = typeof props.pivotX === "number" && isFinite(props.pivotX) ? Math.min(1, Math.max(0, props.pivotX)) : 0.5;
+      var pivotY = typeof props.pivotY === "number" && isFinite(props.pivotY) ? Math.min(1, Math.max(0, props.pivotY)) : 0.5;
+      var flips = (props.flipX === true || props.flipY === true) ? " scale(" + (props.flipX === true ? -1 : 1) + "," + (props.flipY === true ? -1 : 1) + ")" : "";
+      var transform = "";
+      if (typeof props.rotation === "number" && props.rotation) transform = "rotate(" + props.rotation + "deg)";
+      if (flips) transform += flips;
+      if (transform) el.style.transform = transform;
+      el.style.transformOrigin = (pivotX * 100) + "% " + (pivotY * 100) + "%";
+      var animClip0 = activeAnimOf(props);
+      var hasTex = (typeof props.src === "string" && props.src.trim() !== "") || (animClip0 && animClip0.frames.length > 0);
+      if (hasTex) {
+        var tex = document.createElement("img");
+        tex.style.cssText = "width:100%;height:100%;object-fit:fill;image-rendering:pixelated;pointer-events:none";
+        tex.alt = "";
+        var ref0 = animClip0 && animClip0.frames.length ? animClip0.frames[0] : props.src.trim();
+        tex.src = ref0.indexOf("asset:") === 0 ? assetSrc(ref0) : ref0;
+        el.style.overflow = "hidden";
+        el.appendChild(tex);
+        stage.appendChild(el);
+        refs[n.id] = el;
+        return;
+      }
+      switch (n.type) {
+        case "player":
+          playerComponent = n;
+          el.style.borderRadius = "9px"; el.style.background = color;
+          el.style.boxShadow = "inset -4px -4px 0 rgb(0 0 0 / .18)";
+          break;
+        case "platform":
+          el.style.background = color; el.style.borderRadius = "4px";
+          el.style.boxShadow = "inset 0 2px 0 rgb(255 255 255 / .12)";
+          break;
+        case "coin":
+          el.style.borderRadius = "50%"; el.style.background = color;
+          el.style.boxShadow = "inset -3px -3px 0 rgb(0 0 0 / .28)";
+          break;
+        case "enemy":
+          el.style.borderRadius = "8px"; el.style.background = color;
+          el.style.boxShadow = "inset -3px -3px 0 rgb(0 0 0 / .22)";
+          break;
+        case "trigger":
+          el.style.border = "2px dashed " + color; el.style.borderRadius = "8px";
+          el.style.background = color + "22";
+          break;
+        case "tilemap": {
+          var tcell = tilemapCellSize(props);
+          el.style.position = "relative"; el.style.overflow = "hidden";
+          var paintedSet = {};
+          String(props.tiles || "").split(";").forEach(function (seg) {
+            seg = seg.trim();
+            if (!seg) return;
+            var p = seg.split(":")[0].split(",");
+            if (isFinite(parseInt(p[0], 10)) && isFinite(parseInt(p[1], 10))) paintedSet[p[0] + "," + p[1]] = 1;
+          });
+          tilemapCellRects(props, { x: 0, y: 0, width: r.width, height: r.height }).forEach(function (c) {
+            var tile = document.createElement("div");
+            tile.style.cssText = "position:absolute";
+            tile.style.left = (c.x - r.x) + "px"; tile.style.top = (c.y - r.y) + "px";
+            tile.style.width = tcell + "px"; tile.style.height = tcell + "px";
+            tile.style.background = autoTileColor(props, Math.round((c.x - r.x) / tcell), Math.round((c.y - r.y) / tcell), paintedSet, c.tile);
+            tile.style.boxShadow = "inset 0 0 0 1px rgb(255 255 255 / .06)";
+            el.appendChild(tile);
+          });
+          break;
+        }
+        default:
+          el.style.background = color; el.style.borderRadius = "6px"; el.style.opacity = ".92";
+      }
+      stage.appendChild(el);
+      refs[n.id] = el;
+    });
+    root.appendChild(stage);
+    if (keepState) {
+      keepState.refs = refs;
+      keepState.stageEl = stage;
+      keepState.cameraComponentId = cameraComponentId;
+      sceneState = keepState;
+      return;
+    }
+    var spawn = playerComponent ? sceneRect(componentProps[playerComponent.id] || {}, "player") : { x: 24, y: 24 };
+    // 2D physics material (SYSTEM 3 parity with the editor preview):
+    // gravity scale + bounciness + friction come from the player's props.
+    var pprops = playerComponent ? (componentProps[playerComponent.id] || {}) : {};
+    var pn = function (v, lo, hi, f) { return typeof v === "number" && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : f; };
+    // Camera snaps to its initial framing (follow target or its own rect),
+    // then eases â€” never from (0,0). Same rule as the editor preview.
+    var camInit = { x: 0, y: 0, shakeLeft: 0, shakeTotal: 0, strength: 0, phase: 0 };
+    if (cameraComponentId) {
+      var cprops0 = componentProps[cameraComponentId] || {};
+      var cc0 = cameraConfigOf(cprops0);
+      var t0 = cc0.followEnabled ? cc0.followTarget : "";
+      var tprops0 = t0 ? componentProps[t0] : null;
+      var ttype0 = null;
+      (screen.components || []).forEach(function (n) { if (n.id === t0 && n.type !== "camera") ttype0 = n.type; });
+      var snapX, snapY;
+      if (tprops0 && ttype0) {
+        var tr0 = sceneRect(tprops0, ttype0);
+        var tw0 = ttype0 === "player" ? 36 : tr0.width;
+        snapX = tr0.x + tw0 / 2 - vw / 2;
+        snapY = tr0.y + tr0.height / 2 - vh / 2;
+      } else {
+        var own0 = sceneRect(cprops0, "camera");
+        snapX = own0.x; snapY = own0.y;
+      }
+      if (cc0.boundsEnabled) {
+        snapX = (cc0.maxX - cc0.minX) <= vw ? cc0.minX : Math.min(cc0.maxX - vw, Math.max(cc0.minX, snapX));
+        snapY = (cc0.maxY - cc0.minY) <= vh ? cc0.minY : Math.min(cc0.maxY - vh, Math.max(cc0.minY, snapY));
+      }
+      camInit.x = snapX; camInit.y = snapY;
+    }
+    // SYSTEM 5: the lighting compositing layer â€” world-anchored (offset by
+    // the camera origin so it covers exactly the visible region), an ambient
+    // veil plus one screen-blended radial gradient per enabled light.
+    var ambient = ambientOf(screen.styles);
+    var anyLight = lightConfigs.some(function (l) { return l.intensity > 0; });
+    if (ambient.intensity < 1 || anyLight) {
+      var layer = document.createElement("div");
+      layer.setAttribute("data-light-layer", "true");
+      layer.style.cssText = "position:absolute;pointer-events:none;isolation:isolate";
+      layer.style.left = camInit.x + "px";
+      layer.style.top = camInit.y + "px";
+      layer.style.width = vw + "px";
+      layer.style.height = vh + "px";
+      var veil = document.createElement("div");
+      veil.setAttribute("data-light-ambient", "true");
+      veil.style.cssText = "position:absolute;inset:0;background:" + ambient.color + ";opacity:" + (1 - ambient.intensity);
+      layer.appendChild(veil);
+      lightConfigs.forEach(function (l) {
+        if (l.intensity <= 0) return;
+        var glow = document.createElement("div");
+        glow.setAttribute("data-light-point", l.id);
+        glow.style.cssText = "position:absolute;border-radius:50%;mix-blend-mode:screen;opacity:" + Math.min(1, l.intensity) + ";background:radial-gradient(circle, " + l.color + " 0%, rgba(0,0,0,0) 72%)";
+        glow.style.left = (l.cx - l.radius - camInit.x) + "px";
+        glow.style.top = (l.cy - l.radius - camInit.y) + "px";
+        glow.style.width = (l.radius * 2) + "px";
+        glow.style.height = (l.radius * 2) + "px";
+        layer.appendChild(glow);
+      });
+      stage.appendChild(layer);
+      lightLayerEl = layer;
+    }
+    // SYSTEM 18: one bounded particle canvas for the scene (emissive â€” drawn
+    // above the lighting layer).
+    if (emitterConfigs.length > 0) {
+      var pc = document.createElement("canvas");
+      pc.setAttribute("data-particle-canvas", "true");
+      pc.width = vw; pc.height = vh;
+      pc.style.cssText = "position:absolute;pointer-events:none";
+      pc.style.left = camInit.x + "px";
+      pc.style.top = camInit.y + "px";
+      stage.appendChild(pc);
+      emitterConfigs.forEach(function (e) {
+        emitterSims.push({ id: e.id, config: e.config, cx: e.cx, cy: e.cy, sim: createParticleSim(e.config.maxParticles), canvas: pc });
+      });
+    }
+    var sceneActions = inputActionsOf(screen);
+    sceneState = {
+      screenId: currentScreenId, refs: refs, stageEl: stage,
+      playerComponentId: playerComponent ? playerComponent.id : null,
+      cameraComponentId: cameraComponentId,
+      lightLayer: lightLayerEl,
+      player: { x: spawn.x, y: spawn.y, vx: 0, vy: 0, facing: 1, grounded: false },
+      spawn: { x: spawn.x, y: spawn.y }, touching: {},
+      input: { pressed: {}, justPressed: [], keyIndex: inputKeyIndex(sceneActions) },
+      width: vw, height: vh,
+      cam: camInit,
+      anims: (function () {
+        var map = {};
+        (screen.components || []).forEach(function (n) {
+          var props = componentProps[n.id] || {};
+          var clip = activeAnimOf(props);
+          if (!clip) return;
+          var entry = { clip: clip, elapsed: 0, paused: false, done: false, machine: null };
+          var machine = parseAnimator(props.animator);
+          if (machine) {
+            var values = {};
+            machine.params.forEach(function (p) {
+              values[p.name] = p.type === "bool" ? (p.initial === "1" || p.initial === "true") : p.type === "number" ? (Number(p.initial) || 0) : false;
+            });
+            var currentState = machine.states[0];
+            machine.states.forEach(function (s) { if (s.id === machine.defaultId) currentState = s; });
+            var startClip = clip;
+            parseAnimations(props.animations).forEach(function (c) { if (c.id === currentState.clip) startClip = c; });
+            entry.clip = startClip;
+            entry.machine = { def: machine, values: values, currentId: currentState.id, speed: currentState.speed };
+          }
+          map[n.id] = entry;
+        });
+        return map;
+      })(),
+      phys: {
+        gravityScale: pn(pprops.gravityScale, -4, 4, 1),
+        bounciness: pn(pprops.bounciness, 0, 1, 0),
+        friction: pn(pprops.friction, 0, 1, 0)
+      }
+    };
+  }
+
+  // Global input: one listener set serves whichever scene is active. Keys
+  // translate into ACTION state; the tick is the only consumer (device keys
+  // appear only in the action bindings, never in gameplay logic).
+  window.addEventListener("keydown", function (ev) {
+    if (!sceneState || !sceneState.input) return;
+    var ids = sceneState.input.keyIndex[ev.key.toLowerCase()];
+    if (!ids) return;
+    ev.preventDefault();
+    ids.forEach(function (id) {
+      if (!sceneState.input.pressed[id]) {
+        sceneState.input.justPressed.push(id);
+      }
+      sceneState.input.pressed[id] = true;
+    });
+  });
+  window.addEventListener("keyup", function (ev) {
+    if (!sceneState || !sceneState.input) return;
+    var ids = sceneState.input.keyIndex[ev.key.toLowerCase()];
+    if (!ids) return;
+    ids.forEach(function (id) { sceneState.input.pressed[id] = false; });
+  });
+
+  var sceneLast = 0;
+  function sceneTick(now) {
+    requestAnimationFrame(sceneTick);
+    var screen = screenOf(currentScreenId);
+    if (!screen || !isSceneScreen(screen) || !sceneState || sceneState.screenId !== currentScreenId || !sceneState.playerComponentId) { sceneLast = now; return; }
+    var dt = Math.min((now - sceneLast) / 1000, 0.05);
+    sceneLast = now;
+    var p = sceneState.player;
+    var phys = sceneState.phys || { gravityScale: 1, bounciness: 0, friction: 0 };
+    // INPUT (input abstraction): velocity from action state; the jump edge is
+    // consumed inside the tick â€” deterministic, exactly once per press.
+    var inp = sceneState.input || { pressed: {}, justPressed: [] };
+    function held(id) { return inp.pressed[id] === true; }
+    // ACTION EVENTS: each just-pressed edge dispatches its "action-pressed-*"
+    // event to matching block handlers â€” screen-level first, then components
+    // in model order (nested included). One dispatch per edge; script
+    // dispatch runs before physics, mirroring the preview runtime.
+    inp.justPressed.forEach(function (actionId) { dispatchActionPressed(actionId); });
+    p.vx = (held("move-left") ? -SCENE_MOVE : 0) + (held("move-right") ? SCENE_MOVE : 0);
+    if (p.vx !== 0) p.facing = p.vx > 0 ? 1 : -1;
+    if (inp.justPressed.indexOf("jump") !== -1 && p.grounded) {
+      p.vy = -SCENE_JUMP;
+      p.grounded = false;
+    }
+    // Grounded friction damps residual horizontal motion when no input.
+    if (p.grounded && p.vx !== 0 && !held("move-left") && !held("move-right")) {
+      var drop = phys.friction * 12 * dt;
+      p.vx = Math.abs(p.vx) <= drop ? 0 : p.vx - (p.vx > 0 ? drop : -drop);
+    }
+    // ANIMATION (SLICE 2): elapsed-time playback â€” frame index derives from
+    // accumulated seconds Ã— fps (identical pacing at any frame rate).
+    // Non-looping clips clamp at the last frame; then block play/stop
+    // commands drain against runtime state, and the img src swaps to the
+    // current frame only when it actually changed.
+    var anims = sceneState.anims || {};
+    Object.keys(anims).forEach(function (id) {
+      var st = anims[id];
+      if (!st.paused && !st.done) {
+        st.elapsed += dt * (st.machine ? st.machine.speed : 1);
+        if (clipCompleted(st.clip, st.elapsed)) st.done = true;
+      }
+    });
+    while (animCommands.length > 0) {
+      var ac = animCommands.shift();
+      var st2 = anims[ac.id];
+      if (!st2) continue;
+      var clips2 = parseAnimations(componentProps[ac.id] ? componentProps[ac.id].animations : "");
+      if (ac.op === "play") {
+        var next = null;
+        if (ac.clipId) {
+          for (var ci = 0; ci < clips2.length; ci++) if (clips2[ci].id === ac.clipId) next = clips2[ci];
+        }
+        if (next) st2.clip = next;
+        st2.elapsed = 0; st2.paused = false; st2.done = false;
+      } else if (ac.op === "stop") {
+        st2.elapsed = 0; st2.paused = true; st2.done = false;
+      } else if ((ac.op === "param" || ac.op === "trigger") && ac.name && st2.machine) {
+        var pdef = null;
+        st2.machine.def.params.forEach(function (p) { if (p.name === ac.name) pdef = p; });
+        if (pdef) {
+          if (pdef.type === "trigger") st2.machine.values[pdef.name] = true;
+          else if (pdef.type === "bool") st2.machine.values[pdef.name] = ac.value === true || ac.value === 1;
+          else st2.machine.values[pdef.name] = Number(ac.value) || 0;
+        }
+      }
+    }
+    // STATE MACHINE (SLICE 3): feed built-in parameters from the player's
+    // actual physics, evaluate transitions in explicit priority order (at
+    // most ONE switch per tick), drive the animation player, consume
+    // triggers after each pass.
+    Object.keys(anims).forEach(function (id) {
+      var st3 = anims[id];
+      var machine = st3.machine;
+      if (!machine) return;
+      var isPlayerEntity = id === sceneState.playerComponentId;
+      var pbody = sceneState.player;
+      // Built-in parameters are always fed from actual physics.
+      machine.values["speed"] = isPlayerEntity && pbody ? Math.abs(pbody.vx) : 0;
+      machine.values["isGrounded"] = isPlayerEntity && pbody ? pbody.grounded : true;
+      var total = st3.clip.frames.length / Math.max(1, st3.clip.fps);
+      var rawProgress = total > 0 ? st3.elapsed / total : 1;
+      var progress = st3.clip.loop && rawProgress >= 1 ? rawProgress % 1 : Math.min(rawProgress, 1);
+      var taken = evaluateAnimatorTransitions(machine.def, machine.values, machine.currentId, progress);
+      if (taken) {
+        var target = null;
+        machine.def.states.forEach(function (s) { if (s.id === taken.to) target = s; });
+        if (target) {
+          machine.currentId = target.id;
+          machine.speed = target.speed;
+          var targetClip = null;
+          parseAnimations(componentProps[id] ? componentProps[id].animations : "").forEach(function (c) {
+            if (c.id === target.clip) targetClip = c;
+          });
+          if (targetClip && targetClip.id !== st3.clip.id) {
+            st3.clip = targetClip;
+            st3.elapsed = 0;
+            st3.done = false;
+            st3.paused = false;
+          }
+        }
+      }
+      machine.def.params.forEach(function (param) {
+        if (param.type === "trigger") machine.values[param.name] = false;
+      });
+    });
+    Object.keys(anims).forEach(function (id) {
+      var st3 = anims[id];
+      var el = sceneState.refs[id];
+      if (!el || !el.firstChild) return;
+      var idx = st3.done ? st3.clip.frames.length - 1 : clipFrameIndex(st3.clip, st3.elapsed);
+      var frameRef = st3.clip.frames[Math.min(idx, st3.clip.frames.length - 1)];
+      if (frameRef && el.firstChild.getAttribute("data-frame-ref") !== frameRef) {
+        el.firstChild.setAttribute("data-frame-ref", frameRef);
+        el.firstChild.src = frameRef.indexOf("asset:") === 0 ? assetSrc(frameRef) : frameRef;
+      }
+    });
+
+    var body = { x: p.x, y: p.y, width: 36, height: 36 };
+    // World extents: camera bounds when enabled, else the viewport itself.
+    var world = { minX: 0, maxX: sceneState.width, maxY: sceneState.height, enabled: false };
+    if (sceneState.cameraComponentId) {
+      var wcfg = cameraConfigOf(componentProps[sceneState.cameraComponentId] || {});
+      if (wcfg.boundsEnabled) {
+        world = { minX: wcfg.minX, maxX: wcfg.maxX, maxY: wcfg.maxY, enabled: true };
+      }
+    }
+    body.x = Math.max(world.minX, Math.min(world.maxX - body.width, body.x + p.vx * dt));
+    p.vy += SCENE_GRAVITY * phys.gravityScale * dt;
+    body.y += p.vy * dt;
+    p.grounded = false;
+    (screen.components || []).forEach(function (n) {
+      if (n.id === sceneState.playerComponentId) return;
+      var props = componentProps[n.id] || {};
+      if (!sceneSolid(n.type, props)) return;
+      var r = sceneRect(props, n.type);
+      // Tilemaps collide per SOLID painted cell (TASK 62 Â§20: "pass" palette
+      // tiles are decoration); other solids are one rect.
+      var solids = n.type === "tilemap" ? tilemapSolidCellRects(props, r) : [r];
+      solids.forEach(function (s) {
+        var withinX = body.x + body.width > s.x + 2 && body.x < s.x + s.width - 2;
+        var feet = body.y + body.height;
+        var landing = p.vy >= 0 && feet >= s.y && feet <= s.y + s.height + 10 && feet - p.vy * dt <= s.y + 4;
+        if (withinX && landing) {
+          body.y = s.y - body.height;
+          var impact = Math.abs(p.vy);
+          p.vy = phys.bounciness > 0 && impact > 120 ? -impact * phys.bounciness : 0;
+          p.grounded = p.vy === 0;
+        }
+      });
+    });
+    var floorY = world.enabled ? world.maxY : sceneState.height;
+    if (body.y + body.height >= floorY) {
+      var fImpact = Math.abs(p.vy);
+      body.y = floorY - body.height;
+      p.vy = phys.bounciness > 0 && fImpact > 120 ? -fImpact * phys.bounciness : 0;
+      p.grounded = p.vy === 0;
+    }
+    if (body.y < -60) { body.y = -60; p.vy = 0; }
+    if (body.y > floorY + 120) { body.x = sceneState.spawn.x; body.y = sceneState.spawn.y; p.vy = 0; sceneState.touching = {}; }
+    p.x = body.x; p.y = body.y;
+
+    var pel = sceneState.refs[sceneState.playerComponentId];
+    if (pel) { pel.style.left = p.x + "px"; pel.style.top = p.y + "px"; }
+    sceneState.stageEl.setAttribute("data-player-x", p.x.toFixed(1));
+    sceneState.stageEl.setAttribute("data-player-y", p.y.toFixed(1));
+    sceneState.stageEl.setAttribute("data-player-grounded", String(p.grounded));
+
+    // TASK 14 camera: follow â†’ smooth â†’ clamp â†’ shake, one pass per frame â€”
+    // the same semantics as the editor preview, applied to the stage transform.
+    if (sceneState.cameraComponentId) {
+      var cc = cameraConfigOf(componentProps[sceneState.cameraComponentId] || {});
+      var cam = sceneState.cam;
+      var desiredX, desiredY;
+      var tid = cc.followEnabled ? cc.followTarget : "";
+      // TASK 66 §16: the camera follows the LIVE player position (the same
+      // semantics as the editor preview) — authored props never move, so the
+      // old componentProps read froze the camera at the spawn framing.
+      if (tid === sceneState.playerComponentId && sceneState.player) {
+        desiredX = sceneState.player.x + 18 - sceneState.width / 2;
+        desiredY = sceneState.player.y + 18 - sceneState.height / 2;
+      } else if (tid) {
+        var tprops = componentProps[tid];
+        var ttype = null;
+        (screen.components || []).forEach(function (n) { if (n.id === tid && n.type !== "camera") ttype = n.type; });
+        if (tprops && ttype) {
+          var tr = sceneRect(tprops, ttype);
+          desiredX = tr.x + tr.width / 2 - sceneState.width / 2;
+          desiredY = tr.y + tr.height / 2 - sceneState.height / 2;
+        } else {
+          var ownCfg = sceneRect(componentProps[sceneState.cameraComponentId] || {}, "camera");
+          desiredX = ownCfg.x; desiredY = ownCfg.y;
+        }
+      } else {
+        var own = sceneRect(componentProps[sceneState.cameraComponentId] || {}, "camera");
+        desiredX = own.x; desiredY = own.y;
+      }
+      var alpha = cc.smoothing <= 0 ? 1 : 1 - Math.pow(1 - cc.smoothing, Math.min(dt, 0.05) * 60);
+      cam.x += (desiredX - cam.x) * alpha;
+      cam.y += (desiredY - cam.y) * alpha;
+      if (cc.boundsEnabled) {
+        cam.x = (cc.maxX - cc.minX) <= sceneState.width ? cc.minX : Math.min(cc.maxX - sceneState.width, Math.max(cc.minX, cam.x));
+        cam.y = (cc.maxY - cc.minY) <= sceneState.height ? cc.minY : Math.min(cc.maxY - sceneState.height, Math.max(cc.minY, cam.y));
+      }
+      // TASK 62 Â§23: pixel-safe mode â€” whole-pixel camera before rendering
+      // (identical to the preview runtime; authored data untouched).
+      if (cc.pixelSnap) {
+        cam.x = Math.round(cam.x);
+        cam.y = Math.round(cam.y);
+      }
+      var sx = 0, sy = 0;
+      if (cam.shakeLeft > 0) {
+        cam.shakeLeft = Math.max(0, cam.shakeLeft - dt);
+        cam.phase += dt * SHAKE_FREQUENCY * Math.PI * 2;
+        var envelope = cam.shakeTotal > 0 ? cam.shakeLeft / cam.shakeTotal : 0;
+        sx = cam.strength * envelope * Math.sin(cam.phase);
+        sy = cam.strength * envelope * Math.cos(cam.phase * 1.31);
+        if (cam.shakeLeft === 0) { sx = 0; sy = 0; cam.phase = 0; }
+      }
+      sceneState.stageEl.style.transform = "translate(" + (-(cam.x - sx)) + "px," + (-(cam.y - sy)) + "px)";
+      sceneState.stageEl.setAttribute("data-camera-x", cam.x.toFixed(1));
+      sceneState.stageEl.setAttribute("data-camera-y", cam.y.toFixed(1));
+      // SYSTEM 5: the lighting layer tracks the camera (world-anchored).
+      if (sceneState.lightLayer) {
+        sceneState.lightLayer.style.left = (cam.x - sx) + "px";
+        sceneState.lightLayer.style.top = (cam.y - sy) + "px";
+      }
+      // SYSTEM 18: advance + draw particles (world-anchored, emissive).
+      if (emitterSims.length > 0) {
+        var canvas = emitterSims[0].canvas;
+        canvas.style.left = (cam.x - sx) + "px";
+        canvas.style.top = (cam.y - sy) + "px";
+        var ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          emitterSims.forEach(function (e) {
+            var cmd = null;
+            for (var pi = particleCommands.length - 1; pi >= 0; pi--) {
+              if (particleCommands[pi].id === e.id) cmd = particleCommands.splice(pi, 1)[0];
+            }
+            if (cmd) simBurst(e.sim, e.config, e.cx, e.cy, cmd.count);
+            simStep(e.sim, e.config, dt, e.cx, e.cy);
+            e.sim.particles.forEach(function (p) {
+              var t2 = p.lifetime > 0 ? Math.min(p.age / p.lifetime, 1) : 1;
+              var size = p.startSize + (p.endSize - p.startSize) * t2;
+              var opacity = p.startOpacity + (p.endOpacity - p.startOpacity) * t2;
+              if (size <= 0 || opacity <= 0) return;
+              ctx.globalAlpha = opacity;
+              ctx.fillStyle = p.color;
+              ctx.beginPath();
+              ctx.arc(p.x - (cam.x - sx), p.y - (cam.y - sy), Math.max(0.5, size / 2), 0, Math.PI * 2);
+              ctx.fill();
+            });
+          });
+          ctx.globalAlpha = 1;
+        }
+      }
+      particleCommands.length = 0;
+    }
+
+    var still = {};
+    (screen.components || []).forEach(function (n) {
+      if (n.id === sceneState.playerComponentId) return;
+      var props = componentProps[n.id] || {};
+      if (!sceneTrigger(n.type, props) || !sceneVisible(props)) return;
+      var r = sceneRect(props, n.type);
+      if (overlap(body, r)) {
+        still[n.id] = 1;
+        if (!sceneState.touching[n.id]) emit(sceneState.playerComponentId, "touches-" + n.id);
+      }
+    });
+    sceneState.touching = still;
+
+    // The just-pressed edges were consumed by this tick â€” clear them so one
+    // press can never fire twice (and never re-jump on landing while held).
+    inp.justPressed.length = 0;
+  }
+  requestAnimationFrame(sceneTick);
+
+  // ---- rendering ---------------------------------------------------------------
+  function renderNode(node) {
+    var props = componentProps[node.id] || {};
+    var styles = node.styles || {};
+    var el, child;
+
+    function container(flexDirection) {
+      var d = document.createElement("div");
+      applyCSS(d, styles);
+      d.style.display = "flex";
+      d.style.flexDirection = flexDirection;
+      d.style.minWidth = "0";
+      if (node.type === "card") d.style.boxShadow = "0 1px 3px rgb(16 24 40 / .08)";
+      (node.children || []).forEach(function (c) { d.appendChild(renderNode(c)); });
+      return d;
+    }
+
+    switch (node.type) {
+      case "column":
+      case "container":
+      case "card": return container("column");
+      case "row": return container("row");
+      case "h-scroll": {
+        var hs = container("row");
+        hs.style.overflowX = "auto"; hs.style.overflowY = "hidden";
+        return hs;
+      }
+      case "v-scroll": {
+        var vs = container("column");
+        vs.style.overflowY = "auto"; vs.style.overflowX = "hidden";
+        return vs;
+      }
+      case "table": {
+        var tb = document.createElement("div");
+        applyCSS(tb, styles);
+        var cols = typeof props.columns === "number" && props.columns > 0 ? props.columns : 2;
+        tb.style.display = "grid";
+        tb.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+        (node.children || []).forEach(function (child) { tb.appendChild(renderNode(child)); });
+        return tb;
+      }
+      case "listview": {
+        var lv = document.createElement("div");
+        applyCSS(lv, styles);
+        lv.style.alignSelf = "stretch"; lv.style.overflowY = "auto";
+        var items = String(props.items || "").split("\n").map(function (x) { return x.trim(); }).filter(function (x) { return x !== ""; });
+        if (items.length === 0) {
+          lv.style.padding = "12px"; lv.style.color = "#9aa1b2"; lv.style.fontSize = "13px";
+          lv.textContent = "ListView \u2014 no items";
+          return lv;
+        }
+        items.forEach(function (item, i) {
+          var rowBtn = document.createElement("button");
+          rowBtn.type = "button";
+          rowBtn.textContent = item;
+          rowBtn.style.cssText = "display:block;width:100%;text-align:left;padding:10px 12px;cursor:pointer;color:#0b0e16;font-size:inherit;background:" + (item === props.selection ? "#efecff" : "transparent") + ";border:none;" + (i === 0 ? "" : "border-top:1px solid #eef0f4;");
+          rowBtn.addEventListener("click", function () {
+            componentProps[node.id].selection = item;
+            emit(node.id, "itemClick");
+          });
+          lv.appendChild(rowBtn);
+        });
+        return lv;
+      }
+      case "canvas": {
+        var cv = document.createElement("canvas");
+        cv.setAttribute("data-canvas", "1");
+        cv.width = 390; cv.height = typeof styles.height === "number" ? styles.height : 220;
+        applyCSS(cv, styles);
+        cv.style.width = "100%"; cv.style.display = "block"; cv.style.touchAction = "none";
+        var cctx = cv.getContext("2d");
+        cctx.fillStyle = typeof props.background === "string" ? props.background : "#ffffff";
+        cctx.fillRect(0, 0, cv.width, cv.height);
+        cv.addEventListener("pointerdown", function (ev) {
+          var r = cv.getBoundingClientRect();
+          var x = Math.round(((ev.clientX - r.left) / r.width) * 390);
+          var y = Math.round(((ev.clientY - r.top) / r.height) * cv.height);
+          componentProps[node.id].lastX = x; componentProps[node.id].lastY = y;
+          emit(node.id, "touch");
+        });
+        return cv;
+      }
+      case "tinydb":
+      case "clock":
+      case "location-sensor":
+      case "accelerometer-sensor":
+      case "text-to-speech":
+      case "sound":
+      case "notifier":
+      case "web":
+      case "clouddb":
+      case "file":
+      case "webdb":
+      case "activity-starter":
+      case "bluetooth-client":
+      case "bluetooth-server":
+      case "player":
+      case "image-sprite": {
+        var chip = document.createElement("div");
+        chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;align-self:flex-start;padding:4px 10px;border-radius:8px;border:1px dashed #b8bfd0;background:#f6f7fa;color:#5b6478;font-size:11.5px";
+        chip.textContent = "\u25C8 " + node.type;
+        return chip;
+      }
+      case "text": {
+        el = document.createElement("div");
+        applyCSS(el, styles);
+        el.style.whiteSpace = "pre-wrap";
+        el.textContent = String(props.text == null ? "" : props.text);
+        return el;
+      }
+      case "button": {
+        el = document.createElement("button");
+        applyCSS(el, styles);
+        el.style.display = "inline-flex";
+        el.style.alignItems = "center";
+        el.style.justifyContent = "center";
+        el.style.alignSelf = "flex-start";
+        el.style.border = "none";
+        el.style.cursor = "pointer";
+        el.textContent = String(props.label == null ? "" : props.label);
+        wire(el, node.id, "click");
+        return el;
+      }
+      case "icon": {
+        el = document.createElement("span");
+        applyCSS(el, styles);
+        el.style.display = "inline-flex";
+        el.style.alignSelf = "flex-start";
+        el.textContent = "?";
+        return el;
+      }
+      case "image": {
+        var src = String(props.src || "");
+        if (src.indexOf("asset:") === 0 && ASSET_BASE) {
+          src = ASSET_BASE + "/api/assets/" + encodeURIComponent(src.slice(6)) + "/raw";
+        }
+        if (src.indexOf("asset:") === 0) {
+          el = document.createElement("div");
+          applyCSS(el, styles);
+          el.style.width = px(styles.width, "200px");
+          el.style.height = px(styles.height, "140px");
+          el.style.display = "flex";
+          el.style.alignItems = "center";
+          el.style.justifyContent = "center";
+          el.style.background = "#f0f1f5";
+          el.style.border = "1px dashed #c9cede";
+          el.style.color = "#8a91a3";
+          el.style.fontSize = "13px";
+          el.textContent = "Image â€” set a URL";
+          return el;
+        }
+        el = document.createElement("img");
+        applyCSS(el, styles);
+        el.style.width = px(styles.width, "200px");
+        el.style.height = px(styles.height, "140px");
+        el.style.background = "#f0f1f5";
+        el.src = src;
+        el.alt = String(props.alt || "");
+        return el;
+      }
+      case "text-input":
+      case "password-input": {
+        el = document.createElement("input");
+        el.type = node.type === "password-input" ? "password" : "text";
+        applyCSS(el, styles);
+        el.style.alignSelf = "stretch";
+        el.value = String(props.value == null ? "" : props.value);
+        el.placeholder = String(props.placeholder || "");
+        el.addEventListener("input", function () { componentProps[node.id].value = el.value; });
+        el.addEventListener("change", function () { emit(node.id, "change"); });
+        el.addEventListener("keydown", function (e) { if (e.key === "Enter") { emit(node.id, "enter"); } });
+        return el;
+      }
+      case "checkbox": {
+        el = document.createElement("label");
+        applyCSS(el, styles);
+        el.style.display = "flex";
+        el.style.alignItems = "center";
+        el.style.gap = "8px";
+        child = document.createElement("input");
+        child.type = "checkbox";
+        child.checked = props.checked === true;
+        child.style.width = "16px"; child.style.height = "16px";
+        child.addEventListener("change", function () {
+          componentProps[node.id].checked = child.checked;
+          emit(node.id, "change");
+        });
+        var label = document.createElement("span");
+        label.textContent = String(props.label || "");
+        label.style.fontSize = px(styles.fontSize, "15px");
+        el.appendChild(child); el.appendChild(label);
+        return el;
+      }
+      case "switch": {
+        el = document.createElement("button");
+        applyCSS(el, styles);
+        el.style.display = "flex";
+        el.style.alignItems = "center";
+        el.style.gap = "8px";
+        el.style.background = "transparent";
+        el.style.border = "none";
+        el.style.padding = "0";
+        el.style.cursor = "pointer";
+        var on = props.on === true;
+        var active = typeof styles.color === "string" ? styles.color : "#5743d9";
+        var track = document.createElement("span");
+        track.style.cssText = "width:40px;height:22px;border-radius:11px;position:relative;background:" + (on ? active : "#c9cede");
+        var knob = document.createElement("span");
+        knob.style.cssText = "position:absolute;top:2px;left:" + (on ? "20px" : "2px") + ";width:18px;height:18px;border-radius:9px;background:#fff;box-shadow:0 1px 2px rgb(16 24 40 / .25)";
+        track.appendChild(knob);
+        var switchLabel = document.createElement("span");
+        switchLabel.textContent = String(props.label || "");
+        switchLabel.style.fontSize = px(styles.fontSize, "15px");
+        switchLabel.style.color = "#0b0e16";
+        el.appendChild(track); el.appendChild(switchLabel);
+        el.addEventListener("click", function () {
+          componentProps[node.id].on = !(componentProps[node.id].on === true);
+          emit(node.id, "change");
+        });
+        return el;
+      }
+      case "divider": {
+        el = document.createElement("div");
+        applyCSS(el, styles);
+        el.style.height = typeof styles.thickness === "number" ? styles.thickness + "px" : "1px";
+        el.style.background = typeof styles.color === "string" ? styles.color : "#e3e6ee";
+        el.style.alignSelf = "stretch";
+        return el;
+      }
+      case "spacer": {
+        el = document.createElement("div");
+        applyCSS(el, styles);
+        return el;
+      }
+      default: {
+        el = document.createElement("div");
+        el.style.cssText = "color:#8a91a3;font-size:13px;padding:12px";
+        el.textContent = "Unknown \u201C" + node.type + "\u201D";
+        return el;
+      }
+    }
+  }
+
+  // ---- events ------------------------------------------------------------------
+  function wire(el, componentId, event) {
+    el.addEventListener(event, function () { emit(componentId, event); });
+  }
+
+  function emit(componentId, event) {
+    var screen = screenOf(currentScreenId);
+    if (!screen || !screen.logic) { scheduleRerender(); return; }
+    var ran = false;
+    screen.logic.handlers.forEach(function (h) {
+      if (h.event === event && (h.componentId === componentId || (event === "click" && h.componentId === null && false))) {
+        runBody(h.body); ran = true;
+      }
+    });
+    void ran;
+    // TASK 66: the rerender is DEFERRED to the next task — a synchronous
+    // rebuild during mousedown (e.g. an input blur firing "change") replaced
+    // the DOM before the click could fire, dropping the interaction.
+    scheduleRerender();
+  }
+
+  var rerenderQueued = false;
+  function scheduleRerender() {
+    if (rerenderQueued) return;
+    rerenderQueued = true;
+    setTimeout(function () { rerenderQueued = false; rerender(); }, 0);
+  }
+
+  function screenOf(id) {
+    return model.screens.find(function (s) { return s.id === id; });
+  }
+
+  // Input abstraction: a global action edge fans out to the matching block
+  // handlers â€” the live screen's screen-level handlers first, then component
+  // handlers in model order (nested included). One dispatch per edge; the
+  // scene loop is the only caller.
+  function dispatchActionPressed(actionId) {
+    var event = "action-pressed-" + actionId;
+    var screen = screenOf(currentScreenId);
+    if (!screen) return;
+    var all = (screen.logic && screen.logic.handlers) || [];
+    // Screen-level handlers arrive with componentId OMITTED (Go omitempty),
+    // so undefined normalizes to null before matching.
+    all.forEach(function (h) {
+      if (h.event === event && (h.componentId || null) === null) runBody(h.body);
+    });
+    var visit = function (nodes) {
+      (nodes || []).forEach(function (n) {
+        all.forEach(function (h) {
+          if (h.event === event && h.componentId === n.id) runBody(h.body);
+        });
+        visit(n.children);
+      });
+    };
+    visit(screen.components);
+    scheduleRerender();
+  }
+
+  // TASK 51: the 3D foundation â€” a vanilla mirror of render3d.ts (software
+  // perspective projection, backface culling, painter's depth sort). The
+  // scene is static: drawn once per rerender.
+  function parseMeshes(screen) {
+    var out = [];
+    (screen.components || []).forEach(function (n) {
+      if (n.type !== "cube3d" && n.type !== "sphere3d" && n.type !== "plane3d") return;
+      // Runtime props first: set-property during a run changes color/visible
+      // and the loop below must draw the run, not the authored snapshot.
+      var p = componentProps[n.id] || n.props || {};
+      var vec3 = function (keys, fallback) {
+        return keys.map(function (k, i) {
+          var v = Number(p[k]);
+          return isFinite(v) ? v : fallback[i];
+        });
+      };
+      out.push({
+        id: n.id,
+        kind: n.type.replace("3d", ""),
+        color: typeof p.color === "string" ? p.color : "#58c7f0",
+        visible: p.visible !== false,
+        parent: String(p.parentId || ""),
+        position: vec3(["px", "py", "pz"], [0, 0.5, 0]),
+        rotation: vec3(["rx", "ry", "rz"], [0, 0, 0]),
+        scale: vec3(["sx", "sy", "sz"], [1, 1, 1])
+      });
+    });
+    return out;
+  }
+  var CUBE_FACES3D = [
+    [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
+    [[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]],
+    [[1, -1, 1], [1, -1, -1], [1, 1, -1], [1, 1, 1]],
+    [[-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [-1, 1, -1]],
+    [[-1, 1, 1], [1, 1, 1], [1, 1, -1], [-1, 1, -1]],
+    [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]]
+  ].map(function (face) { return face.map(function (v) { return [v[0] * 0.5, v[1] * 0.5, v[2] * 0.5]; }); });
+  function rot3(v, r) {
+    var x = v[0], y = v[1], z = v[2];
+    var rz = r[2] * Math.PI / 180, rx = r[0] * Math.PI / 180, ry = r[1] * Math.PI / 180;
+    var x1 = x * Math.cos(rz) - y * Math.sin(rz), y1 = x * Math.sin(rz) + y * Math.cos(rz);
+    var y2 = y1 * Math.cos(rx) - z * Math.sin(rx), z2 = y1 * Math.sin(rx) + z * Math.cos(rx);
+    var x3 = x1 * Math.cos(ry) + z2 * Math.sin(ry);
+    var z3 = -x1 * Math.sin(ry) + z2 * Math.cos(ry);
+    return [x3, y2, z3];
+  }
+  // TASK 53: hierarchy â€” derive world matrices from parentId chains
+  // (cycle-safe: a broken branch evaluates as a root, depth-bounded).
+  function localMatrix3D(p) {
+    return mat4ComposeTRS(
+      [Number(p.px) || 0, isFinite(Number(p.py)) ? Number(p.py) : 0.5, Number(p.pz) || 0],
+      [Number(p.rx) || 0, Number(p.ry) || 0, Number(p.rz) || 0],
+      [isFinite(Number(p.sx)) && Number(p.sx) > 0 ? Number(p.sx) : 1, isFinite(Number(p.sy)) && Number(p.sy) > 0 ? Number(p.sy) : 1, isFinite(Number(p.sz)) && Number(p.sz) > 0 ? Number(p.sz) : 1]
+    );
+  }
+  function mat4ComposeTRS(position, rotation, scale) {
+    var rx = rotation[0] * Math.PI / 180, ry = rotation[1] * Math.PI / 180, rz = rotation[2] * Math.PI / 180;
+    var cx = Math.cos(rx), sx = Math.sin(rx);
+    var cy = Math.cos(ry), sy = Math.sin(ry);
+    var cz = Math.cos(rz), sz = Math.sin(rz);
+    var r00 = cy * cz + sy * sx * sz, r01 = -cy * sz + sy * sx * cz, r02 = sy * cx;
+    var r10 = cx * sz, r11 = cx * cz, r12 = -sx;
+    var r20 = -sy * cz + cy * sx * sz, r21 = sy * sz + cy * sx * cz, r22 = cy * cx;
+    return [
+      r00 * scale[0], r10 * scale[0], r20 * scale[0], 0,
+      r01 * scale[1], r11 * scale[1], r21 * scale[1], 0,
+      r02 * scale[2], r12 * scale[2], r22 * scale[2], 0,
+      position[0], position[1], position[2], 1
+    ];
+  }
+  function mat4Mul(a, b) {
+    var out = new Array(16).fill(0);
+    for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) {
+      var sum = 0;
+      for (var k = 0; k < 4; k++) sum += a[k * 4 + r] * b[c * 4 + k];
+      out[c * 4 + r] = sum;
+    }
+    return out;
+  }
+  function mat4Point(m, p) {
+    return [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]];
+  }
+  function computeWorldMatrices3D(screen) {
+    var meshes = parseMeshes(screen);
+    var byId = {};
+    meshes.forEach(function (m) { byId[m.id] = m; });
+    var matrices = {}, inProgress = {};
+    function evaluate(id, depth) {
+      if (matrices[id]) return matrices[id];
+      var m = byId[id];
+      if (!m) return null;
+      if (inProgress[id] || depth > 32) {
+        matrices[id] = { matrix: mat4ComposeTRS(m.position, m.rotation, m.scale), depth: 0 };
+        return matrices[id];
+      }
+      inProgress[id] = true;
+      var local = mat4ComposeTRS(m.position, m.rotation, m.scale);
+      var parentId = String(m.parent || "");
+      var world, worldDepth = 0;
+      if (parentId && byId[parentId] && parentId !== id) {
+        var parentEntry = evaluate(parentId, depth + 1);
+        world = mat4Mul(parentEntry.matrix, local);
+        worldDepth = parentEntry.depth + 1;
+      } else {
+        world = local;
+      }
+      delete inProgress[id];
+      var entry = { matrix: world, depth: worldDepth };
+      matrices[id] = entry;
+      return entry;
+    }
+    meshes.forEach(function (m) { evaluate(m.id, 0); });
+    return matrices;
+  }
+  function meshFaces3DWorld(mesh, world) {
+    var faces = [];
+    var emit = function (points) {
+      faces.push({
+        points: points.map(function (v) { return mat4Point(world, v); }),
+        color: mesh.color, meshId: mesh.id
+      });
+    };
+    if (mesh.kind === "cube") CUBE_FACES3D.forEach(function (f) { emit(f); });
+    else if (mesh.kind === "sphere") {
+      var lat = 8, lon = 10;
+      for (var i = 0; i < lat; i++) for (var j = 0; j < lon; j++) {
+        var at = function (a, b) {
+          var phi = (a / lat) * Math.PI, theta = (b / lon) * Math.PI * 2;
+          return [Math.sin(phi) * Math.cos(theta) * 0.5, Math.cos(phi) * 0.5, Math.sin(phi) * Math.sin(theta) * 0.5];
+        };
+        emit([at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)]);
+      }
+    } else if (mesh.kind === "plane") emit([[0, 0, 0.5], [1, 0, 0.5], [1, 0, -0.5], [0, 0, -0.5]]);
+    return faces;
+  }
+  // ---- TASK 55: material + lighting inside the export rasterizer --------------
+  // Vanilla mirror of render3d.ts shading: baseColor Ã— clamp01(ambient +
+  // Î£ light NÂ·L contributions) per visible face, geometric normals oriented
+  // toward the viewer, point lights attenuate over their radius. With no
+  // lights and default ambient (white Ã— 1) the output is pixel-identical to
+  // the unlit renderer. Same equations as the browser renderer â€” no
+  // different visual semantics.
+  function hexToRgb01(hex) {
+    var h = typeof hex === "string" && hex.length === 4 ? "#" + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3] : hex;
+    if (typeof h !== "string" || !/^#[0-9a-fA-F]{6}$/.test(h)) return null;
+    return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
+  }
+  function clamp01x(v) { v = Number(v); return isFinite(v) ? Math.min(Math.max(v, 0), 1) : 0; }
+  function shadeFace3D(baseHex, points, camera, lights, ambient) {
+    var base = hexToRgb01(baseHex) || [0.35, 0.78, 0.94];
+    var amb = ambient || { r: 1, g: 1, b: 1, intensity: 1 };
+    var active = [];
+    (lights || []).forEach(function (l) { if (l.enabled && l.intensity > 0 && active.length < 8) active.push(l); });
+    var tr = amb.intensity * amb.r, tg = amb.intensity * amb.g, tb = amb.intensity * amb.b;
+    if (active.length > 0 && points.length >= 3) {
+      var cx = 0, cy = 0, cz = 0, i;
+      for (i = 0; i < points.length; i++) { cx += points[i][0]; cy += points[i][1]; cz += points[i][2]; }
+      cx /= points.length; cy /= points.length; cz /= points.length;
+      var ax = points[1][0] - points[0][0], ay = points[1][1] - points[0][1], az = points[1][2] - points[0][2];
+      var bx = points[2][0] - points[0][0], by = points[2][1] - points[0][1], bz = points[2][2] - points[0][2];
+      var nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+      var nLen = Math.hypot(nx, ny, nz);
+      if (nLen > 1e-9) {
+        nx /= nLen; ny /= nLen; nz /= nLen;
+        var vx = camera.position[0] - cx, vy = camera.position[1] - cy, vz = camera.position[2] - cz;
+        if (nx * vx + ny * vy + nz * vz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+        for (i = 0; i < active.length; i++) {
+          var light = active[i], ndl, atten;
+          if (light.type === "directional") {
+            ndl = -(nx * light.direction[0] + ny * light.direction[1] + nz * light.direction[2]);
+            atten = 1;
+          } else {
+            var lx = light.position[0] - cx, ly = light.position[1] - cy, lz = light.position[2] - cz;
+            var dist = Math.hypot(lx, ly, lz);
+            if (dist < 1e-9) continue;
+            ndl = (nx * lx + ny * ly + nz * lz) / dist;
+            atten = clamp01x(1 - dist / light.radius);
+          }
+          var diffuse = Math.max(ndl, 0) * atten * light.intensity;
+          if (diffuse <= 0) continue;
+          var tint = hexToRgb01(light.color) || [1, 1, 1];
+          tr += diffuse * tint[0]; tg += diffuse * tint[1]; tb += diffuse * tint[2];
+        }
+      }
+    }
+    var r = Math.round(clamp01x(tr) * base[0] * 255);
+    var g = Math.round(clamp01x(tg) * base[1] * 255);
+    var b = Math.round(clamp01x(tb) * base[2] * 255);
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+  function rotDir3D(v, r) {
+    var x = v[0], y = v[1], z = v[2];
+    var rz = r[2] * Math.PI / 180, rx = r[0] * Math.PI / 180, ry = r[1] * Math.PI / 180;
+    var cz = Math.cos(rz), sz = Math.sin(rz), cx = Math.cos(rx), sx = Math.sin(rx), cy = Math.cos(ry), sy = Math.sin(ry);
+    var x1 = x * cz - y * sz, y1 = x * sz + y * cz;
+    var y2 = y1 * cx - z * sx, z2 = y1 * sx + z * cx;
+    var x3 = x1 * cy + z2 * sy, z3 = -x1 * sy + z2 * cy;
+    return [x3, y2, z3];
+  }
+  function parseLight3DProps(p) {
+    var validHex = function (v) { return typeof v === "string" && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.trim()) ? v.trim() : null; };
+    var norm = function (h) { return h && h.length === 4 ? "#" + h[1] + h[1] + h[2] + h[2] + h[3] + h[3] : h; };
+    var iv = Number(p.intensity), rv = Number(p.radius);
+    return {
+      type: p.type === "directional" ? "directional" : "point",
+      enabled: p.enabled !== false,
+      color: norm(validHex(p.color) || "#ffd9a0"),
+      intensity: Math.min(Math.max(isFinite(iv) ? iv : 1, 0), 5),
+      radius: Math.min(Math.max(isFinite(rv) ? rv : 12, 0.1), 1000)
+    };
+  }
+  function parseAmbient3D(styles) {
+    var validHex = function (v) { return typeof v === "string" && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v.trim()) ? v.trim() : null; };
+    var norm = function (h) { return h && h.length === 4 ? "#" + h[1] + h[1] + h[2] + h[2] + h[3] + h[3] : h; };
+    var hex = norm(validHex(styles && styles.ambientColor) || "#ffffff");
+    var iv = Number(styles && styles.ambientIntensity);
+    return {
+      r: parseInt(hex.slice(1, 3), 16) / 255,
+      g: parseInt(hex.slice(3, 5), 16) / 255,
+      b: parseInt(hex.slice(5, 7), 16) / 255,
+      intensity: Math.min(Math.max(isFinite(iv) ? iv : 1, 0), 1)
+    };
+  }
+  // Resolves every light3d through the SAME hierarchy evaluation the meshes
+  // use â€” a parented light moves with its parent in the export too.
+  function resolveLights3D(screen) {
+    var lights = [];
+    var activeCount = 0;
+    (screen.components || []).forEach(function (n) {
+      if (n.type !== "light3d") return;
+      var p = componentProps[n.id] || {};
+      var config = parseLight3DProps(p);
+      if (config.enabled) activeCount++;
+      var world = worldMatrixOf(screen, n.id);
+      var position = mat4Point(world, [0, 0, 0]);
+      var numOr = function (k, f) { var v = Number(p[k]); return isFinite(v) ? v : f; };
+      var dir = rotDir3D([0, 0, -1], [numOr("rx", 0), numOr("ry", 0), numOr("rz", 0)]);
+      var len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+      lights.push({
+        id: n.id, type: config.type, enabled: config.enabled, color: config.color,
+        intensity: config.intensity, radius: config.radius, position: position,
+        direction: config.type === "directional" ? [dir[0] / len, dir[1] / len, dir[2] / len] : [0, -1, 0]
+      });
+    });
+    return { lights: lights, excessive: activeCount > 8 };
+  }
+  function draw3D(ctx, width, height, camera, meshes, overrides, lights, ambient) {
+    var fov = Math.min(Math.max(camera.fov, 20), 120) * Math.PI / 180;
+    var focal = height / 2 / Math.tan(fov / 2);
+    var camRot = [-camera.rotation[0], -camera.rotation[1], -camera.rotation[2]];
+    var toView = function (p) {
+      return rot3([p[0] - camera.position[0], p[1] - camera.position[1], p[2] - camera.position[2]], camRot);
+    };
+    var projected = [];
+    var worldMatrices = computeWorldMatrices3D(screen);
+    meshes.forEach(function (mesh) {
+      if (!mesh.visible) return;
+      var world = worldMatrices[mesh.id] ? worldMatrices[mesh.id].matrix : mat4ComposeTRS(mesh.position, mesh.rotation, mesh.scale);
+      // TASK 54: dynamic bodies render at their runtime world positions.
+      if (overrides[mesh.id]) {
+        world = world.slice();
+        world[12] = overrides[mesh.id][0]; world[13] = overrides[mesh.id][1]; world[14] = overrides[mesh.id][2];
+      }
+      meshFaces3DWorld(mesh, world).forEach(function (face) {
+        var view = face.points.map(toView);
+        var screen = [], depth = 0, ok = true;
+        for (var i = 0; i < view.length; i++) {
+          if (view[i][2] >= -camera.near) { ok = false; break; }
+          var s = focal / -view[i][2];
+          if (!isFinite(s) || -view[i][2] > camera.far) { ok = false; break; }
+          screen.push([width / 2 + view[i][0] * s, height / 2 - view[i][1] * s]);
+          depth += view[i][2];
+        }
+        if (!ok || screen.length < 3) return;
+        var area = (screen[1][0] - screen[0][0]) * (screen[2][1] - screen[0][1]) - (screen[2][0] - screen[0][0]) * (screen[1][1] - screen[0][1]);
+        if (area <= 0 && mesh.kind !== "plane") return;
+        // TASK 55: lit color per visible face, computed from world geometry.
+        projected.push({
+          screen: screen, depth: depth / view.length,
+          color: shadeFace3D(face.color, face.points, camera, lights, ambient),
+          meshId: face.meshId
+        });
+      });
+    });
+    projected.sort(function (a, b) { return a.depth - b.depth; });
+    projected.forEach(function (face) {
+      ctx.beginPath();
+      ctx.moveTo(face.screen[0][0], face.screen[0][1]);
+      for (var i = 1; i < face.screen.length; i++) ctx.lineTo(face.screen[i][0], face.screen[i][1]);
+      ctx.closePath();
+      ctx.fillStyle = face.color;
+      ctx.fill();
+      ctx.strokeStyle = face.color;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
+  // The 3D scene render is persistent (one canvas + one physics loop per
+  // screen). A rerender for the SAME screen must never rebuild the canvas â€”
+  // that would re-seed physics (teleporting dynamic bodies home) and stack
+  // rAF loops â€” so it only refreshes the meshes/camera the loop draws.
+  var render3D = null;
+  var render3DRunCounter = 0;
+  function camera3DOf(screen) {
+    var cameraComp = null;
+    (screen.components || []).forEach(function (n) { if (n.type === "camera3d" && n.props && n.props.active === true) cameraComp = n; });
+    if (!cameraComp) (screen.components || []).forEach(function (n) { if (n.type === "camera3d") cameraComp = n; });
+    var cp = cameraComp ? (cameraComp.props || {}) : {};
+    var num = function (k, f) { var v = Number(cp[k]); return isFinite(v) ? v : f; };
+    return { position: [num("px", 0), num("py", 2.2), num("pz", 6)], rotation: [num("rx", -20), num("ry", 0), 0], fov: num("fov", 60), near: num("near", 0.1), far: num("far", 2000) };
+  }
+  function render3DScene() {
+    var root = document.getElementById("root");
+    var screen = screenOf(currentScreenId) || model.screens[0];
+    if (render3D && render3D.screenId === screen.id) {
+      render3D.meshes = parseMeshes(screen);
+      render3D.camera = camera3DOf(screen);
+      // TASK 55: refresh lights/ambient too â€” runtime prop changes (set-
+      // property on a light) must reach the drawn pixels without a rebuild.
+      render3D.lights = resolveLights3D(screen).lights;
+      render3D.ambient = parseAmbient3D(screen.styles);
+      if (!render3D.looping) draw3D(render3D.ctx, render3D.canvas.width, render3D.canvas.height, render3D.camera, render3D.meshes, {}, render3D.lights, render3D.ambient);
+      return;
+    }
+    if (render3D) render3D.run = -1; // any previous loop stops on its next frame
+    root.innerHTML = "";
+    var canvas = document.createElement("canvas");
+    canvas.setAttribute("data-3d-canvas", "true");
+    canvas.width = 390; canvas.height = 844;
+    canvas.style.cssText = "width:100%;height:100%;display:block";
+    root.style.background = "#0c0f17";
+    root.appendChild(canvas);
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    var camera = camera3DOf(screen);
+    var meshes = parseMeshes(screen);
+    // TASK 55: world-space lights + scene ambient â€” same resolution and
+    // equations as the browser renderer.
+    var lights3D = resolveLights3D(screen).lights;
+    var ambient3D = parseAmbient3D(screen.styles);
+    // TASK 54: real physics â€” fixed-timestep simulation over the canonical
+    // configuration; dynamic bodies render at their runtime world positions.
+    var physicsBodies = seedPhysicsBodies(screen);
+    var physicsGravity = parseSceneGravity(screen.styles);
+    var accumulator = 0;
+    var lastPhysics = performance.now();
+    render3D = { screenId: screen.id, meshes: meshes, camera: camera, canvas: canvas, ctx: ctx, lights: lights3D, ambient: ambient3D, looping: physicsBodies.length > 0, run: ++render3DRunCounter };
+    if (physicsBodies.length > 0) {
+      var run = render3D.run;
+      installController3DListeners();
+      controller3DPressed = {};
+      controller3DJumpQueued = false;
+      var stepPhysics = function (now) {
+        if (run !== render3D.run) return; // superseded by a rebuild
+        requestAnimationFrame(stepPhysics);
+        var frameDt = Math.min((now - lastPhysics) / 1000, 0.25);
+        lastPhysics = now;
+        accumulator += frameDt;
+        var steps = 0;
+        var screenNow = screenOf(currentScreenId) || model.screens[0];
+        while (accumulator >= 1 / 120 && steps < 4) {
+          // TASK 57: the controller decides velocities for this fixed step;
+          // physicsStep integrates/collides/resolves.
+          applyController3D(screenNow, physicsBodies, 1 / 120);
+          physicsStep(physicsBodies, 1 / 120, physicsGravity).forEach(function (event) {
+            // Trigger events ride the existing touches- handler vocabulary;
+            // the handler path rerenders, which only refreshes the scene.
+            if (event.phase === "enter") emit(event.componentId, "touches-" + event.triggerId);
+            if (event.phase === "exit") emit(event.componentId, "touches-exit-" + event.triggerId);
+          });
+          accumulator -= 1 / 120;
+          steps++;
+        }
+        controller3DJumpQueued = false; // an unconsumed edge expires with the frame
+        if (steps === 4) accumulator = 0;
+        // Runtime observability â€” the same attributes the editor preview
+        // exposes, so tests and debug overlays read identical state everywhere.
+        canvas.setAttribute("data-physics-bodies", JSON.stringify(physicsBodies.map(function (b) {
+          return { id: b.id, x: Number(b.cx.toFixed(3)), y: Number(b.cy.toFixed(3)), z: Number(b.cz.toFixed(3)), grounded: b.grounded, trigger: b.config.isTrigger };
+        })));
+        canvas.setAttribute("data-trigger-overlaps", Object.keys(physicsTriggerPairs).join("|"));
+        canvas.setAttribute("data-physics-grounded", String(physicsBodies.some(function (b) { return b.config.bodyType === "dynamic" && b.grounded; })));
+        // TASK 57: controller observability.
+        var playerBody = null;
+        (screen.components || []).forEach(function (n) {
+          if ((componentProps[n.id] || {}).controllerEnabled === true) {
+            physicsBodies.forEach(function (b) { if (b.id === n.id && !playerBody) playerBody = b; });
+          }
+        });
+        canvas.setAttribute("data-3d-player", playerBody ? playerBody.id : "");
+        canvas.setAttribute("data-controller-enabled", String(Boolean(playerBody)));
+        canvas.setAttribute("data-controller-grounded", String(Boolean(playerBody && playerBody.grounded)));
+        canvas.setAttribute("data-controller-speed", playerBody ? Math.hypot(playerBody.vx, playerBody.vz).toFixed(2) : "0.00");
+        var overrides = {};
+        physicsBodies.forEach(function (b) { if (b.config.bodyType === "dynamic") overrides[b.id] = [b.cx, b.cy, b.cz]; });
+        draw3D(ctx, canvas.width, canvas.height, render3D.camera, render3D.meshes, overrides, render3D.lights, render3D.ambient);
+      };
+      requestAnimationFrame(stepPhysics);
+      return;
+    }
+    draw3D(ctx, canvas.width, canvas.height, camera, meshes, {}, lights3D, ambient3D);
+  }
+
+  // TASK 54: bounded 3D physics â€” vanilla mirror of physics3d.ts. Static +
+  // dynamic bodies, box/sphere colliders (world-aligned), scene gravity,
+  // fixed-timestep integration, penetration resolution, grounded state, and
+  // trigger overlap events through the existing emit/handler architecture.
+  function parsePhysicsConfig(p) {    var clamp = function (v, lo, hi) { v = Number(v); return isFinite(v) ? Math.min(Math.max(v, lo), hi) : lo; };
+    var bodyType = String(p.bodyType || "none");
+    if (bodyType !== "static" && bodyType !== "dynamic") bodyType = "none";
+    var colliderType = String(p.colliderType || "none");
+    if (colliderType !== "box" && colliderType !== "sphere") colliderType = "none";
+    return {
+      bodyType: bodyType, colliderType: colliderType,
+      enabled: p.enabled !== false,
+      isTrigger: p.isTrigger === true,
+      gravityEnabled: p.gravityEnabled !== false,
+      mass: clamp(p.mass, 0.01, 10000),
+      sizeX: clamp(p.colliderSizeX, 0.01, 1000), sizeY: clamp(p.colliderSizeY, 0.01, 1000), sizeZ: clamp(p.colliderSizeZ, 0.01, 1000),
+      radius: clamp(p.colliderRadius, 0.01, 1000)
+    };
+  }
+  function colliderHalfExtents(config, worldScale) {
+    if (config.colliderType === "sphere") {
+      var maxScale = Math.max(worldScale[0], worldScale[1], worldScale[2]);
+      return [config.radius * maxScale, config.radius * maxScale, config.radius * maxScale];
+    }
+    return [config.sizeX / 2 * worldScale[0], config.sizeY / 2 * worldScale[1], config.sizeZ / 2 * worldScale[2]];
+  }
+  function overlapBetween(a, b) {
+    // Sphere vs sphere: center distance vs radius sum.
+    if (a.isSphere && b.isSphere) {
+      var ddx = a.cx - b.cx, ddy = a.cy - b.cy, ddz = a.cz - b.cz;
+      var dist = Math.hypot(ddx, ddy, ddz);
+      var sum = a.radius + b.radius;
+      if (dist >= sum || dist === 0) return null;
+      return { nx: ddx / dist, ny: ddy / dist, nz: ddz / dist, pen: sum - dist };
+    }
+    var aHX = a.isSphere ? a.radius : a.hx, aHY = a.isSphere ? a.radius : a.hy, aHZ = a.isSphere ? a.radius : a.hz;
+    var bHX = b.isSphere ? b.radius : b.hx, bHY = b.isSphere ? b.radius : b.hy, bHZ = b.isSphere ? b.radius : b.hz;
+    if (a.isSphere !== b.isSphere) {
+      // Sphere vs box: closest point on the box to the sphere center.
+      var sphere = a.isSphere ? a : b;
+      var box = a.isSphere ? b : a;
+      var qx = Math.min(Math.max(sphere.cx, box.cx - box.hx), box.cx + box.hx);
+      var qy = Math.min(Math.max(sphere.cy, box.cy - box.hy), box.cy + box.hy);
+      var qz = Math.min(Math.max(sphere.cz, box.cz - box.hz), box.cz + box.hz);
+      var sdx = sphere.cx - qx, sdy = sphere.cy - qy, sdz = sphere.cz - qz;
+      var sdist = Math.hypot(sdx, sdy, sdz);
+      if (sdist >= sphere.radius) return null;
+      var sign = a.isSphere ? 1 : -1;
+      if (sdist === 0) {
+        var ox = box.hx - Math.abs(sphere.cx - box.cx);
+        var oy = box.hy - Math.abs(sphere.cy - box.cy);
+        var oz = box.hz - Math.abs(sphere.cz - box.cz);
+        var signX = sphere.cx >= box.cx ? 1 : -1, signY = sphere.cy >= box.cy ? 1 : -1, signZ = sphere.cz >= box.cz ? 1 : -1;
+        if (ox <= oy && ox <= oz) return { nx: signX, ny: 0, nz: 0, pen: ox + sphere.radius };
+        if (oy <= oz) return { nx: 0, ny: signY, nz: 0, pen: oy + sphere.radius };
+        return { nx: 0, ny: 0, nz: signZ, pen: oz + sphere.radius };
+      }
+      return { nx: (sdx / sdist) * sign, ny: (sdy / sdist) * sign, nz: (sdz / sdist) * sign, pen: sphere.radius - sdist };
+    }
+    // Box vs box: minimum-translation axis.
+    var dx = a.cx - b.cx, dy = a.cy - b.cy, dz = a.cz - b.cz;
+    var px = aHX + bHX - Math.abs(dx), py = aHY + bHY - Math.abs(dy), pz = aHZ + bHZ - Math.abs(dz);
+    if (px <= 0 || py <= 0 || pz <= 0) return null;
+    if (px <= py && px <= pz) return { nx: dx >= 0 ? 1 : -1, ny: 0, nz: 0, pen: px };
+    if (py <= pz) return { nx: 0, ny: dy >= 0 ? 1 : -1, nz: 0, pen: py };
+    return { nx: 0, ny: 0, nz: dz >= 0 ? 1 : -1, pen: pz };
+  }
+  function seedPhysicsBodies(screen) {
+    var bodies = [];
+    (screen.components || []).forEach(function (n) {
+      var config = parsePhysicsConfig(componentProps[n.id] || {});
+      if (config.bodyType === "none" || config.colliderType === "none" || !config.enabled || bodies.length >= 64) return;
+      var world = worldMatrixOf(screen, n.id);
+      var center = mat4Point(world, [0, 0, 0]);
+      var scale = [
+        Math.hypot(world[0], world[1], world[2]) || 1,
+        Math.hypot(world[4], world[5], world[6]) || 1,
+        Math.hypot(world[8], world[9], world[10]) || 1
+      ];
+      var half = colliderHalfExtents(config, scale);
+      bodies.push({ id: n.id, config: config, cx: center[0], cy: center[1], cz: center[2], vx: 0, vy: 0, vz: 0, grounded: false, isSphere: config.colliderType === "sphere", hx: half[0], hy: half[1], hz: half[2], radius: config.radius * (scale[0] || 1) });
+    });
+    return bodies;
+  }
+  function worldMatrixOf(screen, id) {
+    var byId = {};
+    (screen.components || []).forEach(function (n) { byId[n.id] = n; });
+    var chain = [];
+    var cursor = id;
+    var guard = 0;
+    while (cursor && byId[cursor] && guard < 32) {
+      chain.push(byId[cursor]);
+      cursor = String(byId[cursor].props && byId[cursor].props.parentId || "");
+      guard++;
+    }
+    var matrix = mat4Identity();
+    for (var i = chain.length - 1; i >= 0; i--) {
+      var p = chain[i].props || {};
+      matrix = mat4Mul(matrix, mat4ComposeTRS([Number(p.px) || 0, isFinite(Number(p.py)) ? Number(p.py) : 0.5, Number(p.pz) || 0], [Number(p.rx) || 0, Number(p.ry) || 0, Number(p.rz) || 0], [isFinite(Number(p.sx)) && Number(p.sx) > 0 ? Number(p.sx) : 1, isFinite(Number(p.sy)) && Number(p.sy) > 0 ? Number(p.sy) : 1, isFinite(Number(p.sz)) && Number(p.sz) > 0 ? Number(p.sz) : 1]));
+    }
+    return matrix;
+  }
+  function mat4Identity() {
+    return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  }
+
+  function parseSceneGravity(styles) {
+    var clamp100 = function (v) { v = Number(v); return isFinite(v) ? Math.min(Math.max(v, -100), 100) : 0; };
+    return { x: clamp100(styles && styles.gravityX), y: clamp100(styles && styles.gravityY) || -9.81, z: clamp100(styles && styles.gravityZ) };
+  }
+  function physicsStep(bodies, dt, gravity) {
+    // Integrate dynamic bodies (gravity + velocity).
+    bodies.forEach(function (b) {
+      if (b.config.bodyType !== "dynamic" || b.config.isTrigger) return;
+      if (b.config.gravityEnabled) {
+        b.vx += gravity.x * dt; b.vy += gravity.y * dt; b.vz += gravity.z * dt;
+      }
+      b.cx += b.vx * dt; b.cy += b.vy * dt; b.cz += b.vz * dt;
+      b.grounded = false;
+    });
+    // Resolve dynamic-vs-solid: positional correction split by inverse mass,
+    // velocity corrected along the normal (no bounce), grounded on upward
+    // contacts.
+    bodies.forEach(function (dyn) {
+      if (dyn.config.bodyType !== "dynamic" || dyn.config.isTrigger) return;
+      bodies.forEach(function (other) {
+        if (other.id === dyn.id || other.config.isTrigger || other.config.colliderType === "none" || !other.config.enabled) return;
+        var hit = overlapBetween(dyn, other);
+        if (!hit) return;
+        var dynInv = 1 / dyn.config.mass, otherInv = other.config.bodyType === "dynamic" ? 1 / other.config.mass : 0;
+        var total = dynInv + otherInv;
+        if (total > 0) {
+          dyn.cx += hit.nx * hit.pen * (dynInv / total);
+          dyn.cy += hit.ny * hit.pen * (dynInv / total);
+          dyn.cz += hit.nz * hit.pen * (dynInv / total);
+          if (otherInv > 0) {
+            other.cx -= hit.nx * hit.pen * (otherInv / total);
+            other.cy -= hit.ny * hit.pen * (otherInv / total);
+            other.cz -= hit.nz * hit.pen * (otherInv / total);
+          }
+        }
+        var vn = dyn.vx * hit.nx + dyn.vy * hit.ny + dyn.vz * hit.nz;
+        if (vn < 0) { dyn.vx -= hit.nx * vn; dyn.vy -= hit.ny * vn; dyn.vz -= hit.nz * vn; }
+        if (hit.ny > 0.5) dyn.grounded = true;
+      });
+    });
+    // Trigger overlaps: enter/exit collected for the caller to dispatch
+    // through the existing emit/handler path.
+    var events = [];
+    var active = {};
+    bodies.forEach(function (trigger) {
+      if (!trigger.config.isTrigger || trigger.config.colliderType === "none" || !trigger.config.enabled) return;
+      bodies.forEach(function (body) {
+        if (body.id === trigger.id || body.config.isTrigger || body.config.colliderType === "none" || !body.config.enabled) return;
+        var hit = overlapBetween(body, trigger);
+        if (!hit) return;
+        var key = body.id + "|" + trigger.id;
+        active[key] = true;
+        if (!physicsTriggerPairs[key]) events.push({ componentId: body.id, triggerId: trigger.id, phase: "enter" });
+      });
+    });
+    Object.keys(physicsTriggerPairs).forEach(function (key) {
+      if (!active[key]) {
+        var parts = key.split("|");
+        events.push({ componentId: parts[0], triggerId: parts[1], phase: "exit" });
+      }
+    });
+    physicsTriggerPairs = active;
+      return events;
+    }
+  var physicsTriggerPairs = {};
+
+  // ---- TASK 57: 3D character controller (vanilla mirror of character3d.ts)
+  // The controller decides VELOCITIES each fixed step; physicsStep integrates,
+  // collides, and resolves. One physics world, one timestep, one authority.
+  var CONTROLLER_DEFAULT_KEYS_3D = {
+    "move-forward": ["w", "arrowup"],
+    "move-backward": ["s", "arrowdown"],
+    "move-left": ["a", "arrowleft"],
+    "move-right": ["d", "arrowright"],
+    "jump": [" "]
+  };
+  var controller3DPressed = {};
+  var controller3DJumpQueued = false;
+  var controller3DListenersInstalled = false;
+  function installController3DListeners() {
+    if (controller3DListenersInstalled) return;
+    controller3DListenersInstalled = true;
+    window.addEventListener("keydown", function (ev) {
+      var k = String(ev.key || "").toLowerCase();
+      if (!controller3DPressed[k]) {
+        controller3DPressed[k] = true;
+        if (!ev.repeat) controller3DJumpQueued = true; // one edge per press
+      }
+    });
+    window.addEventListener("keyup", function (ev) {
+      delete controller3DPressed[String(ev.key || "").toLowerCase()];
+    });
+    window.addEventListener("blur", function () { controller3DPressed = {}; });
+  }
+  function parseController3DProps(p) {
+    var clamp = function (v, lo, hi) { v = Number(v); return isFinite(v) ? Math.min(Math.max(v, lo), hi) : lo; };
+    var numOr = function (v, f) { v = Number(v); return isFinite(v) ? v : f; };
+    return {
+      enabled: p.controllerEnabled === true,
+      moveSpeed: clamp(numOr(p.moveSpeed, 5), 0.1, 100),
+      acceleration: clamp(numOr(p.acceleration, 40), 0, 200),
+      deceleration: clamp(numOr(p.deceleration, 60), 0, 200),
+      jumpForce: clamp(numOr(p.jumpForce, 6), 0, 50),
+      airControl: clamp(numOr(p.airControl, 0.4), 0, 1)
+    };
+  }
+  function resolveControllerKeys3D(screen) {
+    var keys = {};
+    ["move-forward", "move-backward", "move-left", "move-right", "jump"].forEach(function (slot) {
+      keys[slot] = CONTROLLER_DEFAULT_KEYS_3D[slot].slice();
+    });
+    inputActionsOf(screen).forEach(function (a) {
+      if (a.enabled && keys[a.id]) keys[a.id] = a.keys.slice();
+    });
+    return keys;
+  }
+  function controllerInputVector(pressed, keys) {
+    var held = function (slot) { return (keys[slot] || []).some(function (k) { return pressed[k]; }); };
+    var x = (held("move-right") ? 1 : 0) - (held("move-left") ? 1 : 0);
+    var z = (held("move-forward") ? 1 : 0) - (held("move-backward") ? 1 : 0);
+    var len = Math.hypot(x, z);
+    if (!isFinite(len) || len <= 0) return { x: 0, z: 0 };
+    if (len > 1) { x /= len; z /= len; }
+    return { x: x, z: z };
+  }
+  function moveTowardScalar(current, target, maxDelta) {
+    var d = target - current;
+    if (!isFinite(d)) return current;
+    if (Math.abs(d) <= maxDelta) return target;
+    return current + (d > 0 ? 1 : -1) * maxDelta;
+  }
+  // Applies the controller to its body for one fixed step. Mirrors
+  // character3d.ts: movement relative to the ACTIVE camera's horizontal
+  // facing; jump = one physics-driven impulse per press edge while grounded.
+  function applyController3D(screen, bodies, dt) {
+    var controllerComponent = null;
+    (screen.components || []).forEach(function (n) {
+      var p = componentProps[n.id] || {};
+      if (p.controllerEnabled === true && !controllerComponent) controllerComponent = n;
+    });
+    if (!controllerComponent) return;
+    var config = parseController3DProps(componentProps[controllerComponent.id] || {});
+    var body = null;
+    bodies.forEach(function (b) { if (b.id === controllerComponent.id) body = b; });
+    if (!body) return;
+    var cam = camera3DOf(screen);
+    var forward = rot3([0, 0, -1], [cam.rotation[0], cam.rotation[1], 0]);
+    var fLen = Math.hypot(forward[0], forward[2]) || 1;
+    var fx = forward[0] / fLen, fz = forward[2] / fLen;
+    if (!isFinite(fx) || Math.hypot(fx, fz) < 1e-6) { fx = 0; fz = -1; }
+    var rx = -fz, rz = fx; // right = forward Ã— up
+    var input = controllerInputVector(controller3DPressed, resolveControllerKeys3D(screen));
+    var control = body.grounded ? 1 : config.airControl;
+    var inputLen = Math.hypot(input.x, input.z);
+    var maxDelta;
+    if (inputLen > 0 && config.moveSpeed > 0) {
+      var tx = (rx * input.x + fx * input.z) * config.moveSpeed;
+      var tz = (rz * input.x + fz * input.z) * config.moveSpeed;
+      maxDelta = config.acceleration * control * dt;
+      body.vx = moveTowardScalar(body.vx, tx, maxDelta);
+      body.vz = moveTowardScalar(body.vz, tz, maxDelta);
+    } else {
+      maxDelta = config.deceleration * control * dt;
+      body.vx = moveTowardScalar(body.vx, 0, maxDelta);
+      body.vz = moveTowardScalar(body.vz, 0, maxDelta);
+    }
+    if (controller3DJumpQueued && body.grounded && config.jumpForce > 0) {
+      body.vy = config.jumpForce;
+      controller3DJumpQueued = false;
+    }
+  }
+
+  function rerender() {
+    var root = document.getElementById("root");
+    var screen = screenOf(currentScreenId) || model.screens[0];
+    if (model.type === "3d") { render3DScene(); return; }
+    root.innerHTML = "";
+    var bg = screen && screen.styles && typeof screen.styles.background === "string" ? screen.styles.background : "#ffffff";
+    root.style.background = bg;
+    root.style.overflowY = screen && screen.styles && screen.styles.scrollable === true ? "auto" : "hidden";
+    if (screen && isSceneScreen(screen)) { buildScene(screen); return; }
+    (screen ? screen.components : []).forEach(function (c) { root.appendChild(renderNode(c)); });
+  }
+
+  // TASK 66 Â§36: startup is honest â€” a runtime that cannot start shows the
+  // actual reason, never a blank page pretending success. Runtime faults
+  // after startup surface once through the toast and a root attribute.
+  try {
+    rerender();
+    wireSensors();
+    // TASK 66 Â§23: screen "initialize" handlers run ONCE when the run starts â€”
+    // the same dispatch the editor preview performs (all screens, model order;
+    // screen-level handlers only, componentId omitted normalizes to null).
+    (model.screens || []).forEach(function (sc) {
+      ((sc.logic && sc.logic.handlers) || []).forEach(function (h) {
+        if (h.event === "initialize" && (h.componentId || null) === null) runBody(h.body);
+      });
+    });
+  } catch (err) {
+    var rootEl = document.getElementById("root");
+    if (rootEl) {
+      rootEl.setAttribute("data-runtime-error", "true");
+      rootEl.textContent = "Runtime could not start â€” " + String(err && err.message ? err.message : err).slice(0, 200);
+    }
+  }
+  window.addEventListener("error", function (ev) {
+    showToast("Runtime error â€” " + String((ev && ev.message) || "unknown").slice(0, 160));
+    var rootErr = document.getElementById("root");
+    if (rootErr) rootErr.setAttribute("data-runtime-error", "true");
+  });
+})();
+</script>
+</body>
+</html>

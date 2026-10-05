@@ -1,0 +1,26 @@
+{
+  "task": 67,
+  "generatedFrom": "docs/TASK67_QA_SECURITY_PERFORMANCE.md (session 66, 2026-10-04)",
+  "note": "One canonical release-readiness matrix (directive 56). Values are evidence-backed by the suites named in each row; no state is asserted without a test or recorded measurement.",
+  "dimensions": {
+    "functionality": { "state": "PASS", "evidence": "e2e-task67-full-journey 27/27 (four journeys through the real UI); 30-suite regression sweep green", "notes": "" },
+    "security": { "state": "PASS", "evidence": "e2e-task67-security-hardening 59/59 (IDOR, traversal, zip bomb, XSS, sessions, rate limits, AI/credits, secret scans)", "notes": "Hardened this task: zip decompression budget, AI operation cap, build/export/vote rate limiters." },
+    "performance": { "state": "PASS", "evidence": "e2e-task67-performance 19/19; baselines recorded in scripts/artifacts-task66/perf-baseline.json", "notes": "Observed dev-machine numbers, not production SLOs. 2D 1000 entities and 3D 100 authored bodies render; 3D physics caps at 64 bodies by design." },
+    "stability": { "state": "PASS", "evidence": "e2e-task66-runtime-parity 66/66 (restart/stop lifecycle, runtime boundary, no loop accumulation); concurrency probes in the security suite", "notes": "" },
+    "accessibility": { "state": "PARTIAL", "evidence": "keyboard paths + aria state covered by task58/61/63/64 suites; contrast per docs/DESIGN.md", "notes": "No automated a11y auditor wired; deep builder strings still follow the translation roadmap." },
+    "responsive": { "state": "PASS", "evidence": "390-1440 overflow sweeps in task65 (landing/dashboard/hub) and task66 (builder) suites", "notes": "" },
+    "i18n": { "state": "PARTIAL", "evidence": "e2e-task65 checks EN+ID on the new public surfaces; i18n-audit 26/26", "notes": "Older landing sections and deep builder strings remain English-first (documented)." },
+    "preview": { "state": "PASS", "evidence": "e2e-task66-runtime-parity (APP/2D/3D preview parity + lifecycle); preview stop/restart evidence", "notes": "" },
+    "published": { "state": "PASS", "evidence": "e2e-task65/66/67 (direct URL, refresh, republish-latest, asset/secret scans)", "notes": "" },
+    "export": { "state": "PASS", "evidence": "e2e-task66/67 (artifacts executed from disk, manifest embedded, magic-byte verification, validation gate)", "notes": "Custom TypeScript and extension providers are code-only/not-executed (capability matrix)." },
+    "ai": { "state": "PASS", "evidence": "go test ./internal/ai (gate, dedupe, ledger); security suite probes (unauthenticated/ownership/charge-none/dedupe/concurrency)", "notes": "Operation batch capped at 100 (new this task)." },
+    "extensions": { "state": "PASS", "evidence": "e2e-task64 34/34 + security suite extension probes (owner scoping, manifest caps, worker isolation)", "notes": "Providers do not execute yet (declared honestly everywhere)." },
+    "app": { "state": "PASS", "evidence": "full-journey J1; perf scaling 10-250 components", "notes": "" },
+    "2d": { "state": "PASS", "evidence": "full-journey J2; perf scaling 50-1000 entities; task62-era suites", "notes": "" },
+    "3d": { "state": "PASS", "evidence": "full-journey J3; perf scaling 10-100 authored bodies (64-body physics bound by design); task60-era suites", "notes": "" }
+  },
+  "blockers": {
+    "p0": [],
+    "p1": []
+  }
+}

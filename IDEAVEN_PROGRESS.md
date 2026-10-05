@@ -1133,3 +1133,28 @@ providers, i18n coverage expansion, accessibility audit.
   tsc/go vet/go test/next build/build:vinext/verify-cf-preview 12/12.
 - STOP per directive - awaiting approval before TASK 67.
 ---
+
+
+## SESSION 66b - TASK 67: QA + Security + Performance Hardening (2026-10-04)
+
+- Security audit traced every claim to implementation + test: Argon2id,
+  session lifecycle (TTL/touch/revoke/cleanup), per-IP limiters with
+  Retry-After, SecureHeaders (CSP none) on the API, asset ownership via
+  project scoping, upload sniffing + filename sanitization, package
+  validate-before-create, AI closed vocabulary + 60s dedupe + success-only
+  ledger, XSS inert by React escaping.
+- Hardening: P1 zip-bomb budget (per-entry 32MB + 64MB total + 512 entries,
+  probed with a real bomb), P2 AI operation cap (100), P2 limiters on
+  extension build/SSE + exports + community votes/reports.
+- New suites (shared fixtures): security-hardening 59/59 (IDOR, traversal,
+  bombs, XSS, sessions, limits, AI/credit integrity, secret scans,
+  concurrency), performance 19/19 with MEASURED baselines recorded
+  (perf-baseline.json; 2D 1000 entities OK; 3D 64-body design bound
+  documented), full-journey 27/27 (four complete real-UI journeys).
+- Release readiness matrix: docs/RELEASE_READINESS.json (13 dimensions:
+  PASS except ACCESSIBILITY/I18N PARTIAL; no FAIL/BLOCKED; no open P0/P1).
+- Gates: security/perf/journey suites green; 33-suite sweep 30 in-sweep
+  with the two heavy suites green solo (contention flakes); tsc/go vet/
+  go test ./.../next build/build:vinext/verify-cf-preview 12/12 all green.
+- STOP per directive - awaiting approval before TASK 68.
+---

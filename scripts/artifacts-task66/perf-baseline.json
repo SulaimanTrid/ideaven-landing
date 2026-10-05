@@ -1,0 +1,150 @@
+{
+  "rows": [
+    {
+      "measurement": "landing load",
+      "ms": 2055
+    },
+    {
+      "measurement": "dashboard load",
+      "ms": 3645
+    },
+    {
+      "measurement": "builder load (50 components)",
+      "ms": 4468
+    },
+    {
+      "measurement": "preview start",
+      "ms": 1579
+    },
+    {
+      "measurement": "preview stop→design",
+      "ms": 881
+    },
+    {
+      "measurement": "repeated preview ×3",
+      "ms": 4067
+    },
+    {
+      "measurement": "APP 10 components — preview start",
+      "ms": 2617
+    },
+    {
+      "measurement": "APP 50 components — preview start",
+      "ms": 2712
+    },
+    {
+      "measurement": "APP 100 components — preview start",
+      "ms": 2892
+    },
+    {
+      "measurement": "APP 250 components — preview start",
+      "ms": 3623
+    },
+    {
+      "measurement": "2D 50 entities — preview start",
+      "ms": 3119
+    },
+    {
+      "measurement": "2D 100 entities — preview start",
+      "ms": 3304
+    },
+    {
+      "measurement": "2D 500 entities — preview start",
+      "ms": 3334
+    },
+    {
+      "measurement": "2D 1000 entities — preview start",
+      "ms": 3868
+    },
+    {
+      "measurement": "3D 10 bodies — preview start",
+      "ms": 3340
+    },
+    {
+      "measurement": "3D 25 bodies — preview start",
+      "ms": 3971
+    },
+    {
+      "measurement": "3D 50 bodies — preview start",
+      "ms": 3454
+    },
+    {
+      "measurement": "3D 100 bodies — preview start",
+      "ms": 3523
+    },
+    {
+      "measurement": "extensions dashboard load",
+      "ms": 2773
+    },
+    {
+      "measurement": "asset panel open (empty)",
+      "ms": 2857
+    }
+  ],
+  "appRows": [
+    {
+      "count": 10,
+      "ms": 2617,
+      "running": true
+    },
+    {
+      "count": 50,
+      "ms": 2712,
+      "running": true
+    },
+    {
+      "count": 100,
+      "ms": 2892,
+      "running": true
+    },
+    {
+      "count": 250,
+      "ms": 3623,
+      "running": true
+    }
+  ],
+  "rows2D": [
+    {
+      "count": 50,
+      "ms": 3119,
+      "entities": 50
+    },
+    {
+      "count": 100,
+      "ms": 3304,
+      "entities": 100
+    },
+    {
+      "count": 500,
+      "ms": 3334,
+      "entities": 500
+    },
+    {
+      "count": 1000,
+      "ms": 3868,
+      "entities": 1000
+    }
+  ],
+  "rows3D": [
+    {
+      "count": 10,
+      "ms": 3340,
+      "bodies": 11
+    },
+    {
+      "count": 25,
+      "ms": 3971,
+      "bodies": 26
+    },
+    {
+      "count": 50,
+      "ms": 3454,
+      "bodies": 51
+    },
+    {
+      "count": 100,
+      "ms": 3523,
+      "bodies": 64
+    }
+  ]
+}

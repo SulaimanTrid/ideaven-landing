@@ -130,6 +130,9 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	communityService := community.NewService(db, slog.Default())
 	communityHandler := community.NewHandler(communityService, authService, cfg.Cookie)
 	communityLimiter := middleware.NewRateLimiter(30, time.Minute)
+	// TASK 67 §25: vote/report endpoints are cheap but abusable — capped so
+	// one IP cannot flood voting or reports.
+	voteLimiter := middleware.NewRateLimiter(30, time.Minute)
 	route(mux, http.MethodGet, "/api/community/feed", http.HandlerFunc(communityHandler.Feed))
 	route(mux, http.MethodGet, "/api/community/summary", http.HandlerFunc(communityHandler.Summary))
 	route(mux, http.MethodPost, "/api/community/posts", middleware.Chain(http.HandlerFunc(communityHandler.CreatePost), communityLimiter.Middleware))
@@ -140,11 +143,11 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		http.MethodDelete: http.HandlerFunc(communityHandler.DeletePost),
 	})
 	route(mux, http.MethodPost, "/api/community/posts/{id}/replies", middleware.Chain(http.HandlerFunc(communityHandler.CreateReply), communityLimiter.Middleware))
-	route(mux, http.MethodPost, "/api/community/posts/{id}/vote", http.HandlerFunc(communityHandler.VotePost))
+	route(mux, http.MethodPost, "/api/community/posts/{id}/vote", middleware.Chain(http.HandlerFunc(communityHandler.VotePost), voteLimiter.Middleware))
 	route(mux, http.MethodPost, "/api/community/posts/{id}/accept", http.HandlerFunc(communityHandler.AcceptReply))
 	route(mux, http.MethodDelete, "/api/community/replies/{id}", http.HandlerFunc(communityHandler.DeleteReply))
-	route(mux, http.MethodPost, "/api/community/replies/{id}/vote", http.HandlerFunc(communityHandler.VoteReply))
-	route(mux, http.MethodPost, "/api/community/report", http.HandlerFunc(communityHandler.Report))
+	route(mux, http.MethodPost, "/api/community/replies/{id}/vote", middleware.Chain(http.HandlerFunc(communityHandler.VoteReply), voteLimiter.Middleware))
+	route(mux, http.MethodPost, "/api/community/report", middleware.Chain(http.HandlerFunc(communityHandler.Report), voteLimiter.Middleware))
 	// Roadmap 2.0-B: extension registry — authored extensions and their
 	// immutable versions, owner-scoped like projects.
 	extensionService := extension.NewService(db, "") // built AIX packages live under .data/extensions
@@ -166,6 +169,9 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 			ai.RecordUsage(db, userID, provider, model, promptChars, outputChars, ok)
 		}),
 	)
+	// TASK 67 §19: builds spawn the isolated worker process (expensive) and
+	// installs mutate the registry — both are capped per IP.
+	buildLimiter := middleware.NewRateLimiter(10, time.Minute)
 	// Launch feedback: everyone can browse published extensions.
 	route(mux, http.MethodGet, "/api/public/extensions", http.HandlerFunc(extensionHandler.PublicList))
 	routeMethods(mux, "/api/extensions", map[string]http.Handler{
@@ -185,10 +191,10 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 		http.MethodGet:  http.HandlerFunc(extensionHandler.ListVersions),
 	})
 	route(mux, http.MethodPost, "/api/extensions/{id}/publish", http.HandlerFunc(extensionHandler.Publish))
-	route(mux, http.MethodPost, "/api/extensions/{id}/build", http.HandlerFunc(extensionHandler.Build))
+	route(mux, http.MethodPost, "/api/extensions/{id}/build", middleware.Chain(http.HandlerFunc(extensionHandler.Build), buildLimiter.Middleware))
 	// Task 06: the same pipeline over SSE — real states and logs stream as
 	// they happen; builds history; AI fix proposals (diff-based).
-	route(mux, http.MethodPost, "/api/extensions/{id}/build/stream", http.HandlerFunc(extensionHandler.BuildStream))
+	route(mux, http.MethodPost, "/api/extensions/{id}/build/stream", middleware.Chain(http.HandlerFunc(extensionHandler.BuildStream), buildLimiter.Middleware))
 	route(mux, http.MethodGet, "/api/extensions/{id}/builds", http.HandlerFunc(extensionHandler.ListBuilds))
 	route(mux, http.MethodPost, "/api/extensions/{id}/fix", http.HandlerFunc(extensionHandler.Fix))
 	route(mux, http.MethodGet, "/api/extensions/{id}/aix", http.HandlerFunc(extensionHandler.AIX))
@@ -201,10 +207,12 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	route(mux, http.MethodGet, "/api/extensions/{id}/usage", http.HandlerFunc(extensionHandler.Usage))
 
 	// Phase 26/30–31: exports — standalone HTML and an Android WebView
-	// project archive, both owner-only downloads.
-	route(mux, http.MethodGet, "/api/projects/{id}/export/html", http.HandlerFunc(projectHandler.ExportHTML))
-	route(mux, http.MethodGet, "/api/projects/{id}/export/android", http.HandlerFunc(projectHandler.ExportAndroid))
-	route(mux, http.MethodGet, "/api/projects/{id}/export/windows", http.HandlerFunc(projectHandler.ExportWindows))
+	// project archive, both owner-only downloads. Rendering an artifact is
+	// CPU-bound, so it is capped per IP (TASK 67 §19).
+	exportLimiter := middleware.NewRateLimiter(10, time.Minute)
+	route(mux, http.MethodGet, "/api/projects/{id}/export/html", middleware.Chain(http.HandlerFunc(projectHandler.ExportHTML), exportLimiter.Middleware))
+	route(mux, http.MethodGet, "/api/projects/{id}/export/android", middleware.Chain(http.HandlerFunc(projectHandler.ExportAndroid), exportLimiter.Middleware))
+	route(mux, http.MethodGet, "/api/projects/{id}/export/windows", middleware.Chain(http.HandlerFunc(projectHandler.ExportWindows), exportLimiter.Middleware))
 
 	// Phase 3: Ask AI. Provider comes from AI_* env vars; without them the
 	// endpoint reports AI_NOT_CONFIGURED honestly. Keys never leave the server.

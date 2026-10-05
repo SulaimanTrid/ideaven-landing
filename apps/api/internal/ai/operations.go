@@ -12,6 +12,11 @@ import (
 // output (tolerating markdown fences) and validates every operation against
 // the closed vocabulary. Unknown ops or malformed fields reject the whole
 // response — the client must never receive a half-valid changeset.
+// maxOperations (TASK 67 §16): one changeset is a bounded batch — an
+// oversized operation stream from a provider is rejected wholesale, never
+// partially applied.
+const maxOperations = 100
+
 func parseAndValidateOperations(output string) (*commandResponse, error) {
 	trimmed := strings.TrimSpace(output)
 	// Strip markdown fences if the provider added them despite instructions.
@@ -33,6 +38,10 @@ func parseAndValidateOperations(output string) (*commandResponse, error) {
 	var parsed commandResponse
 	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
 		return nil, fmt.Errorf("ai: output is not the expected JSON: %w", err)
+	}
+
+	if len(parsed.Operations) > maxOperations {
+		return nil, fmt.Errorf("ai: changeset proposes %d operations (max %d) — rejected", len(parsed.Operations), maxOperations)
 	}
 
 	for i := range parsed.Operations {

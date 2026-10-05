@@ -4,7 +4,7 @@ IDEAVEN PROGRESS STATE — portable development handoff
 > The repository is the source of truth; this file only points at it.
 
 CURRENT_DATE: 2026-10-04
-CURRENT_COMMIT: see `git log -1` (TASK 66 commit, pushed to origin/main)
+CURRENT_COMMIT: see `git log -1` (TASK 67 commit, pushed to origin/main)
 PUSHED: YES — https://github.com/SulaimanTrid/ideaven-landing.git
 CURRENT_BRANCH: main
 
@@ -19,61 +19,55 @@ TOOLCHAIN (Windows):
   `npx next dev -p 3000` in apps/web (scripts/start-web-dev.ps1).
 - DO NOT run `next build` while `next dev` is live (corrupts .next).
 - Do NOT run `go test ./...` while an E2E sweep is running (API contention
-  flakes timing-sensitive suites; observed twice).
+  flakes timing-sensitive suites; observed repeatedly).
 
 CURRENT_OBJECTIVE:
-TASK 66 (Real Preview + Published + Export Parity + Runtime Integrity) is
-COMPLETE and verified (session 66). The runtime architecture is one
-canonical model with two runtime faces — the web React runtime
-(editor/preview/published via LiveApp) and the export's vanilla mirror —
-now PROVEN equivalent: the block vocabulary is 1:1 (34 cases per side) and
-the parity suite runs the SAME authored projects in preview, on published
-pages, and inside the ACTUAL exported HTML artifacts executed from disk in
-a real browser. THREE real export-runtime bugs were found and fixed:
-undeclared `animCommands` (every exported 2D scene was dead — the loop
-threw every frame), the `emitterSims` module-scope crash, and the export
-camera following authored props instead of the live player; plus an
-emit-rerender race that dropped interactions. Export honesty: ext: skip
-reported, initialize dispatched, startup error surface, embedded
-ideaven-manifest (deterministic, no secrets), canonical ValidateModel
-before every export (422, no artifact), magic-byte artifact verification
-in the dialog, and THE capability matrix (lib/capabilities.ts, 8×6) wired
-to per-target notes. One shared RuntimeBoundary guards preview + published
-with honest RUNNING/FAILED states. e2e-task66 66/66 (0 console errors);
-30-suite sweep green after fixing a task64 suite locator bug (34/34 solo;
-community = documented legacy drift); all gates green (tsc, go vet,
-go test ./..., next build, build:vinext, verify-cf-preview 12/12).
+TASK 67 (QA + Security + Performance Hardening) is COMPLETE and verified
+(session 66). Every security claim was traced to implementation + test.
+Hardening applied: P1 zip-bomb budget on package import (per-entry 32MB +
+64MB total + 512 entries — probed with a real bomb), P2 AI operation batch
+cap (100), P2 rate limiters on extension build/SSE (10/min), exports
+(10/min) and community votes/reports (30/min). Three new suites on shared
+fixtures (scripts/fixtures-task67.mjs): security-hardening 59/59 (IDOR
+across every resource, malformed/oversized/deep input, traversal
+filenames, malicious/bomb packages, extension ownership, AI/credit
+integrity, XSS inert, session lifecycle, rate limits, secret scans,
+concurrency), performance 19/19 with MEASURED baselines
+(scripts/artifacts-task66/perf-baseline.json — 2D 1000 entities and 3D
+100 authored bodies render; 64-body physics bound documented), and
+full-journey 27/27 (four complete real-UI journeys). Release readiness
+matrix: docs/RELEASE_READINESS.json (13 dimensions PASS except
+ACCESSIBILITY/I18N PARTIAL; no FAIL/BLOCKED; no open P0/P1). 33-suite
+sweep: 30 PASS in-sweep (perf+journey green solo twice — contention
+flakes; community = documented legacy drift). All gates green (tsc,
+go vet, go test ./..., next build, build:vinext, verify-cf-preview 12/12).
 
 FILES / MODULES TO CONTINUE FROM:
-- apps/api/internal/project/export.go (the standalone vanilla runtime —
-  keep it semantically identical to the web runtime; animCommands/
-  emitterSims are MODULE-scoped; the camera follow reads the LIVE player;
-  emit uses scheduleRerender; validatedExportModel gates all exports;
-  buildExportManifest embeds ideaven-manifest)
-- apps/web/src/lib/capabilities.ts (THE capability matrix — one source;
-  update it AND both runtime faces together when capabilities change)
-- apps/web/src/components/runtime/runtime-error-boundary.tsx (ONE boundary
-  reused by preview + published — do not add a second)
-- apps/web/src/app/builder/[id]/builder/preview-mode.tsx (run state chip
-  data-preview-state; try/catch in start; boundary wraps the surface)
-- apps/web/src/components/runtime/live-app.tsx (published runtime state +
-  same boundary)
-- apps/web/src/app/builder/[id]/builder/export-button.tsx (magic-byte
-  artifact verification; per-target capability notes)
-- scripts/e2e-task66-runtime-parity.mjs (66 checks — TASK 66 gate; runs
-  exported artifacts from disk)
-- scripts/run-regressions-t66.mjs (30-suite regression sweep runner)
-- docs/TASK66_RUNTIME_PARITY.md + docs/STATUS.md section 73
+- apps/api/internal/project/package.go (zip budget constants +
+  readZipFile(zf, budget) — keep the limits when touching imports)
+- apps/api/internal/ai/operations.go (maxOperations = 100)
+- apps/api/internal/server/server.go (buildLimiter/exportLimiter/
+  voteLimiter wiring)
+- scripts/fixtures-task67.mjs (shared fixtures — reuse, do not duplicate
+  model JSON)
+- scripts/e2e-task67-security-hardening.mjs (59 checks)
+- scripts/e2e-task67-performance.mjs (baselines; perf-baseline.json)
+- scripts/e2e-task67-full-journey.mjs (27 checks, four journeys)
+- docs/TASK67_QA_SECURITY_PERFORMANCE.md (threat model + triage)
+- docs/RELEASE_READINESS.json (THE readiness matrix — update with
+  evidence when states change)
+- docs/STATUS.md section 74
 
 KNOWN HONEST LIMITS / QUEUED:
-- The export runtime is a deliberate vanilla mirror: new blocks must land
-  on BOTH faces (web + export) — the parity suite is the guardrail.
-- Custom TypeScript remains code-only (stored verbatim, not executed by
-  runtimes); extension providers remain a later phase (TASK 64 honesty).
-- Android/Windows export shells ship without stored assets by design.
+- ACCESSIBILITY/I18N release dimensions are PARTIAL (no automated a11y
+  auditor; deep builder strings on the translation roadmap; nonce-CSP for
+  the Next app planned — documented in next.config.ts).
 - e2e-community.mjs legacy drift (STATUS §68) — needs a rewrite task.
-- /start checks the session client-side via the real auth provider.
+- In-memory per-IP rate limits are per-instance (single-node deployment).
+- 3D physics caps at 64 bodies (TASK 54 design bound, documented).
+- Custom TypeScript code-only; extension providers not executed (TASK 64/66
+  honesty, unchanged).
 
 NEXT_TASK:
-STOP - awaiting explicit approval per the TASK 66 directive. Queued:
-TASK 67 onward.
+STOP - awaiting explicit approval per the TASK 67 directive. Queued:
+TASK 68 onward.
