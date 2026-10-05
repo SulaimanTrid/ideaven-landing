@@ -139,6 +139,11 @@ export function BuilderTopBar({
 
   return (
     <header data-env-menu-root className="relative flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-3 sm:px-4">
+      {/* A11y: the tool surface has no visible page title (the breadcrumb
+          carries context), so give screen readers a real page heading. */}
+      <h1 className="sr-only">
+        {project.name} — {engineIdentityLabel(project.type)} builder
+      </h1>
       {/* Left: identity — reserved space, never overlapped */}
       <div className="flex shrink-0 items-center gap-3">
         <Link

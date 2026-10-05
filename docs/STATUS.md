@@ -4649,3 +4649,62 @@ in docs/RELEASE_READINESS.json.
 ### Next exact task
 
 STOP per the directive - await explicit approval before TASK 68.
+
+## 75. TASK 68 Queue - Approved Queue Completion (A11y + i18n + CSP + Community)
+
+Session 66 (2026-10-04). The owner approved the documented queue; this
+batch completes the previously PARTIAL release-readiness dimensions. No
+new product features. Full record in docs/TASK68_QUEUE_COMPLETION.md.
+
+### What was done
+
+- **Community suite drift CLEARED** (documented since STATUS 68): the
+  search input's real aria-label fixed (the crash point) and the
+  feed-mechanics assertions made global-feed-aware. e2e-community.mjs
+  30/30 against the CURRENT page.
+- **A11y auditor shipped**: e2e-task68-accessibility.mjs â€” structural
+  audit over 14 surfaces (lang/h1/alt/labels/aria-expanded/dialog
+  semantics/named controls/no positive tabindex) + keyboard focus
+  treatment. 16/16, 14/14 clean. REAL finding fixed: the builder had no
+  h1 - an sr-only page heading now anchors it.
+- **I18N completed on the remaining surfaces**: the extensions dashboard
+  fully keyed (ext.* ~40 keys, EN + ID - tabs, create form, chips,
+  Enable/Disable/Uninstall, dialog + notices, empty shelves, Open
+  Studio); dashboard extension cards wired to the EXISTING dash.authored/
+  dash.inPalette/dash.onShelf keys (defined but never wired).
+- **Real CSP shipped** on every web route (next.config.ts): default-src
+  'self', frame-ancestors none, object-src none, base-uri self, with
+  documented allowances for what the product provably needs (Next inline
+  bootstrap; Monaco's cdn.jsdelivr.net in Code mode; dev API origin for
+  cross-origin local dev; data:/blob: media). Verified by
+  e2e-task68-csp.mjs (6/6): header sent, ZERO violations across landing/
+  auth/explore/community/pricing/learn + dashboard + builder + Code mode
+  (Monaco CDN). The verification caught two real violations pre-ship
+  (img-src http dev-origin thumbnails; style-src Monaco CSS) - fixed.
+
+### Verification
+
+- Suites green WITH CSP live: community 30/30, a11y 16/16, CSP 6/6,
+  task64 34/34, task65 49/49, task67-security 59/59.
+- Gates: tsc clean; next build exit 0 (dev stopped, .next cleaned);
+  build:vinext exit 0; verify-cf-preview 12/12 with CSP live on the
+  production preview (same-origin API model verified).
+- RELEASE_READINESS.json: every dimension PASS (no PARTIAL/FAIL/BLOCKED);
+  p0/p1 blockers empty.
+
+### Honest notes
+
+- Extension runtime providers, custom TypeScript execution, AI-generated
+  starting projects, and the prefab ecosystem stay OUT (they need their
+  own directives with designed semantics - documented in
+  docs/TASK68_QUEUE_COMPLETION.md). The capability matrix keeps stating
+  them truthfully.
+- CSP script-src still allows 'unsafe-inline'/'unsafe-eval' (Next inline
+  bootstrap + dev tooling); a nonce-based policy is the next step once
+  inline bootstraps move behind middleware.
+- The uninstall dialog's aria-label stays the literal "Confirm uninstall"
+  (asserted by task64); translating it is a follow-up with the test.
+
+### Next exact task
+
+Queue complete - awaiting the next directive.

@@ -56,10 +56,10 @@ export function ExtensionsClient() {
     try {
       await extensionApi.install(item.id);
       announceChange();
-      setNotice(`Installed ${item.name} \u2014 its blocks are now in your builder\u2019s Blocks palette (\u2b21 section).`);
+      setNotice(t("ext.noticeInstalled").replace("{name}", item.name));
       refresh();
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : "Could not install. Try again.");
+      setNotice(err instanceof ApiError ? err.message : t("ext.retryInstall"));
     } finally {
       setBusy(null);
     }
@@ -74,11 +74,11 @@ export function ExtensionsClient() {
       await extensionApi.setInstallEnabled(extension.id, enabled);
       announceChange();
       setNotice(enabled
-        ? `Enabled ${extension.name} — its blocks are back in your Blocks palette.`
-        : `Disabled ${extension.name} — its blocks left the palette; projects keep their saved blocks.`);
+        ? t("ext.noticeEnabled").replace("{name}", extension.name)
+        : t("ext.noticeDisabled").replace("{name}", extension.name));
       refresh();
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : "Could not change the extension state. Try again.");
+      setNotice(err instanceof ApiError ? err.message : t("ext.retryState"));
     } finally {
       setBusy(null);
     }
@@ -109,12 +109,12 @@ export function ExtensionsClient() {
       await extensionApi.uninstall(candidate.extension.id);
       announceChange();
       setNotice(candidate.projects > 0
-        ? `Uninstalled ${candidate.extension.name}. ${candidate.projects} of your project${candidate.projects === 1 ? "" : "s"} keep${candidate.projects === 1 ? "s" : ""} their saved blocks — they show as unavailable until you reinstall.`
-        : `Uninstalled ${candidate.extension.name}.`);
+        ? t("ext.noticeUninstalledProjects").replace("{name}", candidate.extension.name).replace("{projects}", String(candidate.projects))
+        : t("ext.noticeUninstalled").replace("{name}", candidate.extension.name));
       setUninstallCandidate(null);
       refresh();
     } catch {
-      setNotice("Could not uninstall. Try again.");
+      setNotice(t("ext.retryUninstall"));
     } finally {
       setBusy(null);
     }
@@ -126,14 +126,14 @@ export function ExtensionsClient() {
     setCreatingBusy(true);
     try {
       const res = await extensionApi.create({ name: name.trim(), summary: summary.trim() });
-      setNotice(`Created ${res.extension.name} \u2014 open the Studio to author it.`);
+      setNotice(t("ext.noticeCreated").replace("{name}", res.extension.name));
       setName("");
       setSummary("");
       setCreating(false);
       setShelf("yours");
       refresh();
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : "Could not create. Try again.");
+      setNotice(err instanceof ApiError ? err.message : t("ext.retryCreate"));
     } finally {
       setCreatingBusy(false);
     }
@@ -152,7 +152,7 @@ export function ExtensionsClient() {
         }}
         className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-violet-deep px-4 text-[13px] font-medium text-white transition-colors hover:bg-violet focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
       >
-        <IconPlus size={14} /> New extension
+        <IconPlus size={14} /> {t("ext.new")}
       </button>
       {notice ? (
         <p className="mt-3 rounded-lg border border-mint/30 bg-mint/[0.08] px-3 py-2 text-[12.5px] text-mint" role="status">
@@ -160,12 +160,12 @@ export function ExtensionsClient() {
         </p>
       ) : null}
 
-      <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-line bg-canvas p-1" role="tablist" aria-label="Extension shelves">
+      <div className="mt-5 flex flex-wrap gap-1 rounded-xl border border-line bg-canvas p-1" role="tablist" aria-label={t("ext.shelves")}>
         {(
           [
-            ["explore", `Explore${publicItems ? ` \u00b7 ${publicItems.length}` : ""}`],
-            ["installed", `Installed${installed ? ` \u00b7 ${installed.length}` : ""}`],
-            ["yours", `Yours${yours ? ` \u00b7 ${yours.length}` : ""}`],
+            ["explore", `${t("ext.explore")}${publicItems ? ` \u00b7 ${publicItems.length}` : ""}`],
+            ["installed", `${t("ext.installed")}${installed ? ` \u00b7 ${installed.length}` : ""}`],
+            ["yours", `${t("ext.yours")}${yours ? ` \u00b7 ${yours.length}` : ""}`],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -202,12 +202,12 @@ export function ExtensionsClient() {
         >
           <div className="w-full max-w-sm rounded-2xl border border-line bg-card p-5 shadow-2xl">
             <h2 className="text-[15px] font-semibold text-ink">
-              Uninstall “{uninstallCandidate.extension.name}”?
+              {t("ext.dialogTitle").replace("{name}", uninstallCandidate.extension.name)}
             </h2>
             <p className="mt-2 text-[13px] leading-5 text-fog">
               {uninstallCandidate.projects > 0
-                ? `This extension is used by ${uninstallCandidate.projects} of your project${uninstallCandidate.projects === 1 ? "" : "s"}. Uninstalling removes its blocks from your palette — the saved blocks in those projects stay in place but show as unavailable.`
-                : "This extension is installed but unused by your projects — uninstalling is safe."}
+                ? t("ext.dialogUsage").replace("{projects}", String(uninstallCandidate.projects))
+                : t("ext.dialogUnused")}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -215,7 +215,7 @@ export function ExtensionsClient() {
                 onClick={() => setUninstallCandidate(null)}
                 className="h-9 rounded-lg border border-line px-3 text-[13px] text-fog transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-mint"
               >
-                Cancel
+                {t("ext.cancel")}
               </button>
               <button
                 type="button"
@@ -224,7 +224,7 @@ export function ExtensionsClient() {
                 disabled={busy === uninstallCandidate.extension.id}
                 className="h-9 rounded-lg bg-rose px-4 text-[13px] font-medium text-white transition-colors hover:bg-rose/85 disabled:opacity-40"
               >
-                {busy === uninstallCandidate.extension.id ? "Uninstalling…" : "Uninstall"}
+                {busy === uninstallCandidate.extension.id ? t("ext.uninstalling") : t("ext.uninstall")}
               </button>
             </div>
           </div>
@@ -233,9 +233,9 @@ export function ExtensionsClient() {
 
       {shelf === "explore" ? (
         publicItems === null ? (
-          <p className="mt-5 text-[13px] text-fog">Loading the public shelf\u2026</p>
+          <p className="mt-5 text-[13px] text-fog">{t("ext.loadingPublic")}</p>
         ) : publicItems.length === 0 ? (
-          <EmptyShelf text="No published extensions yet \u2014 publish yours and it appears here for everyone." />
+          <EmptyShelf text={t("ext.emptyExplore")} />
         ) : (
           <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {publicItems.map((item) => (
@@ -244,7 +244,7 @@ export function ExtensionsClient() {
                   <div className="min-w-0">
                     <p className="truncate text-[14px] font-semibold text-ink">{item.name}</p>
                     <p className="font-mono text-[10.5px] text-mist">
-                      by @{item.creator} \u00b7 v{item.version} \u00b7 {item.installs} install{item.installs === 1 ? "" : "s"}
+                      {t("ext.by")} @{item.creator} \u00b7 v{item.version} \u00b7 {item.installs} install{item.installs === 1 ? "" : "s"}
                     </p>
                   </div>
                   <span className="shrink-0 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] uppercase text-mist">
@@ -263,7 +263,7 @@ export function ExtensionsClient() {
                     disabled={busy === item.id}
                     className="mt-3 h-9 rounded-lg bg-violet-deep px-4 text-[12.5px] font-medium text-white transition-colors hover:bg-violet disabled:opacity-40"
                   >
-                    {busy === item.id ? "Installing\u2026" : "Install"}
+                    {busy === item.id ? t("ext.installing") : t("ext.install")}
                   </button>
                 )}
               </li>
@@ -274,9 +274,9 @@ export function ExtensionsClient() {
 
       {shelf === "installed" ? (
         installed === null ? (
-          <p className="mt-5 text-[13px] text-fog">Loading\u2026</p>
+          <p className="mt-5 text-[13px] text-fog">{t("ext.loading")}</p>
         ) : installed.length === 0 ? (
-          <EmptyShelf text="Nothing installed yet \u2014 install something from Explore and its blocks show up in the builder." />
+          <EmptyShelf text={t("ext.emptyInstalled")} />
         ) : (
           <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {installed.map((extension) => (
@@ -306,7 +306,7 @@ export function ExtensionsClient() {
                 <p className="mt-1.5 line-clamp-2 text-[12.5px] text-fog">{extension.summary}</p>
                 {extension.enabled === false ? (
                   <p className="mt-1.5 rounded-lg border border-amber/30 bg-amber/[0.06] px-2.5 py-1.5 text-[11.5px] leading-4 text-amber">
-                    Disabled — projects keep their saved blocks, but they render as unavailable until you enable it again.
+                    {t("ext.disabledNote")}
                   </p>
                 ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -314,7 +314,7 @@ export function ExtensionsClient() {
                     href={`/dashboard/extensions/${extension.id}`}
                     className="h-9 rounded-lg border border-line px-3 text-[12px] leading-9 text-fog transition-colors hover:text-ink"
                   >
-                    Open Studio
+                    {t("ext.openStudio")}
                   </Link>
                   <button
                     type="button"
@@ -328,7 +328,7 @@ export function ExtensionsClient() {
                         : "border-amber/40 bg-amber/10 text-amber hover:bg-amber/20"
                     }`}
                   >
-                    {busy === extension.id ? "\u2026" : extension.enabled === false ? "Enable" : "Disable"}
+                    {busy === extension.id ? "\u2026" : extension.enabled === false ? t("ext.enable") : t("ext.disable")}
                   </button>
                   <button
                     type="button"
@@ -337,7 +337,7 @@ export function ExtensionsClient() {
                     disabled={busy === extension.id}
                     className="h-9 rounded-lg border border-line px-3 text-[12px] text-mist transition-colors hover:text-rose disabled:opacity-40"
                   >
-                    Uninstall
+                    {t("ext.uninstall")}
                   </button>
                 </div>
               </li>
@@ -350,20 +350,20 @@ export function ExtensionsClient() {
         <div className="mt-5">
           {creating ? (
             <form onSubmit={create} className="mb-4 rounded-2xl border border-line bg-card p-4">
-              <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">New extension</p>
+              <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">{t("ext.new")}</p>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Extension name"
-                  aria-label="Extension name"
+                  placeholder={t("ext.formName")}
+                  aria-label={t("ext.formName")}
                   className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-panel px-3 text-[13px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
                 />
                 <input
                   value={summary}
                   onChange={(event) => setSummary(event.target.value)}
-                  placeholder="What does it do?"
-                  aria-label="Extension summary"
+                  placeholder={t("ext.formSummary")}
+                  aria-label={t("ext.formSummaryLabel")}
                   className="h-9 min-w-0 flex-[2] rounded-lg border border-line bg-panel px-3 text-[13px] text-ink placeholder:text-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint"
                 />
                 <button
@@ -371,20 +371,20 @@ export function ExtensionsClient() {
                   disabled={creatingBusy || !name.trim()}
                   className="h-9 rounded-lg bg-violet-deep px-4 text-[12.5px] font-medium text-white transition-colors hover:bg-violet disabled:opacity-40"
                 >
-                  {creatingBusy ? "Creating\u2026" : "Create"}
+                  {creatingBusy ? t("ext.creating") : t("ext.create")}
                 </button>
                 <button
                   type="button"
                   onClick={() => setCreating(false)}
                   className="h-9 rounded-lg border border-line px-3 text-[12.5px] text-fog transition-colors hover:text-ink"
                 >
-                  Cancel
+                  {t("ext.cancel")}
                 </button>
               </div>
             </form>
           ) : null}
           {yours !== null && yours.length === 0 && !creating ? (
-            <EmptyShelf text="You haven\u2019t authored an extension yet \u2014 hit New extension and build your first." />
+            <EmptyShelf text={t("ext.emptyYours")} />
           ) : (
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(yours ?? []).map((extension) => (
@@ -401,7 +401,7 @@ export function ExtensionsClient() {
                     href={`/dashboard/extensions/${extension.id}`}
                     className="mt-3 inline-flex h-9 items-center rounded-lg border border-line px-3 text-[12px] text-fog transition-colors hover:text-ink"
                   >
-                    Open Studio
+                    {t("ext.openStudio")}
                   </Link>
                 </li>
               ))}

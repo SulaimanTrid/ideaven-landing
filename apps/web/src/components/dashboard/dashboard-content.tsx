@@ -213,17 +213,17 @@ export function DashboardContent() {
             <div className="rounded-2xl border border-line bg-card p-4">
               <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">{t("dash.yours")}</p>
               <p className="mt-1 text-[22px] font-semibold text-ink">{extensions.yours === null ? "…" : extensions.yours}</p>
-              <p className="text-[12px] text-mist">authored extensions</p>
+              <p className="text-[12px] text-mist">{t("dash.authored")}</p>
             </div>
             <div className="rounded-2xl border border-line bg-card p-4">
               <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">{t("dash.installed")}</p>
               <p className="mt-1 text-[22px] font-semibold text-ink">{extensions.installed === null ? "…" : extensions.installed}</p>
-              <p className="text-[12px] text-mist">in your builder palette</p>
+              <p className="text-[12px] text-mist">{t("dash.inPalette")}</p>
             </div>
             <div className="rounded-2xl border border-line bg-card p-4">
               <p className="font-mono text-[10px] tracking-[0.14em] text-mist uppercase">{t("dash.published")}</p>
               <p className="mt-1 text-[22px] font-semibold text-ink">{extensions.published === null ? "…" : extensions.published}</p>
-              <p className="text-[12px] text-mist">on the public shelf</p>
+              <p className="text-[12px] text-mist">{t("dash.onShelf")}</p>
             </div>
           </div>
         </section>
